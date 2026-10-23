@@ -1,0 +1,307 @@
+/* AD: Oreki Edition — 自定义界面补充样式
+   只服务于本项目新增的界面元素；对上游固定宽高的按钮类做局部覆盖 */
+
+.c-oreki-speed {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  align-items: stretch;
+}
+
+/* 信息区：显示当前倍率与说明 */
+.c-oreki-speed__info {
+  width: auto !important;
+  height: auto !important;
+  min-height: 5.5rem;
+  flex: 1 1 22rem;
+  max-width: 34rem;
+  align-items: flex-start !important;
+  justify-content: center;
+  gap: 0.2rem;
+  padding: 0.6rem 0.9rem;
+  box-sizing: border-box;
+  text-align: left;
+  cursor: default;
+}
+
+.c-oreki-speed__hint {
+  font-size: 1rem;
+  font-weight: normal;
+  line-height: 1.35;
+  opacity: 0.75;
+  white-space: normal;
+}
+
+/* 自定义输入区 */
+.c-oreki-speed__input {
+  width: auto !important;
+  height: auto !important;
+  min-height: 5.5rem;
+  flex: 0 1 11rem;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.6rem 0.7rem;
+  box-sizing: border-box;
+  cursor: default;
+}
+
+.c-oreki-speed__field {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.35rem 0.4rem;
+  font-family: inherit;
+  font-size: 1.05rem;
+  text-align: center;
+  color: var(--color-text);
+  background: var(--color-base);
+  border: 0.1rem solid var(--color-text);
+  border-radius: var(--var-border-radius, 0.5rem);
+}
+
+.c-oreki-speed__field:focus {
+  outline: none;
+  border-color: var(--color-reality);
+}
+
+/* 应用按钮 */
+.c-oreki-speed__apply {
+  width: auto !important;
+  height: auto !important;
+  min-height: 5.5rem;
+  flex: 0 1 9rem;
+  margin: 0 !important;
+}
+
+/* 快捷倍率按钮行 */
+.c-oreki-speed__presets {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  /* 作为 flex 行内的子项，若不撑满宽度，子按钮会按内容宽度收缩导致宽窄不一 */
+  width: 100%;
+  flex: 1 1 100%;
+}
+
+.c-oreki-speed__preset {
+  width: auto !important;
+  /* 4.4rem = 44px，满足触屏最小点击目标 */
+  height: 4.4rem !important;
+  flex: 1 1 0;
+  min-width: 4.6rem;
+  margin: 0 !important;
+  padding: 0 0.4rem;
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+
+/* 窄屏（手机）：信息区与输入区各占整行，快捷按钮三列换行 */
+@media screen and (max-width: 900px) {
+  .c-oreki-speed__info,
+  .c-oreki-speed__input,
+  .c-oreki-speed__apply {
+    flex: 1 1 100%;
+    max-width: none;
+    min-height: 0;
+  }
+
+  .c-oreki-speed__apply {
+    height: 4rem !important;
+  }
+
+  .c-oreki-speed__preset {
+    flex: 1 1 calc(33.33% - 0.5rem);
+    min-width: 0;
+  }
+}
+
+/* ===== 可选工具弹窗（成就工具 / 存档工具） ===== */
+
+.c-oreki-tool {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  max-width: 62rem;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding-right: 0.4rem;
+  text-align: left;
+}
+
+.c-oreki-tool__warning {
+  padding: 0.8rem 1rem;
+  font-size: 1.2rem;
+  line-height: 1.5;
+  color: var(--color-text);
+  background: var(--color-base);
+  border: 0.1rem solid var(--color-bad);
+  border-radius: var(--var-border-radius, 0.5rem);
+}
+
+.c-oreki-tool__hint {
+  font-size: 1.15rem;
+  line-height: 1.5;
+  opacity: 0.85;
+}
+
+.c-oreki-tool__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.c-oreki-tool__label {
+  font-weight: bold;
+  font-size: 1.25rem;
+}
+
+.c-oreki-tool__scopes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.c-oreki-tool__scope-btn,
+.c-oreki-tool__mini-btn {
+  width: auto !important;
+  height: 3.6rem !important;
+  min-height: 3.6rem;
+  padding: 0 1rem;
+  font-size: 1.15rem;
+  border: 0.1rem solid var(--color-good);
+  background: var(--color-base);
+  color: var(--color-text);
+  border-radius: var(--var-border-radius, 0.5rem);
+  cursor: pointer;
+}
+
+.c-oreki-tool__scope-btn--active {
+  border-color: var(--color-reality);
+  color: var(--color-reality);
+  font-weight: bold;
+}
+
+.c-oreki-tool__num {
+  width: 8rem;
+  height: 3.6rem;
+  padding: 0 0.5rem;
+  font-family: inherit;
+  font-size: 1.2rem;
+  text-align: center;
+  color: var(--color-text);
+  background: var(--color-base);
+  border: 0.1rem solid var(--color-text);
+  border-radius: var(--var-border-radius, 0.5rem);
+}
+
+.c-oreki-tool__dash {
+  opacity: 0.7;
+}
+
+.c-oreki-tool__ack {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  font-size: 1.15rem;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.c-oreki-tool__ack input {
+  margin-top: 0.25rem;
+  width: 1.8rem;
+  height: 1.8rem;
+  flex: 0 0 auto;
+}
+
+.c-oreki-tool__info {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 1.15rem;
+}
+
+.c-oreki-tool__info td {
+  padding: 0.35rem 0.6rem;
+  border-bottom: 0.1rem solid rgb(255 255 255 / 12%);
+  vertical-align: top;
+}
+
+.c-oreki-tool__info td:first-child {
+  width: 14rem;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+.c-oreki-tool__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.c-oreki-tool__btn {
+  width: auto !important;
+  height: 4rem !important;
+  min-height: 4rem;
+  padding: 0 1.2rem;
+  font-size: 1.2rem;
+  border: 0.1rem solid var(--color-good);
+  background: var(--color-base);
+  color: var(--color-text);
+  border-radius: var(--var-border-radius, 0.5rem);
+  cursor: pointer;
+}
+
+.c-oreki-tool__btn--disabled {
+  opacity: 0.45;
+}
+
+.c-oreki-tool__btn--danger {
+  border-color: var(--color-bad);
+  color: var(--color-bad);
+}
+
+.c-oreki-tool__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.6rem;
+  border-top: 0.1rem solid rgb(255 255 255 / 15%);
+}
+
+.c-oreki-tool__textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.6rem;
+  font-family: inherit;
+  font-size: 1.05rem;
+  color: var(--color-text);
+  background: var(--color-base);
+  border: 0.1rem solid var(--color-text);
+  border-radius: var(--var-border-radius, 0.5rem);
+  resize: vertical;
+}
+
+.c-oreki-tool__status {
+  padding: 0.6rem 0.8rem;
+  font-size: 1.15rem;
+  border-radius: var(--var-border-radius, 0.5rem);
+  border: 0.1rem solid var(--color-good);
+}
+
+.c-oreki-tool__status--bad {
+  border-color: var(--color-bad);
+  color: var(--color-bad);
+}
+
+@media screen and (max-width: 900px) {
+  .c-oreki-tool {
+    max-width: 100%;
+  }
+
+  .c-oreki-tool__info td:first-child {
+    width: 10rem;
+    white-space: normal;
+  }
+}

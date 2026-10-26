@@ -14,6 +14,8 @@
  */
 
 const STORAGE_KEY = "oreki-game-speed";
+/** 实验开关：自动购买器 interval 是否按全局倍率缩放（独立持久化，默认关闭） */
+const AUTOBUYER_SCALE_KEY = "oreki-autobuyer-interval-scale";
 
 export const GAME_SPEED_DEFAULT = 10000;
 export const GAME_SPEED_MIN = 1;
@@ -71,6 +73,24 @@ function readStored() {
   }
 }
 
+function readStoredFlag(key, fallback = false) {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw === null ? fallback : raw === "1";
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function writeStoredFlag(key, value) {
+  try {
+    window.localStorage.setItem(key, value ? "1" : "0");
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 function writeStored(value) {
   try {
     window.localStorage.setItem(STORAGE_KEY, String(value));
@@ -84,6 +104,8 @@ let currentFactor = readStored();
 /** 离线/休眠模拟期间冻结因子：simulateTime 内部会多次乘以、除以该因子，
  *  若中途改变会导致时间被重复放大或缩小，必须锁定为同一快照 */
 let simulationToken = null;
+/** 自动购买器 interval 缩放开关（实验特性，默认关闭；关闭时与原行为完全一致） */
+let autobuyerIntervalScaling = readStoredFlag(AUTOBUYER_SCALE_KEY);
 
 export const GameSpeed = {
   get storageKey() { return STORAGE_KEY; },
@@ -96,6 +118,19 @@ export const GameSpeed = {
   /** 实际生效的倍率（模拟期间为快照值） */
   get effectiveFactor() { return simulationToken === null ? currentFactor : simulationToken.factor; },
   get isSimulationLocked() { return simulationToken !== null; },
+
+  /**
+   * 实验开关（默认关闭）：打开后，启用了缩放的自动购买器（当前只有反物质维度）会把
+   * `interval` 除以全局倍率，使「两次购买之间」对应固定的**游戏时间**而不是固定现实时间。
+   * F=1 时除以 1，行为与原版完全一致。
+   */
+  get scaleAutobuyerInterval() { return autobuyerIntervalScaling; },
+  setScaleAutobuyerInterval(value) {
+    autobuyerIntervalScaling = !!value;
+    writeStoredFlag(AUTOBUYER_SCALE_KEY, autobuyerIntervalScaling);
+    return autobuyerIntervalScaling;
+  },
+  get autobuyerScaleStorageKey() { return AUTOBUYER_SCALE_KEY; },
 
   /**
    * 设置倍率。成功返回 { ok:true }，失败返回 { ok:false, message } 且不改变任何状态。

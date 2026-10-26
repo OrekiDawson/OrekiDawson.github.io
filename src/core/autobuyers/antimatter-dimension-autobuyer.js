@@ -7,6 +7,12 @@ export class AntimatterDimensionAutobuyerState extends UpgradeableAutobuyerState
     return this.id;
   }
 
+  // 实验对象：反物质维度购买器（tier 1-8 共用本类）参与 interval 缩放。
+  // 是否真正生效由 GameSpeed.scaleAutobuyerInterval 决定（默认关闭）。
+  get usesSpeedScaledInterval() {
+    return true;
+  }
+
   get name() {
     return AntimatterDimension(this.tier).shortDisplayName;
   }
@@ -101,8 +107,8 @@ export class AntimatterDimensionAutobuyerState extends UpgradeableAutobuyerState
     const dim = AntimatterDimension(this.tier);
     const hasAutobuyer = dim.isAvailableForPurchase && dim.isAffordable;
 
-    // From IntervaledAutobuyerState.canTick
-    const intervalTick = this.timeSinceLastTick >= this.interval;
+    // From IntervaledAutobuyerState.canTick（用 effectiveInterval：实验开关开启时按全局倍率缩放）
+    const intervalTick = this.timeSinceLastTick >= this.effectiveInterval;
 
     // From AutobuyerState.canTick (ignores this.constructor.isActive because that's accounted for in thisSetting)
     const autoTick = player.auto.autobuyersOn && this.isActive && (this.isUnlocked || this.isBought);

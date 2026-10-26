@@ -92,8 +92,27 @@ export class IntervaledAutobuyerState extends AutobuyerState {
     return this.data.interval;
   }
 
+  /** 是否把 interval 按全局倍率缩放（实验开关，默认只有反物质维度购买器启用） */
+  get usesSpeedScaledInterval() {
+    return false;
+  }
+
+  /**
+   * 实际用于比较的间隔。
+   * 关闭开关（默认）时就是 interval，行为与原版一致；
+   * 打开时 interval / 倍率，使购买节奏按「游戏时间」而非「现实时间」——
+   * 否则高倍率下每个现实毫秒对应的游戏时间变多，购买决策密度会被稀释。
+   * 只影响触发判定，不改 `lastTick` 的记账口径（仍记现实时间）。
+   */
+  get effectiveInterval() {
+    if (!this.usesSpeedScaledInterval) return this.interval;
+    const scaling = typeof GameSpeed !== "undefined" && GameSpeed.scaleAutobuyerInterval;
+    if (!scaling) return this.interval;
+    return this.interval / Math.max(1, getGlobalSpeedFactor());
+  }
+
   get canTick() {
-    return super.canTick && this.timeSinceLastTick >= this.interval;
+    return super.canTick && this.timeSinceLastTick >= this.effectiveInterval;
   }
 
   get timeSinceLastTick() {

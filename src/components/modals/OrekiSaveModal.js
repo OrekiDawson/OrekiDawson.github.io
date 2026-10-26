@@ -138,7 +138,7 @@ export default {
           <tr><td>存档名称</td><td>{{ info.saveName }}</td></tr>
           <tr><td>槽位</td><td>第 {{ info.slot }} 号</td></tr>
           <tr><td>存档版本</td><td>v{{ info.version }}（当前游戏 v{{ info.currentVersion }}）</td></tr>
-          <tr><td>游戏时间 / 现实时间</td><td>{{ info.totalTime }} / {{ info.realTime }}</td></tr>
+          <tr><td>游戏内时间 / 现实时间</td><td>{{ info.totalTime }} / {{ info.realTime }}</td></tr>
           <tr><td>反物质</td><td>{{ info.antimatter }}</td></tr>
           <tr><td>无限点数 / 永恒数 / 现实数</td><td>{{ info.infinityPoints }} / {{ info.eternities }} / {{ info.realities }}</td></tr>
           <tr><td>成就</td><td>{{ info.achievements }}</td></tr>

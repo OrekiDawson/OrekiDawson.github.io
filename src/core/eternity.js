@@ -3,9 +3,13 @@ import { DC } from "./constants.js";
 import FullScreenAnimationHandler from "./full-screen-animation-handler.js";
 
 function giveEternityRewards(auto) {
-  // 最速记录按真实时间计算，需要除以全局速度因子
-  player.records.bestEternity.time = Math.min(player.records.thisEternity.time / getGlobalSpeedFactor(),
+  // 最速记录保存两种口径：.time 是游戏内时间（现实时间 × 本时段生效的游戏内膨胀倍率），
+  // .realTime 是纯现实时间。写入时剥离本 Mod 的全局速度倍率，读取时不再二次换算。
+  player.records.bestEternity.time = Math.min(inGameTimeOf(player.records.thisEternity),
     player.records.bestEternity.time);
+  // 旧存档的 realTime 一直是初始哨兵值，需要在这里开始正常记录
+  player.records.bestEternity.realTime = Math.min(player.records.thisEternity.realTime,
+    player.records.bestEternity.realTime);
   Currency.eternityPoints.add(gainedEternityPoints());
 
   // 沿用 ADfaster 的平衡增强：永恒获得量随已有永恒数增长（5× ~ 1000×）
@@ -34,7 +38,7 @@ function giveEternityRewards(auto) {
   }
 
   addEternityTime(
-    player.records.thisEternity.time,
+    inGameTimeOf(player.records.thisEternity),
     player.records.thisEternity.realTime,
     gainedEternityPoints(),
     newEternities
@@ -193,6 +197,7 @@ export function initializeResourcesAfterEternity() {
   player.records.thisInfinity.time = 0;
   player.records.thisInfinity.lastBuyTime = 0;
   player.records.thisInfinity.realTime = 0;
+  player.records.thisInfinity.inGameTime = 0;
   player.dimensionBoosts = (EternityMilestone.keepInfinityUpgrades.isReached) ? 4 : 0;
   player.galaxies = (EternityMilestone.keepInfinityUpgrades.isReached) ? 1 : 0;
   player.partInfinityPoint = 0;
@@ -202,6 +207,7 @@ export function initializeResourcesAfterEternity() {
   Currency.timeShards.reset();
   player.records.thisEternity.time = 0;
   player.records.thisEternity.realTime = 0;
+  player.records.thisEternity.inGameTime = 0;
   player.totalTickGained = 0;
   player.eterc8ids = 50;
   player.eterc8repl = 40;

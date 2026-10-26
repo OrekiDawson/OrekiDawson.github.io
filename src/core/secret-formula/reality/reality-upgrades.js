@@ -348,7 +348,8 @@ export const realityUpgrades = [
     name: "快速复现",
     id: 23,
     cost: 100000,
-    requirement: () => `在 ${formatInt(15)} 分钟内（按真实时间）进行一次现实 (当前最佳: ${Time.bestReality.toStringShort()})`,
+    requirement: () => `在 ${formatInt(15)} 分钟内进行一次现实（按游戏内时间判定）。当前最佳：${
+      timeStatText(Time.bestRealityRealTime.totalMilliseconds, Time.bestReality.totalMilliseconds)}`,
     hasFailed: () => Time.thisReality.totalMinutes / getGlobalSpeedFactor() >= 15,
     checkRequirement: () => Time.thisReality.totalMinutes / getGlobalSpeedFactor() < 15,
     checkEvent: GAME_EVENT.REALITY_RESET_BEFORE,

@@ -87,13 +87,19 @@ class InfinityChallengeState extends GameMechanicState {
   }
 
   updateChallengeTime() {
-    const bestTimes = player.challenge.infinity.bestTimes;
-    // 挑战最速记录以真实时间为准
-    if (bestTimes[this.id - 1] <= player.records.thisInfinity.time / getGlobalSpeedFactor()) {
-      return;
+    const challenge = player.challenge.infinity;
+    // 兼容缺失该字段的旧存档/部分合并结果
+    if (!Array.isArray(challenge.bestRealTimes)) challenge.bestRealTimes = Array.repeat(Number.MAX_VALUE, 8);
+    // 两种口径各自独立比较，互不覆盖（含义见 normal-challenges.js 中的同一方法）
+    const gameTime = inGameTimeOf(player.records.thisInfinity);
+    const realTime = player.records.thisInfinity.realTime;
+    if (challenge.bestTimes[this.id - 1] > gameTime) {
+      challenge.bestTimes[this.id - 1] = gameTime;
+      GameCache.infinityChallengeTimeSum.invalidate();
     }
-    player.challenge.infinity.bestTimes[this.id - 1] = player.records.thisInfinity.time / getGlobalSpeedFactor();
-    GameCache.infinityChallengeTimeSum.invalidate();
+    if (challenge.bestRealTimes[this.id - 1] > realTime) {
+      challenge.bestRealTimes[this.id - 1] = realTime;
+    }
   }
 
   exit() {

@@ -9,7 +9,9 @@ export default {
     return {
       infinityChallengesUnlocked: false,
       normalChallenges: [],
-      infinityChallenges: []
+      normalRealTimes: [],
+      infinityChallenges: [],
+      infinityRealTimes: []
     };
   },
   methods: {
@@ -17,7 +19,9 @@ export default {
       this.infinityChallengesUnlocked = PlayerProgress.infinityChallengeCompleted() ||
         PlayerProgress.eternityUnlocked();
       this.normalChallenges = player.challenge.normal.bestTimes.slice(0);
+      this.normalRealTimes = (player.challenge.normal.bestRealTimes ?? []).slice(0);
       this.infinityChallenges = player.challenge.infinity.bestTimes.slice(0);
+      this.infinityRealTimes = (player.challenge.infinity.bestRealTimes ?? []).slice(0);
     }
   },
   template: `
@@ -25,15 +29,17 @@ export default {
     <ChallengeRecordsList
       :start="2"
       :times="normalChallenges"
+      :real-times="normalRealTimes"
       name="普通挑战"
     />
     <ChallengeRecordsList
       v-if="infinityChallengesUnlocked"
       :start="1"
       :times="infinityChallenges"
+      :real-times="infinityRealTimes"
       name="无限挑战"
       class="l-challenge-records-tab__infinity_challenges"
     />
   </div>
   `
-};
+};

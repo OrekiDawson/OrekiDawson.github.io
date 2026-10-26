@@ -292,7 +292,10 @@ function updateRealityRecords(realityProps) {
     player.records.bestReality.glyphLevel = realityProps.gainedGlyphLevel.actualLevel;
     player.records.bestReality.glyphLevelSet = Glyphs.copyForRecords(Glyphs.active.filter(g => g !== null));
   }
-  player.records.bestReality.time = Math.min(player.records.thisReality.time / getGlobalSpeedFactor(),
+  // 最速记录并存两种口径：.time 为游戏内时间（现实时间 × 本次生效的游戏内膨胀倍率，
+  // 写入时剥离本 Mod 的全局速度倍率），.realTime 为纯现实时间。两者各自独立取最小值，
+  // 因而可能来自不同的两次现实，属于原版既有设计。
+  player.records.bestReality.time = Math.min(inGameTimeOf(player.records.thisReality),
     player.records.bestReality.time);
   if (player.records.thisReality.realTime < player.records.bestReality.realTime) {
     player.records.bestReality.realTime = player.records.thisReality.realTime;
@@ -307,7 +310,7 @@ function giveRealityRewards(realityProps) {
   Currency.realityMachines.add(gainedRM.times(multiplier));
   updateRealityRecords(realityProps);
   addRealityTime(
-    player.records.thisReality.time, player.records.thisReality.realTime, gainedRM,
+    inGameTimeOf(player.records.thisReality), player.records.thisReality.realTime, gainedRM,
     realityProps.gainedGlyphLevel.actualLevel, realityAndPPMultiplier, multiplier,
     MachineHandler.projectedIMCap);
   Currency.realities.add(realityAndPPMultiplier);
@@ -622,6 +625,7 @@ export function finishProcessReality(realityProps) {
   player.records.thisInfinity.time = 0;
   player.records.thisInfinity.lastBuyTime = 0;
   player.records.thisInfinity.realTime = 0;
+  player.records.thisInfinity.inGameTime = 0;
   player.dimensionBoosts = 0;
   player.galaxies = 0;
   player.partInfinityPoint = 0;
@@ -639,6 +643,7 @@ export function finishProcessReality(realityProps) {
   if (!PelleUpgrade.eternitiesNoReset.canBeApplied) Currency.eternities.reset();
   player.records.thisEternity.time = 0;
   player.records.thisEternity.realTime = 0;
+  player.records.thisEternity.inGameTime = 0;
   player.records.bestEternity.time = 999999999999;
   player.records.bestEternity.realTime = 999999999999;
   if (!PelleUpgrade.keepEternityUpgrades.canBeApplied) player.eternityUpgrades.clear();
@@ -660,6 +665,7 @@ export function finishProcessReality(realityProps) {
   }
   player.records.thisReality.time = 0;
   player.records.thisReality.realTime = 0;
+  player.records.thisReality.inGameTime = 0;
   player.records.thisReality.maxReplicanti = DC.D0;
   if (!PelleUpgrade.timeStudiesNoReset.canBeApplied) Currency.timeTheorems.reset();
   player.celestials.v.STSpent = 0;

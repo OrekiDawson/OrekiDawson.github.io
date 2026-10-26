@@ -85,14 +85,16 @@ function bigCrunchUpdateStatistics() {
   const infinityPoints = gainedInfinityPoints();
 
   addInfinityTime(
-    player.records.thisInfinity.time,
+    inGameTimeOf(player.records.thisInfinity),
     player.records.thisInfinity.realTime,
     infinityPoints,
     gainedInfinities().round()
   );
 
+  // 最速记录并存两种口径：.time 为游戏内时间（现实时间 × 本次生效的游戏内膨胀倍率，
+  // 写入时剥离本 Mod 的全局速度倍率），.realTime 为纯现实时间。两者各自独立取最小值。
   player.records.bestInfinity.time =
-    Math.min(player.records.bestInfinity.time, player.records.thisInfinity.time / getGlobalSpeedFactor());
+    Math.min(player.records.bestInfinity.time, inGameTimeOf(player.records.thisInfinity));
   player.records.bestInfinity.realTime =
     Math.min(player.records.bestInfinity.realTime, player.records.thisInfinity.realTime);
 
@@ -163,6 +165,7 @@ export function secondSoftReset(enteringAntimatterChallenge) {
   player.records.thisInfinity.time = 0;
   player.records.thisInfinity.lastBuyTime = 0;
   player.records.thisInfinity.realTime = 0;
+  player.records.thisInfinity.inGameTime = 0;
   Player.resetRequirements("infinity");
   AchievementTimers.marathon2.reset();
 }

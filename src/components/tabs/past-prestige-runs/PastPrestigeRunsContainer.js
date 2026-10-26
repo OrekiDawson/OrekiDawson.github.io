@@ -144,7 +144,7 @@ export default {
       return cells;
     },
     infoCol() {
-      const cells = ["流程", this.hasRealTime ? "游戏时间" : "本次耗时"];
+      const cells = ["流程", this.hasRealTime ? "游戏内时间" : "本次耗时"];
       if (this.hasRealTime) cells.push("现实时间");
       cells.push(...this.resourceTitles);
       if (this.hasChallenges) cells.push("挑战");
@@ -280,4 +280,4 @@ export default {
     </div>
   </div>
   `
-};
+};

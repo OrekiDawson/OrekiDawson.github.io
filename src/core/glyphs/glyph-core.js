@@ -667,10 +667,13 @@ export const Glyphs = {
       ecs: EternityChallenges.all.map(e => e.completions),
       thisInfinityTime: player.records.thisInfinity.time,
       thisInfinityRealTime: player.records.thisInfinity.realTime,
+      thisInfinityInGameTime: player.records.thisInfinity.inGameTime,
       thisEternityTime: player.records.thisEternity.time,
       thisEternityRealTime: player.records.thisEternity.realTime,
+      thisEternityInGameTime: player.records.thisEternity.inGameTime,
       thisRealityTime: player.records.thisReality.time,
       thisRealityRealTime: player.records.thisReality.realTime,
+      thisRealityInGameTime: player.records.thisReality.inGameTime,
       storedTime: player.celestials.enslaved.stored,
       dilationStudies: player.dilation.studies.toBitmask(),
       dilationUpgrades: player.dilation.upgrades.toBitmask(),
@@ -700,10 +703,13 @@ export const Glyphs = {
     EternityChallenges.all.map((ec, ecIndex) => ec.completions = undoData.ecs[ecIndex]);
     player.records.thisInfinity.time = undoData.thisInfinityTime;
     player.records.thisInfinity.realTime = undoData.thisInfinityRealTime;
+    player.records.thisInfinity.inGameTime = undoData.thisInfinityInGameTime ?? 0;
     player.records.thisEternity.time = undoData.thisEternityTime;
     player.records.thisEternity.realTime = undoData.thisEternityRealTime;
+    player.records.thisEternity.inGameTime = undoData.thisEternityInGameTime ?? 0;
     player.records.thisReality.time = undoData.thisRealityTime;
     player.records.thisReality.realTime = undoData.thisRealityRealTime;
+    player.records.thisReality.inGameTime = undoData.thisRealityInGameTime ?? 0;
     player.celestials.enslaved.stored = undoData.storedTime || 0;
     if (undoData.dilationStudies) {
       player.dilation.studies = Array.fromBitmask(undoData.dilationStudies);

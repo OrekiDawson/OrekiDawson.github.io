@@ -24,6 +24,7 @@ export default {
         bankRate: new Decimal(0),
         hasBest: false,
         best: TimeSpan.zero,
+        bestReal: TimeSpan.zero,
         this: TimeSpan.zero,
         thisReal: TimeSpan.zero,
         bestRate: new Decimal(0),
@@ -33,6 +34,7 @@ export default {
         count: new Decimal(0),
         hasBest: false,
         best: TimeSpan.zero,
+        bestReal: TimeSpan.zero,
         this: TimeSpan.zero,
         thisReal: TimeSpan.zero,
         bestRate: new Decimal(0),
@@ -42,12 +44,15 @@ export default {
         count: 0,
         best: TimeSpan.zero,
         bestReal: TimeSpan.zero,
+        // 哨兵值（未解锁现实、或旧存档从未写入）时不显示成「3 万年」
+        bestValid: false,
+        bestRealValid: false,
         this: TimeSpan.zero,
         thisReal: TimeSpan.zero,
-        totalTimePlayed: TimeSpan.zero,
         bestRate: new Decimal(0),
         bestRarity: 0,
       },
+      totalInGameTime: TimeSpan.zero,
       matterScale: [],
       lastMatterTime: 0,
       paperclips: 0,
@@ -66,10 +71,16 @@ export default {
     },
   },
   methods: {
+    // 统一时间统计文案：现实时间优先并明确标注，游戏内时间仅在数据可确认时并列
+    timeStat(realMs, inGameMs) {
+      return timeStatText(realMs, inGameMs);
+    },
     update() {
       const records = player.records;
       this.totalAntimatter.copyFrom(records.totalAntimatter);
       this.realTimePlayed.setFrom(records.realTimePlayed);
+      // totalTimePlayed 是游戏循环累计的游戏时间，需剥离本 Mod 的全局速度倍率后才等于“游戏内时间”
+      this.totalInGameTime.setFrom(totalInGameTimeMs());
       this.fullTimePlayed = TimeSpan.fromMilliseconds(records.previousRunRealTime + records.realTimePlayed);
       this.uniqueNews = NewsHandler.uniqueTickersSeen;
       this.totalNews = player.news.totalSeen;
@@ -88,10 +99,14 @@ export default {
           Achievement(131).effects.bankedInfinitiesGain,
           TimeStudy(191)
         );
-        infinity.bankRate = infinity.projectedBanked.div(Math.clampMin(33, records.thisEternity.time)).times(60000);
+        infinity.bankRate = infinity.projectedBanked.div(Math.clampMin(33, records.thisEternity.realTime)).times(60000);
         infinity.hasBest = bestInfinity.time < 999999999999;
+        // bestInfinity.time 写入时已剥离全局速度倍率，可直接作为游戏内时间显示
         infinity.best.setFrom(bestInfinity.time);
-        infinity.this.setFrom(records.thisInfinity.time);
+        infinity.bestReal.setFrom(bestInfinity.realTime);
+        // thisInfinity.time 是原始游戏时间，显示前需换算
+        infinity.this.setFrom(inGameTimeOf(records.thisInfinity));
+        infinity.thisReal.setFrom(records.thisInfinity.realTime);
         infinity.bestRate.copyFrom(bestInfinity.bestIPminEternity);
       }
 
@@ -103,7 +118,9 @@ export default {
         eternity.count.copyFrom(Currency.eternities);
         eternity.hasBest = bestEternity.time < 999999999999;
         eternity.best.setFrom(bestEternity.time);
-        eternity.this.setFrom(records.thisEternity.time);
+        eternity.bestReal.setFrom(bestEternity.realTime);
+        eternity.this.setFrom(inGameTimeOf(records.thisEternity));
+        eternity.thisReal.setFrom(records.thisEternity.realTime);
         eternity.bestRate.copyFrom(bestEternity.bestEPminReality);
       }
 
@@ -116,12 +133,9 @@ export default {
         reality.count = Math.floor(Currency.realities.value);
         reality.best.setFrom(bestReality.time);
         reality.bestReal.setFrom(bestReality.realTime);
-        reality.this.setFrom(records.thisReality.time);
-        reality.totalTimePlayed.setFrom(records.totalTimePlayed);
-        // Real time tracking is only a thing once reality is unlocked:
-        infinity.thisReal.setFrom(records.thisInfinity.realTime);
-        infinity.bankRate = infinity.projectedBanked.div(Math.clampMin(33, records.thisEternity.realTime)).times(60000);
-        eternity.thisReal.setFrom(records.thisEternity.realTime);
+        reality.bestValid = isValidTimeRecord(bestReality.time);
+        reality.bestRealValid = isValidTimeRecord(bestReality.realTime);
+        reality.this.setFrom(inGameTimeOf(records.thisReality));
         reality.thisReal.setFrom(records.thisReality.realTime);
         reality.bestRate.copyFrom(bestReality.RMmin);
         reality.bestRarity = Math.max(strengthToRarity(bestReality.glyphStrength), 0);
@@ -172,7 +186,7 @@ export default {
         <div>您总共制造了 {{ format(totalAntimatter, 2, 1) }} 个反物质。</div>
         <div>你已经玩了 {{ realTimePlayed }}（现实时间）。</div>
         <div v-if="reality.isUnlocked">
-          游戏中的你经历了 {{ reality.totalTimePlayed }}的游戏内时间。
+          游戏中的你经历了 {{ totalInGameTime }}（游戏内时间，已扣除本 Mod 的全局速度倍率）。
         </div>
         <div>
           你的存档创建于 {{ startDate }}（{{ saveAge }}之前）。
@@ -195,7 +209,7 @@ export default {
           <b>
             您已通关游戏 {{ formatInt(fullGameCompletions) }} 次。
             <br>
-            总计游玩了 {{ fullTimePlayed }}。
+            总计游玩了 {{ fullTimePlayed }}（现实时间）。
           </b>
         </div>
       </div>
@@ -235,16 +249,13 @@ export default {
         你有 {{ formatDecimalAmount(infinity.banked.floor()) }} 储存的无限次数。
       </div>
       <div v-if="infinity.hasBest">
-        你最快的无限用时 {{ infinity.best.toStringShort() }}。
+        你最快的无限用时 {{ timeStat(infinity.bestReal, infinity.best) }}。
       </div>
       <div v-else>
         你本次永恒中不存在最快的无限用时。
       </div>
       <div>
-        你已在本次无限中花费 {{ infinity.this.toStringShort() }}。
-        <span v-if="reality.isUnlocked">
-          （{{ infinity.thisReal.toStringShort() }}现实时间）
-        </span>
+        你已在本次无限中花费 {{ timeStat(infinity.thisReal, infinity.this) }}。
       </div>
       <div>
         <span v-if="eternity.count.gt(0)">在本次永恒中，</span>
@@ -273,16 +284,13 @@ export default {
         永恒后不能获得储存的无限次数。
       </div>
       <div v-if="eternity.hasBest">
-        你的最快永恒用时 {{ eternity.best.toStringShort() }}。
+        你的最快永恒用时 {{ timeStat(eternity.bestReal, eternity.best) }}。
       </div>
       <div v-else>
         你<span v-if="reality.isUnlocked">本次现实中</span>不存在最快的永恒用时。
       </div>
       <div>
-        你已在本次永恒中花费 {{ eternity.this.toStringShort() }}。
-        <span v-if="reality.isUnlocked">
-          （{{ eternity.thisReal.toStringShort() }}现实时间）
-        </span>
+        你已在本次永恒中花费 {{ timeStat(eternity.thisReal, eternity.this) }}。
       </div>
       <div>
         <span v-if="reality.isUnlocked">在本次现实中，</span>
@@ -302,14 +310,13 @@ export default {
         {{ isDoomed ? "被毁灭的现实" : "现实" }}
       </div>
       <div>你进行了 {{ formatInt(reality.count) }} 次现实。</div>
-      <div>按游戏内时间计算，你最快的现实用时为 {{ reality.best.toStringShort() }}（游戏内时间）。</div>
-      <div>按现实时间计算，你最快的现实用时为 {{ reality.bestReal.toStringShort() }}（现实时间）。</div>
+      <div>按游戏内时间计算，你最快的现实用时为 {{ reality.bestValid ? reality.best.toStringShort() : "暂无记录" }}（游戏内时间）。</div>
+      <div>按现实时间计算，你最快的现实用时为 {{ reality.bestRealValid ? reality.bestReal.toStringShort() : "暂无记录" }}（现实时间）。</div>
       <div
         :class="{ 'c-stats-tab-doomed' : isDoomed }"
         data-v-statistics-tab
       >
-        你已在本次{{ isDoomed ? "末日" : "现实" }}中花费 {{ reality.this.toStringShort() }}。
-        （{{ reality.thisReal.toStringShort() }}现实时间）
+        你已在本次{{ isDoomed ? "末日" : "现实" }}中花费 {{ timeStat(reality.thisReal, reality.this) }}。
       </div>
       <div
         v-if="isDoomed"
@@ -326,4 +333,4 @@ export default {
     </div>
   </div>
   `
-};
+};

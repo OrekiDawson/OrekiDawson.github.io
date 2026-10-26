@@ -119,14 +119,24 @@ class NormalChallengeState extends GameMechanicState {
   }
 
   updateChallengeTime() {
-    const bestTimes = player.challenge.normal.bestTimes;
-    // 挑战最速记录以真实时间为准
-    if (bestTimes[this.id - 2] <= player.records.thisInfinity.time / getGlobalSpeedFactor()) {
-      return;
+    const challenge = player.challenge.normal;
+    // 兼容缺失该字段的旧存档/部分合并结果
+    if (!Array.isArray(challenge.bestRealTimes)) challenge.bestRealTimes = Array.repeat(Number.MAX_VALUE, 11);
+    // 两种口径各自独立比较，互不覆盖：
+    //   bestTimes     = 游戏内时间（现实时间 × 本次生效的游戏内膨胀倍率，已剔除本 Mod 的全局速度倍率）
+    //   bestRealTimes = 从挑战开始到完成的现实耗时
+    // thisInfinity.time/realTime 均由挑战进入时的 secondSoftReset 归零，起点与挑战开始一致；
+    // 完成时（handleChallengeCompletion）读取，终点与挑战完成条件一致。
+    const gameTime = inGameTimeOf(player.records.thisInfinity);
+    const realTime = player.records.thisInfinity.realTime;
+    if (challenge.bestTimes[this.id - 2] > gameTime) {
+      challenge.bestTimes[this.id - 2] = gameTime;
+      GameCache.challengeTimeSum.invalidate();
+      GameCache.worstChallengeTime.invalidate();
     }
-    player.challenge.normal.bestTimes[this.id - 2] = player.records.thisInfinity.time / getGlobalSpeedFactor();
-    GameCache.challengeTimeSum.invalidate();
-    GameCache.worstChallengeTime.invalidate();
+    if (challenge.bestRealTimes[this.id - 2] > realTime) {
+      challenge.bestRealTimes[this.id - 2] = realTime;
+    }
   }
 
   exit() {

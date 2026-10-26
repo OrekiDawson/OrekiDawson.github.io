@@ -103,7 +103,8 @@ export const OrekiSaveTool = {
       slot: GameStorage.currentSlot + 1,
       version: save.version,
       currentVersion: Player.defaultStart.version,
-      totalTime: Time.totalTimePlayed.toStringShort(),
+      // 与统计页口径一致：游戏内时间已剔除本 Mod 的全局速度倍率，现实时间单独列出
+      totalTime: TimeSpan.fromMilliseconds(totalInGameTimeMs()).toStringShort(),
       realTime: Time.realTimePlayed.toStringShort(),
       antimatter: format(save.antimatter, 2, 2),
       infinityPoints: format(save.infinityPoints, 2, 2),

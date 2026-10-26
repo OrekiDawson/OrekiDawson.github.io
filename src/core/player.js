@@ -39,11 +39,15 @@ window.player = {
     normal: {
       current: 0,
       bestTimes: Array.repeat(Number.MAX_VALUE, 11),
+      // 现实时间口径的挑战最速记录。Number.MAX_VALUE 表示“尚无现实时间记录”，
+      // 旧存档只有游戏内时间且无法可靠推算，因此保持哨兵值而不伪造历史现实成绩。
+      bestRealTimes: Array.repeat(Number.MAX_VALUE, 11),
       completedBits: 0,
     },
     infinity: {
       current: 0,
       bestTimes: Array.repeat(Number.MAX_VALUE, 8),
+      bestRealTimes: Array.repeat(Number.MAX_VALUE, 8),
       completedBits: 0,
     },
     eternity: {
@@ -270,6 +274,9 @@ window.player = {
   records: {
     gameCreatedTime: Date.now(),
     totalTimePlayed: 0,
+    // 「游戏内时间」总量：在 gameLoop 里逐帧累加 diff/当时倍率，
+    // 因此改倍率不会重算历史（旧存档缺该字段时由 seedInGameTime 一次性补齐）
+    totalInGameTime: 0,
     timePlayedAtBHUnlock: Number.MAX_VALUE,
     realTimePlayed: 0,
     realTimeDoomed: 0,
@@ -285,6 +292,8 @@ window.player = {
     thisInfinity: {
       time: 0,
       realTime: 0,
+      // 按时间片累计的游戏内时间（毫秒），与 time 的区别见 time.js 的 inGameTimeOf
+      inGameTime: 0,
       lastBuyTime: 0,
       maxAM: DC.D0,
       bestIPmin: DC.D0,
@@ -299,6 +308,7 @@ window.player = {
     thisEternity: {
       time: 0,
       realTime: 0,
+      inGameTime: 0,
       maxAM: DC.D0,
       maxIP: DC.D0,
       bestIPMsWithoutMaxAll: DC.D0,
@@ -314,6 +324,7 @@ window.player = {
     thisReality: {
       time: 0,
       realTime: 0,
+      inGameTime: 0,
       maxAM: DC.D0,
       maxIP: DC.D0,
       maxEP: DC.D0,

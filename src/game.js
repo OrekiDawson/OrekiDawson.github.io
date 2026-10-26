@@ -188,7 +188,7 @@ export function addInfinityTime(time, realTime, ip, infinities) {
   if (player.challenge.normal.current) challenge = `普通挑战 ${player.challenge.normal.current}`;
   if (player.challenge.infinity.current) challenge = `无限挑战 ${player.challenge.infinity.current}`;
   player.records.recentInfinities.pop();
-  player.records.recentInfinities.unshift([time / getGlobalSpeedFactor(), realTime, ip, infinities, challenge]);
+  player.records.recentInfinities.unshift([time, realTime, ip, infinities, challenge]);
   GameCache.bestRunIPPM.invalidate();
 }
 
@@ -220,7 +220,7 @@ export function addEternityTime(time, realTime, ep, eternities) {
   // If we call this function outside of dilation, it uses the existing AM and produces an erroneous number
   const gainedTP = player.dilation.active ? getTachyonGain() : DC.D0;
   player.records.recentEternities.pop();
-  player.records.recentEternities.unshift([time / getGlobalSpeedFactor(), realTime, ep, eternities, challenge, gainedTP]);
+  player.records.recentEternities.unshift([time, realTime, ep, eternities, challenge, gainedTP]);
   GameCache.averageRealTimePerEternity.invalidate();
 }
 
@@ -261,7 +261,7 @@ export function addRealityTime(time, realTime, rm, level, realities, ampFactor, 
   }
   const shards = Effarig.shardsGained;
   player.records.recentRealities.pop();
-  player.records.recentRealities.unshift([time / getGlobalSpeedFactor(), realTime, rm.times(ampFactor),
+  player.records.recentRealities.unshift([time, realTime, rm.times(ampFactor),
     realities, reality, level, shards * ampFactor, projIM]);
 }
 
@@ -538,19 +538,30 @@ export function gameLoop(passDiff, options = {}) {
   // expects to see identical numbers. We also don't increment the timers if the game has been beaten (Achievement 188)
   if (!Achievement(188).isUnlocked) {
     // realTime* 系列统计必须除以全局速度因子，否则现实时间会被错误地放大
-    player.records.realTimeDoomed += realDiff / getGlobalSpeedFactor();
-    player.records.realTimePlayed += realDiff / getGlobalSpeedFactor();
+    const globalFactor = getGlobalSpeedFactor();
+    const realDelta = realDiff / globalFactor;
+    // 「游戏内时间」累计器：旧存档缺字段时，先用本帧累加【之前】的原始游戏时间补齐一次，
+    // 否则会把本帧的时间算两遍。之后逐帧累加 diff/本帧倍率，中途改倍率不会重算历史。
+    seedInGameTime(player.records, "totalTimePlayed", "totalInGameTime");
+    seedInGameTime(player.records.thisInfinity);
+    seedInGameTime(player.records.thisEternity);
+    seedInGameTime(player.records.thisReality);
+    player.records.realTimeDoomed += realDelta;
+    player.records.realTimePlayed += realDelta;
     player.records.totalTimePlayed += diff;
-    player.records.thisInfinity.realTime += realDiff / getGlobalSpeedFactor();
+    player.records.thisInfinity.realTime += realDelta;
     player.records.thisInfinity.time += diff;
-    player.records.thisEternity.realTime += realDiff / getGlobalSpeedFactor();
-    if (Enslaved.isRunning && Enslaved.feltEternity && !EternityChallenge(12).isRunning) {
-      player.records.thisEternity.time += diff * (1 + Currency.eternities.value.clampMax(1e66).toNumber());
-    } else {
-      player.records.thisEternity.time += diff;
-    }
-    player.records.thisReality.realTime += realDiff / getGlobalSpeedFactor();
+    player.records.thisEternity.realTime += realDelta;
+    const eternityDiff = (Enslaved.isRunning && Enslaved.feltEternity && !EternityChallenge(12).isRunning)
+      ? diff * (1 + Currency.eternities.value.clampMax(1e66).toNumber())
+      : diff;
+    player.records.thisEternity.time += eternityDiff;
+    player.records.thisReality.realTime += realDelta;
     player.records.thisReality.time += diff;
+    player.records.totalInGameTime += diff / globalFactor;
+    player.records.thisInfinity.inGameTime += diff / globalFactor;
+    player.records.thisEternity.inGameTime += eternityDiff / globalFactor;
+    player.records.thisReality.inGameTime += diff / globalFactor;
   }
 
   DeltaTimeState.update(realDiff, diff);

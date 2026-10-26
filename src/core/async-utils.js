@@ -52,14 +52,36 @@ window.Async = {
       // Disable async if we're already doing async
       this.enabled = false;
       const runResult = this._run(fun, maxIter, config);
-      return config.then ? runResult.then(() => {
-        config.then();
-        this.enabled = true;
-      }) : runResult;
+      // enabled 必须无条件恢复：原先只在 config.then 存在且计算成功时才恢复，
+      // 一旦抛错（或调用方没给 then），后续所有 Async.run 都会退化成同步执行
+      const chained = config.then ? runResult.then(() => config.then()) : runResult;
+      return chained.then(
+        value => { this.enabled = true; return value; },
+        error => { this.enabled = true; throw error; }
+      );
     }
-    for (let i = 0; i < maxIter; ++i) {
-      fun(i);
+    // 同步回退分支（如被另一个 Async.run 嵌套调用时）：仍然要成对触发 asyncEntry/asyncExit。
+    // 调用方（simulateTime、扩增现实）把「重启计时器 / 解冻倍率 / 清除进度条」放在 asyncExit 里，
+    // 原先这条分支完全不调用它，会留下：GameIntervals 停摆 + OrekiSpeed 冻结令牌泄漏。
+    let syncFailure = null;
+    try {
+      if (config.asyncEntry) config.asyncEntry(0);
+      for (let i = 0; i < maxIter; ++i) {
+        fun(i);
+      }
+    } catch (e) {
+      syncFailure = e;
+    } finally {
+      if (config.asyncExit) {
+        try {
+          config.asyncExit();
+        } catch (exitError) {
+          // 清理本身出错时，不要把计算过程中的原始异常盖掉
+          if (!syncFailure) syncFailure = exitError;
+        }
+      }
     }
+    if (syncFailure) throw syncFailure;
     if (config.then) config.then();
   },
   /**
@@ -70,15 +92,32 @@ window.Async = {
     // We need to use config.progress variables because something else could change them
     // (e.g. someone speeding up offline progress)
     config.progress.maxIter = maxIter;
-    config.progress.remaining = this.runForTime(fun, config.progress.maxIter, config);
-    const sleepTime = config.sleepTime || 1;
-    if (!config.progress.remaining) return;
-    if (config.asyncEntry) config.asyncEntry(config.progress.maxIter - config.progress.remaining);
-    do {
-      await this.sleepPromise(sleepTime);
-      config.progress.remaining = this.runForTime(fun, config.progress.remaining, config);
-      if (config.asyncProgress) config.asyncProgress(config.progress.maxIter - config.progress.remaining);
-    } while (config.progress.remaining > 0);
-    if (config.asyncExit) config.asyncExit();
+    let failure = null;
+    try {
+      config.progress.remaining = this.runForTime(fun, config.progress.maxIter, config);
+      const sleepTime = config.sleepTime || 1;
+      if (config.asyncEntry) config.asyncEntry(config.progress.maxIter - config.progress.remaining);
+      // 这里不能用 return 提前退出：finally 里捕获到的清理异常会因此被丢掉
+      if (config.progress.remaining > 0) {
+        do {
+          await this.sleepPromise(sleepTime);
+          config.progress.remaining = this.runForTime(fun, config.progress.remaining, config);
+          if (config.asyncProgress) config.asyncProgress(config.progress.maxIter - config.progress.remaining);
+        } while (config.progress.remaining > 0);
+      }
+    } catch (e) {
+      failure = e;
+    } finally {
+      // 早退（一批就跑完）与异常抛出都必须走清理：否则 asyncEntry 造成的副作用
+      // （GameIntervals 停止、simulateTime 的倍率冻结）不会被撤销
+      if (config.asyncExit) {
+        try {
+          config.asyncExit();
+        } catch (exitError) {
+          if (!failure) failure = exitError;
+        }
+      }
+    }
+    if (failure) throw failure;
   }
 };

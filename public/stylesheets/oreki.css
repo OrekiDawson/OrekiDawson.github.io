@@ -96,6 +96,32 @@
   line-height: 1.2;
 }
 
+/* 自动购买器间隔缩放开关：与速度设置区同处一块，排版沿用同一套尺寸 */
+.c-oreki-speed__autobuyer {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  align-items: stretch;
+  width: 100%;
+  flex: 1 1 100%;
+}
+
+.c-oreki-speed__autobuyer-toggle {
+  width: auto !important;
+  height: auto !important;
+  min-height: 5.5rem;
+  flex: 0 0 auto;
+  margin: 0 !important;
+  padding: 0 1.2rem;
+  /* 按钮文案保持单行，避免「关闭」被挤到第二行 */
+  white-space: nowrap;
+}
+
+.c-oreki-speed__autobuyer-hint {
+  min-height: 5.5rem;
+}
+
 /* 窄屏（手机）：信息区与输入区各占整行，快捷按钮三列换行 */
 @media screen and (max-width: 900px) {
   .c-oreki-speed__info,
@@ -113,6 +139,10 @@
   .c-oreki-speed__preset {
     flex: 1 1 calc(33.33% - 0.5rem);
     min-width: 0;
+  }
+
+  .c-oreki-speed__autobuyer-toggle {
+    flex: 1 1 100%;
   }
 }
 

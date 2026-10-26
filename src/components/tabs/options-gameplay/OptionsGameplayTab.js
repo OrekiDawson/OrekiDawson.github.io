@@ -26,6 +26,8 @@ export default {
       speedFactor: GameSpeed.factor,
       speedInput: String(GameSpeed.factor),
       speedPresets: [1, 10, 100, 1000, 10000, 100000],
+      // 直接读 GameSpeed 的开关状态，不另设一份存档/本地状态
+      scaleAutobuyerInterval: GameSpeed.scaleAutobuyerInterval,
     };
   },
   computed: {
@@ -76,6 +78,10 @@ export default {
     automatorLogSize(newValue) {
       player.options.automatorEvents.maxEntries = parseInt(newValue, 10);
     },
+    // 开关状态唯一来源是 GameSpeed，这里只负责写回（含 localStorage 持久化）
+    scaleAutobuyerInterval(newValue) {
+      GameSpeed.setScaleAutobuyerInterval(newValue);
+    },
   },
   // This puts the slider in the right spot on initialization
   created() {
@@ -96,6 +102,7 @@ export default {
       this.automatorUnlocked = Player.automatorUnlocked;
       this.automatorLogSize = options.automatorEvents.maxEntries;
       this.speedFactor = GameSpeed.factor;
+      this.scaleAutobuyerInterval = GameSpeed.scaleAutobuyerInterval;
     },
     applySpeedValue(value) {
       const result = GameSpeed.set(value);
@@ -182,6 +189,20 @@ export default {
         >
           恢复默认
         </button>
+      </div>
+      <div class="l-options-grid__row c-oreki-speed__autobuyer">
+        <PrimaryToggleButton
+          v-model="scaleAutobuyerInterval"
+          class="o-primary-btn--option c-oreki-speed__autobuyer-toggle"
+          label="自动购买器间隔随倍率缩短："
+        />
+        <div class="o-primary-btn o-primary-btn--option c-oreki-speed__info c-oreki-speed__autobuyer-hint">
+          <b>仅影响反物质维度自动购买器</b>
+          <span class="c-oreki-speed__hint">
+            开启后，反物质维度自动购买器的购买间隔会按游戏速度倍率缩短，
+            让购买节奏跟得上游戏时间；默认关闭，×1 时行为不变。
+          </span>
+        </div>
       </div>
       <div class="l-options-grid__row">
         <OptionsButton

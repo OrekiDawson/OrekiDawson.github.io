@@ -111,7 +111,9 @@
   width: auto !important;
   height: auto !important;
   min-height: 5.5rem;
-  flex: 0 0 auto;
+  /* 固定同一宽度：两行（AD / Tick Speed）的开关与提示框才能上下对齐
+     29rem 是两行文案里较长那一行放得下的宽度（27rem 时较长行会被内容撑宽） */
+  flex: 0 0 29rem;
   margin: 0 !important;
   padding: 0 1.2rem;
   /* 按钮文案保持单行，避免「关闭」被挤到第二行 */

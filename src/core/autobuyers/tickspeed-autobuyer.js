@@ -24,6 +24,13 @@ export class TickspeedAutobuyerState extends UpgradeableAutobuyerState {
     return Player.defaultStart.auto.tickspeed.interval;
   }
 
+  // 实验对象：Tick Speed 购买器参与 interval 缩放（独立开关，默认关闭）。
+  // 依据：高倍率下「条件已满足但被现实时间间隔挡住」的帧占绝大多数，
+  // 缩放后购买节奏按游戏时间而非现实时间，F=1 时除以 1 与原版一致。
+  get usesSpeedScaledInterval() {
+    return typeof GameSpeed !== "undefined" && GameSpeed.scaleTickspeedAutobuyerInterval;
+  }
+
   get isBought() {
     return this.data.isBought;
   }

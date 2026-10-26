@@ -16,6 +16,8 @@
 const STORAGE_KEY = "oreki-game-speed";
 /** 实验开关：自动购买器 interval 是否按全局倍率缩放（独立持久化，默认关闭） */
 const AUTOBUYER_SCALE_KEY = "oreki-autobuyer-interval-scale";
+/** 实验开关：Tick Speed 购买器的 interval 是否按全局倍率缩放（与上一个开关相互独立） */
+const TICKSPEED_SCALE_KEY = "oreki-tickspeed-autobuyer-interval-scale";
 
 export const GAME_SPEED_DEFAULT = 10000;
 export const GAME_SPEED_MIN = 1;
@@ -106,6 +108,8 @@ let currentFactor = readStored();
 let simulationToken = null;
 /** 自动购买器 interval 缩放开关（实验特性，默认关闭；关闭时与原行为完全一致） */
 let autobuyerIntervalScaling = readStoredFlag(AUTOBUYER_SCALE_KEY);
+/** Tick Speed 购买器间隔缩放开关（实验特性，默认关闭，与上一个开关互不影响） */
+let tickspeedIntervalScaling = readStoredFlag(TICKSPEED_SCALE_KEY);
 
 export const GameSpeed = {
   get storageKey() { return STORAGE_KEY; },
@@ -131,6 +135,18 @@ export const GameSpeed = {
     return autobuyerIntervalScaling;
   },
   get autobuyerScaleStorageKey() { return AUTOBUYER_SCALE_KEY; },
+
+  /**
+   * 实验开关（默认关闭）：Tick Speed 购买器专用，与反物质维度那个开关完全独立。
+   * 打开后 Tick Speed 购买器同样按游戏速度倍率缩短间隔；F=1 时行为不变。
+   */
+  get scaleTickspeedAutobuyerInterval() { return tickspeedIntervalScaling; },
+  setScaleTickspeedAutobuyerInterval(value) {
+    tickspeedIntervalScaling = !!value;
+    writeStoredFlag(TICKSPEED_SCALE_KEY, tickspeedIntervalScaling);
+    return tickspeedIntervalScaling;
+  },
+  get tickspeedAutobuyerScaleStorageKey() { return TICKSPEED_SCALE_KEY; },
 
   /**
    * 设置倍率。成功返回 { ok:true }，失败返回 { ok:false, message } 且不改变任何状态。

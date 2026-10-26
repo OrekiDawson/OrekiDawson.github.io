@@ -10,7 +10,7 @@ export class AntimatterDimensionAutobuyerState extends UpgradeableAutobuyerState
   // 实验对象：反物质维度购买器（tier 1-8 共用本类）参与 interval 缩放。
   // 是否真正生效由 GameSpeed.scaleAutobuyerInterval 决定（默认关闭）。
   get usesSpeedScaledInterval() {
-    return true;
+    return typeof GameSpeed !== "undefined" && GameSpeed.scaleAutobuyerInterval;
   }
 
   get name() {

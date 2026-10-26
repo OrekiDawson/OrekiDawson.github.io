@@ -28,6 +28,7 @@ export default {
       speedPresets: [1, 10, 100, 1000, 10000, 100000],
       // 直接读 GameSpeed 的开关状态，不另设一份存档/本地状态
       scaleAutobuyerInterval: GameSpeed.scaleAutobuyerInterval,
+      scaleTickspeedAutobuyerInterval: GameSpeed.scaleTickspeedAutobuyerInterval,
     };
   },
   computed: {
@@ -82,6 +83,9 @@ export default {
     scaleAutobuyerInterval(newValue) {
       GameSpeed.setScaleAutobuyerInterval(newValue);
     },
+    scaleTickspeedAutobuyerInterval(newValue) {
+      GameSpeed.setScaleTickspeedAutobuyerInterval(newValue);
+    },
   },
   // This puts the slider in the right spot on initialization
   created() {
@@ -103,6 +107,7 @@ export default {
       this.automatorLogSize = options.automatorEvents.maxEntries;
       this.speedFactor = GameSpeed.factor;
       this.scaleAutobuyerInterval = GameSpeed.scaleAutobuyerInterval;
+      this.scaleTickspeedAutobuyerInterval = GameSpeed.scaleTickspeedAutobuyerInterval;
     },
     applySpeedValue(value) {
       const result = GameSpeed.set(value);
@@ -201,6 +206,20 @@ export default {
           <span class="c-oreki-speed__hint">
             开启后，反物质维度自动购买器的购买间隔会按游戏速度倍率缩短，
             让购买节奏跟得上游戏时间；默认关闭，×1 时行为不变。
+          </span>
+        </div>
+      </div>
+      <div class="l-options-grid__row c-oreki-speed__autobuyer">
+        <PrimaryToggleButton
+          v-model="scaleTickspeedAutobuyerInterval"
+          class="o-primary-btn--option c-oreki-speed__autobuyer-toggle c-oreki-speed__tickspeed-toggle"
+          label="Tick Speed 购买器间隔随倍率缩短："
+        />
+        <div class="o-primary-btn o-primary-btn--option c-oreki-speed__info c-oreki-speed__autobuyer-hint">
+          <b>仅影响 Tick Speed 自动购买器</b>
+          <span class="c-oreki-speed__hint">
+            开启后，Tick Speed 自动购买器的购买间隔会按游戏速度倍率缩短，
+            让计数频率升级跟得上游戏时间；默认关闭，×1 时行为不变。
           </span>
         </div>
       </div>

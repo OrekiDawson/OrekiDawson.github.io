@@ -948,12 +948,13 @@ export const AutomatorCommands = [
           AutomatorData.logCommandEvent(`已跳过 WAIT 指令（${parseConditionalIntoText(ctx)} 为真）`,
             ctx.startLine);
         }
-        AutomatorData.isWaiting = false;
+        AutomatorBackend.clearWaitingState();
         return AUTOMATOR_COMMAND_STATUS.NEXT_INSTRUCTION;
       }
       if (!AutomatorData.isWaiting) {
         AutomatorData.logCommandEvent(`开始执行 WAIT 指令，等待${parseConditionalIntoText(ctx)}`, ctx.startLine);
         AutomatorData.waitStart = Date.now();
+        AutomatorData.waitingFor = parseConditionalIntoText(ctx);
       }
       AutomatorData.isWaiting = true;
       return AUTOMATOR_COMMAND_STATUS.NEXT_TICK_SAME_INSTRUCTION;
@@ -992,12 +993,13 @@ export const AutomatorCommands = [
         if (prestigeOccurred) {
           const timeWaited = TimeSpan.fromMilliseconds(Date.now() - AutomatorData.waitStart).toStringShort();
           AutomatorData.logCommandEvent(`已执行 WAIT 指令，继续运行（${timeWaited} 后进行 ${prestigeName}, 获得 ${findLastPrestigeRecord(prestigeName)}）`, ctx.startLine);
-          AutomatorData.isWaiting = false;
+          AutomatorBackend.clearWaitingState();
           return AUTOMATOR_COMMAND_STATUS.NEXT_INSTRUCTION;
         }
         if (!AutomatorData.isWaiting) {
           AutomatorData.logCommandEvent(`开始执行 WAIT 指令，等待${prestigeName}`, ctx.startLine);
           AutomatorData.waitStart = Date.now();
+          AutomatorData.waitingFor = prestigeName;
         }
         AutomatorData.isWaiting = true;
         return AUTOMATOR_COMMAND_STATUS.NEXT_TICK_SAME_INSTRUCTION;
@@ -1032,12 +1034,13 @@ export const AutomatorCommands = [
         const timeWaited = TimeSpan.fromMilliseconds(Date.now() - AutomatorData.waitStart).toStringShort();
         AutomatorData.logCommandEvent(`已执行 WAIT 指令，继续运行（等待 ${timeWaited} 后${bhStr}）`,
           ctx.startLine);
-        AutomatorData.isWaiting = false;
+        AutomatorBackend.clearWaitingState();
         return AUTOMATOR_COMMAND_STATUS.NEXT_INSTRUCTION;
       }
       if (!AutomatorData.isWaiting) {
         AutomatorData.logCommandEvent(`开始执行 WAIT 指令，等待${bhStr}`, ctx.startLine);
         AutomatorData.waitStart = Date.now();
+        AutomatorData.waitingFor = bhStr;
       }
       AutomatorData.isWaiting = true;
       return AUTOMATOR_COMMAND_STATUS.NEXT_TICK_SAME_INSTRUCTION;

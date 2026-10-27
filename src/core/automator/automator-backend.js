@@ -157,6 +157,10 @@ export const AutomatorData = {
   // Used as a flag to make sure that wait commands only add one entry to the log instead of every execution attempt
   isWaiting: false,
   waitStart: 0,
+  // 当前这条 wait 在等什么（条件表达式 / 重置事件名 / 黑洞状态），仅用于界面显示与诊断日志
+  waitingFor: "",
+  // 存已经记录过「等待超时」日志的那一次的 waitStart，保证同一次等待只记录一条
+  waitWarnedAt: 0,
   lastEvent: 0,
   eventLog: [],
   isEditorFullscreen: false,
@@ -178,6 +182,8 @@ export const AutomatorData = {
   MAX_ALLOWED_CONSTANT_COUNT: 30,
   MIN_CHARS_BETWEEN_UNDOS: 10,
   MAX_UNDO_ENTRIES: 30,
+  // 单条 wait 等待多久（现实毫秒）后开始提示「可能永远等不到」，只做诊断，不改变任何脚本行为
+  WAIT_WARNING_MILLISECONDS: 60000,
 
   scriptIndex() {
     return player.reality.automator.state.editorScript;
@@ -777,6 +783,21 @@ export const AutomatorBackend = {
     for (let count = 0; count < commandsThisUpdate && this.isRunning; ++count) {
       if (!this.step()) break;
     }
+    this.checkWaitTimeout();
+  },
+
+  // 一条 wait 指令长时间等不到条件时，玩家在界面上无法与「正常推进」区分，这里补一条一次性诊断日志。
+  // 只记录，不停止脚本、不替玩家执行任何重置，避免自作主张改变策略或损失资源。
+  checkWaitTimeout() {
+    if (!AutomatorData.isWaiting) return;
+    const elapsed = Date.now() - AutomatorData.waitStart;
+    if (elapsed < AutomatorData.WAIT_WARNING_MILLISECONDS) return;
+    // 同一次等待只提醒一次：用 waitStart 作为这次等待的身份
+    if (AutomatorData.waitWarnedAt === AutomatorData.waitStart) return;
+    AutomatorData.waitWarnedAt = AutomatorData.waitStart;
+    const waited = TimeSpan.fromMilliseconds(elapsed).toStringShort();
+    AutomatorData.logCommandEvent(`WAIT 指令已等待 ${waited}，条件仍未满足（${AutomatorData.waitingFor}）。` +
+      `如果它不会自己成立，需要手动推进对应进度或调整脚本`, this.currentLineNumber);
   },
 
   step() {
@@ -989,11 +1010,21 @@ export const AutomatorBackend = {
     this.stack.clear();
     this.state.mode = AUTOMATOR_MODE.PAUSE;
     this.hasJustCompleted = true;
+    this.clearWaitingState();
     AutomatorHighlighter.clearAllHighlightedLines();
   },
 
   pause() {
     this.state.mode = AUTOMATOR_MODE.PAUSE;
+    // 暂停后重新计时：否则恢复时会沿用暂停前的起始时间，「已等待」和超时日志都会把暂停时间算进去
+    this.clearWaitingState();
+  },
+
+  // 清空「正在等待」的状态。isWaiting/waitingFor 是跨命令共享的临时状态，离开运行态时必须一起清掉，
+  // 否则下一条 wait 会以为自己在续等上一条，既少记一条日志，等待时长也会从错误的时间点算起
+  clearWaitingState() {
+    AutomatorData.isWaiting = false;
+    AutomatorData.waitingFor = "";
   },
 
   start(scriptID = this.state.topLevelScript, initialMode = AUTOMATOR_MODE.RUN, compile = true) {
@@ -1009,7 +1040,7 @@ export const AutomatorBackend = {
       this.reset(scriptObject.commands);
       this.state.mode = initialMode;
     }
-    AutomatorData.isWaiting = false;
+    this.clearWaitingState();
     if (player.options.automatorEvents.clearOnRestart) AutomatorData.clearEventLog();
   },
 

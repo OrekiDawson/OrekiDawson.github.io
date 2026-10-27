@@ -11,6 +11,9 @@ export default {
     return {
       isRunning: false,
       isPaused: false,
+      isWaiting: false,
+      waitSeconds: 0,
+      waitingFor: "",
       repeatOn: false,
       justCompleted: false,
       forceRestartOn: false,
@@ -53,6 +56,11 @@ export default {
       lineNum = lineNum.slice(lineNum.length - digits);
 
       if (this.isPaused) return `已暂停：${this.statusName} （于第 ${lineNum} 行恢复）`;
+      // 停在一条 wait 上时，界面原本与「正常推进」完全一样，玩家看不出它其实一动不动。
+      // 这里把等待条件与实际等待时长显示出来，让「卡住」与「在跑」可以直接区分
+      if (this.isRunning && this.isWaiting) {
+        return `等待中：${this.statusName}（第 ${lineNum} 行）｜等待 ${this.waitingFor}，已等待 ${this.waitTimeText}`;
+      }
       if (this.isRunning) return `运行中：${this.statusName}（第 ${lineNum} 行）`;
       if (this.hasErrors) return `已停止：${this.statusName} 有错误（无法运行）`;
       return `已停止：将开始运行 ${this.statusName}`;
@@ -60,11 +68,29 @@ export default {
     maxScriptChars() {
       return AutomatorData.MAX_ALLOWED_SCRIPT_CHARACTERS;
     },
+    waitTimeText() {
+      return TimeSpan.fromSeconds(this.waitSeconds).toStringShort();
+    },
+    // 等得过久时把状态文字标黄，提示「这条 wait 可能永远等不到」；只改颜色，不改脚本行为
+    waitWarning() {
+      return this.isWaiting && this.waitSeconds * 1000 >= AutomatorData.WAIT_WARNING_MILLISECONDS;
+    },
   },
   methods: {
     update() {
       this.isRunning = AutomatorBackend.isRunning;
       this.isPaused = AutomatorBackend.isOn && !this.isRunning;
+      this.isWaiting = this.isRunning && AutomatorData.isWaiting;
+      // 等待对象也放进响应式字段：AutomatorData 不是响应式的，只靠时长变化触发重渲染会短暂显示上一个条件
+      this.waitingFor = this.isWaiting ? (AutomatorData.waitingFor || "条件") : "";
+      // 时长每帧刷新，保证「已等待」真的在走；暂停/停止时归零，不把暂停时间算进等待。
+      // 取 0.1 秒粒度，避免等待期间每帧都触发一次重渲染；不足 0.1 秒时按 0.1 秒显示，免得出现「0 毫秒」
+      if (this.isWaiting) {
+        const rawSeconds = (Date.now() - AutomatorData.waitStart) / 1000;
+        this.waitSeconds = Math.max(0.1, Math.round(rawSeconds * 10) / 10);
+      } else {
+        this.waitSeconds = 0;
+      }
       this.repeatOn = AutomatorBackend.state.repeat;
       this.justCompleted = AutomatorBackend.hasJustCompleted;
       this.forceRestartOn = AutomatorBackend.state.forceRestart;
@@ -227,7 +253,10 @@ export default {
       />
       <span
         class="c-automator__status-text"
-        :class="{ 'c-automator__status-text--error' : hasErrors && !(isRunning || isPaused) }"
+        :class="{
+          'c-automator__status-text--error' : hasErrors && !(isRunning || isPaused),
+          'c-automator__status-text--warning' : waitWarning
+        }"
         data-v-automator-controls
       >
         {{ statusText }}

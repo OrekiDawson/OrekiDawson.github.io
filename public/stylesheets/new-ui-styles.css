@@ -1001,5 +1001,20 @@ body.t-s12 {
     width: 100%;
     margin: 0.4rem 0;
   }
+
+  /* 重置/星系一行两个，按钮固定 25rem，窄屏下会被各自的 12rem 容器裁掉 */
+  .resets-container {
+    flex-wrap: wrap;
+  }
+
+  .reset-container {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .reset-container .o-primary-btn {
+    width: 100%;
+    min-width: 0;
+  }
 }
 

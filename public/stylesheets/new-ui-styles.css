@@ -916,3 +916,90 @@ body.t-s12 {
 .l-information {
   top: 7rem;
 }
+
+/* ===== 窄屏（手机）基础适配 =====
+   桌面布局要求「12.8rem 侧栏 + 约 50rem 内容」，在 392 CSS px 的手机上装不下：
+   侧栏吃掉 48% 宽度、头部用绝对定位 + 50rem 固定宽度、维度行内边距 90px 起步，
+   结果是右侧控件被裁到屏幕外、维度行文字竖排、购买按钮只剩一个字符。
+   以下规则只在 ≤620px 生效，桌面与平板布局完全不受影响。 */
+@media screen and (max-width: 620px) {
+  :root {
+    --sidebar-width: 5.6rem;
+  }
+
+  .c-modern-sidebar .o-tab-btn {
+    font-size: 1.2rem;
+  }
+
+  .c-modern-sidebar .l-tab-btn-inner {
+    padding: 0 0.2rem;
+    text-align: center;
+    line-height: 1.2;
+  }
+
+  .c-modal,
+  .c-modal__inner {
+    min-width: 0;
+    max-width: calc(100vw - 2rem);
+  }
+
+  /* 头部：绝对定位 + 50rem 固定宽度必然出界，改为流式堆叠 */
+  .c-prestige-info-blocks[data-v-header-prestige-group] {
+    flex-direction: column;
+    height: auto;
+    gap: 0.4rem;
+  }
+
+  .l-game-header__center[data-v-header-prestige-group],
+  .l-game-header__eternity[data-v-header-prestige-group],
+  .l-game-header__infinity[data-v-header-prestige-group] {
+    position: static;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .l-game-header__center[data-v-header-prestige-group] > .c-prestige-button-container {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  /* 维度区：桌面 90px 左内边距 + 50px 右内边距在窄屏吃掉一半宽度 */
+  .l-dimensions-container {
+    padding: 0.5rem 0;
+  }
+
+  /* 维度行：7 列网格 + 25rem 按钮在窄屏挤不下，改为「信息一行、按钮一行」 */
+  .c-dimension-row {
+    grid-template-columns: 1fr;
+    row-gap: 0.4rem;
+  }
+
+  .c-dimension-row > .l-dimension-text-container {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+
+  .c-dimension-row > .l-dim-row-multi-button-container {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+    justify-content: stretch;
+  }
+
+  .c-dimension-row > .l-dim-row-multi-button-container .o-primary-btn--new {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* 选项页：按钮固定 22rem 且整行居中，两列就 47rem，窄屏会两侧同时被裁 */
+  .l-options-grid__row {
+    flex-wrap: wrap;
+  }
+
+  .l-options-grid__button {
+    width: 100%;
+    margin: 0.4rem 0;
+  }
+}
+

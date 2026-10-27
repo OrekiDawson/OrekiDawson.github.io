@@ -599,11 +599,40 @@ export const AutomatorBackend = {
     };
   },
 
+  /**
+   * 【Mod 定制 · 2026-10-27】导入脚本后，把「正在运行的脚本」一起切到新导入的脚本。
+   *
+   * 背景：社区脚本按阶段分工（例：LSF 系列在拿到 1e18 RM 后要从 LSF-ATFG 换成 LSF-UFGV），
+   * 玩家在阶段切换时的动作是「粘贴导入 → 希望它立刻接上」。上游只把新脚本设为「编辑中」
+   * （`state.editorScript`），真正在跑的仍是旧脚本 `state.topLevelScript`，
+   * 界面上看不出差别 —— 于是自动机继续按上一阶段的策略空转。
+   * 本 Mod 的 10000× 全局倍率会把这个错误放大：空转 1 分钟现实时间就等于浪费 6e5 游戏秒。
+   *
+   * 语义边界：
+   * - 自动机原本**在运行**（RUN）：接管运行槽并保持 RUN。
+   * - 自动机原本**已暂停**（PAUSE）：只切换运行槽，仍保持暂停，等玩家自己继续。
+   * - 自动机**已停止**（栈为空）：不擅自启动，维持「只导入、不运行」的既有语义。
+   *
+   * @param {boolean} wasOn 导入前自动机是否处于开启状态（running 或 paused）
+   * @returns {boolean} 是否接管了运行槽
+   */
+  adoptImportedScript(wasOn) {
+    if (!wasOn) return false;
+    const scriptID = this.state.editorScript;
+    const paused = this.mode === AUTOMATOR_MODE.PAUSE;
+    this.state.topLevelScript = scriptID;
+    this.start(scriptID, paused ? AUTOMATOR_MODE.PAUSE : AUTOMATOR_MODE.RUN);
+    return true;
+  },
+
   // Creates a new script from the supplied import string
   importScriptContents(rawInput) {
     const parsed = this.parseScriptContents(rawInput);
+    if (!parsed) return false;
+    const wasOn = this.isOn;
     AutomatorData.createNewScript(parsed.content, parsed.name);
     this.initializeFromSave();
+    return this.adoptImportedScript(wasOn);
   },
 
   // This exports the selected script along with any constants and study presets it uses or references
@@ -698,6 +727,8 @@ export const AutomatorBackend = {
   // within the import data.
   importFullScriptData(rawInput, ignore) {
     const parsed = this.parseFullScriptData(rawInput);
+    if (!parsed) return false;
+    const wasOn = this.isOn;
     AutomatorData.createNewScript(parsed.content, parsed.name);
 
     if (!ignore.presets) {
@@ -713,6 +744,7 @@ export const AutomatorBackend = {
     }
 
     this.initializeFromSave();
+    return this.adoptImportedScript(wasOn);
   },
 
   update(diff) {

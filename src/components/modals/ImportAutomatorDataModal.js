@@ -80,6 +80,13 @@ export default {
     },
     constantButtonText() {
       return this.ignoreConstants ? "将忽略常量" : "将导入常量";
+    },
+    // 自动机正在运行时，导入会把「运行中的脚本」一起切过去（见 AutomatorBackend.adoptImportedScript）
+    automatorRunningText() {
+      if (!AutomatorBackend.isOn) return "";
+      return AutomatorBackend.mode === AUTOMATOR_MODE.PAUSE
+        ? "自动机当前已暂停：导入后会切换到新脚本，但仍保持暂停。"
+        : "自动机当前正在运行：导入后会立刻切换到新脚本继续运行。";
     }
   },
   mounted() {
@@ -134,6 +141,12 @@ export default {
     </template>
     这将在自动机脚本列表的末尾创建一个新的自动机脚本。
     <span v-if="isImportingExtraData">这将导入与该自动机脚本相关的额外数据。</span>
+    <br v-if="automatorRunningText">
+    <span
+      v-if="automatorRunningText"
+      class="c-import-data-name"
+      data-v-import-automator-data-modal
+    >{{ automatorRunningText }}</span>
     <input
       ref="input"
       v-model="input"

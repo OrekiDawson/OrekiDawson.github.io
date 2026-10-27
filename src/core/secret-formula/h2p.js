@@ -67,7 +67,7 @@ export const h2p = {
 - 无名氏「蓄能现实时间」不会因为加速而多蓄能。<br>
 - Ra 的记忆与记忆碎片产量、暗物质维度产量，只按 ${formatX(Math.pow(getGlobalSpeedFactorRaw(), 1 / 2))} 加速。<br>
 - 莱特拉现实中，熵产量与速度恢复不加速。<br>
-- 在毁灭现实中，全局速度倍率会再开一次平方，即 ${formatX(Math.pow(getGlobalSpeedFactorRaw(), 1 / 2))}。<br>
+- 毁灭现实（佩勒）与其他阶段使用相同的全额倍率，不再额外开平方（上游 ADfaster 会在该阶段把倍率降到 ${formatX(Math.pow(getGlobalSpeedFactorRaw(), 1 / 2))}，本版本按两端一致原则取消）。<br>
 <br>
 此外，本版本保留了加速版特有的若干平衡性增强：<br>
 - 破碎无限升级中的「无限产出」会额外计入成就 87 与时间研究 32 的加成。<br>

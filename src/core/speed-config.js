@@ -184,20 +184,27 @@ export const GameSpeed = {
 
 /**
  * 挂载全局符号，兼容上游 60 余处既有调用点。
- * - getGlobalSpeedFactor()：生效倍率，Pelle 毁灭现实中开平方（沿用上游设计）
- * - getGlobalSpeedFactorRaw()：不做 Pelle 开方处理
+ * - getGlobalSpeedFactor()：生效倍率。**毁灭现实不再额外开平方**（见下）
+ * - getGlobalSpeedFactorRaw()：保留为同义入口（历史调用点不隔离）
  * - globalSpeedFactor：只读 getter，供 H2P 等文案显示动态倍率
+ *
+ * 【Mod 定制 · 2026-10-27】上游 ADfaster 在 `public/index.html:6` 让
+ * `getGlobalSpeedFactor()` 在 Pelle 毁灭现实中返回 `sqrt(f)`，本 Mod 早期沿用。
+ * 后果是：默认 10000× 下，毁灭现实只剩 100×，整条终局拉伸慢 100 倍；
+ * 且与本 Mod 的 Android 端（`OrekiSpeed.mult()` 无 isDoomed 分支，恒为全额）
+ * 形成跨端不一致（Web 100× vs Android 10000×）。
+ *
+ * 按《Oreki 爽玩优先标准》——缩短现实通关时间优先、两端规则一致——
+ * 这里取消开平方，毁灭现实与其余阶段同用全额倍率。
+ * 该函数同时是「乘」与「除」的唯一来源（`game.js` 注入点 `* f`、各现实时间
+ * 还原点 `/ f`、Ra/暗物质/黑洞的 `sqrt(f)` 派生），因此两侧自动成对，记录口径不会失真。
  */
 export function installSpeedGlobals(target = window) {
   // GameSpeed 需要作为全局暴露：oreki-tools / H2P 文案在运行时读取当前倍率
   target.GameSpeed = GameSpeed;
   target.OrekiSpeed = GameSpeed;
   target.getGlobalSpeedFactorRaw = () => GameSpeed.effectiveFactor;
-  target.getGlobalSpeedFactor = () => {
-    const factor = GameSpeed.effectiveFactor;
-    const pelle = target.Pelle;
-    return pelle !== undefined && pelle !== null && pelle.isDoomed ? Math.sqrt(factor) : factor;
-  };
+  target.getGlobalSpeedFactor = () => GameSpeed.effectiveFactor;
   Object.defineProperty(target, "globalSpeedFactor", {
     configurable: true,
     get: () => GameSpeed.factor

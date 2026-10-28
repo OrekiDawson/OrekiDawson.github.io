@@ -337,3 +337,267 @@
     white-space: normal;
   }
 }
+
+/* ===== 内置教程（选项 → 游戏性 → 内置教程） ===== */
+
+.c-oreki-tut {
+  width: 100%;
+  max-width: 92rem;
+  text-align: left;
+}
+
+.c-oreki-tut__layout {
+  display: flex;
+  gap: 1rem;
+  height: 50vh;
+  min-height: 20rem;
+}
+
+.c-oreki-tut__nav {
+  display: flex;
+  flex: 0 0 17rem;
+  flex-direction: column;
+  gap: 0.4rem;
+  overflow-y: auto;
+  padding-right: 0.3rem;
+}
+
+.c-oreki-tut__nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  font-family: inherit;
+  font-size: 1.2rem;
+  color: var(--color-text);
+  text-align: left;
+  background: var(--color-base);
+  border: 0.1rem solid rgb(255 255 255 / 20%);
+  border-radius: var(--var-border-radius, 0.5rem);
+  cursor: pointer;
+}
+
+.c-oreki-tut__nav-btn--active {
+  border-color: var(--color-reality);
+  font-weight: bold;
+}
+
+.c-oreki-tut__nav-index {
+  flex: 0 0 auto;
+  width: 1.8rem;
+  height: 1.8rem;
+  font-size: 1.05rem;
+  line-height: 1.8rem;
+  text-align: center;
+  border: 0.1rem solid currentColor;
+  border-radius: 50%;
+  opacity: 0.85;
+}
+
+.c-oreki-tut__nav-title {
+  flex: 1 1 auto;
+}
+
+.c-oreki-tut__main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.c-oreki-tut__head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 0.1rem solid rgb(255 255 255 / 15%);
+}
+
+.c-oreki-tut__head-title {
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
+.c-oreki-tut__head-subtitle {
+  font-size: 1.15rem;
+  opacity: 0.8;
+}
+
+.c-oreki-tut__scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding-right: 0.4rem;
+}
+
+.c-oreki-tut__section {
+  margin-bottom: 0.9rem;
+}
+
+.c-oreki-tut__section-title {
+  margin-bottom: 0.3rem;
+  font-size: 1.35rem;
+  font-weight: bold;
+  color: var(--color-reality);
+}
+
+.c-oreki-tut__points {
+  margin: 0;
+  padding-left: 1.6rem;
+  font-size: 1.25rem;
+  line-height: 1.6;
+}
+
+.c-oreki-tut__points li {
+  margin-bottom: 0.3rem;
+}
+
+.c-oreki-tut__current {
+  margin-bottom: 1rem;
+  padding: 0.8rem 1rem;
+  background: var(--color-base);
+  border: 0.1rem solid var(--color-good);
+  border-radius: var(--var-border-radius, 0.5rem);
+}
+
+.c-oreki-tut__current-label {
+  font-size: 1.1rem;
+  opacity: 0.75;
+}
+
+.c-oreki-tut__current-name {
+  margin-bottom: 0.3rem;
+  font-size: 1.4rem;
+  font-weight: bold;
+}
+
+.c-oreki-tut__current-focus {
+  margin-bottom: 0.5rem;
+  font-size: 1.25rem;
+  line-height: 1.55;
+}
+
+.c-oreki-tut__stages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.c-oreki-tut__stage-row {
+  padding: 0.6rem 0.8rem;
+  font-size: 1.2rem;
+  line-height: 1.55;
+  border: 0.1rem solid rgb(255 255 255 / 15%);
+  border-left: 0.4rem solid rgb(255 255 255 / 30%);
+  border-radius: var(--var-border-radius, 0.5rem);
+}
+
+.c-oreki-tut__stage-row--entered {
+  border-left-color: var(--color-good);
+}
+
+.c-oreki-tut__stage-row--available {
+  border-left-color: var(--color-reality);
+}
+
+.c-oreki-tut__stage-row--locked {
+  opacity: 0.7;
+}
+
+.c-oreki-tut__stage-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.c-oreki-tut__stage-name {
+  font-size: 1.25rem;
+  font-weight: bold;
+}
+
+.c-oreki-tut__stage-status {
+  font-size: 1.05rem;
+  opacity: 0.85;
+}
+
+.c-oreki-tut__stage-status--entered {
+  color: var(--color-good);
+}
+
+.c-oreki-tut__stage-status--available {
+  color: var(--color-reality);
+}
+
+.c-oreki-tut__stage-status--locked {
+  color: var(--color-bad);
+  opacity: 1;
+}
+
+.c-oreki-tut__lock {
+  font-weight: bold;
+  color: var(--color-bad);
+}
+
+.c-oreki-tut__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 0.1rem solid rgb(255 255 255 / 15%);
+}
+
+.c-oreki-tut__nav-move {
+  width: auto !important;
+  height: 3.6rem !important;
+  min-height: 3.6rem;
+  padding: 0 1.2rem;
+  font-size: 1.15rem;
+  border: 0.1rem solid var(--color-good);
+  background: var(--color-base);
+  color: var(--color-text);
+  border-radius: var(--var-border-radius, 0.5rem);
+  cursor: pointer;
+}
+
+.c-oreki-tut__nav-move--disabled {
+  opacity: 0.45;
+}
+
+.c-oreki-tut__counter {
+  font-size: 1.1rem;
+  opacity: 0.75;
+}
+
+@media screen and (max-width: 900px) {
+  .c-oreki-tut {
+    max-width: 100%;
+  }
+
+  .c-oreki-tut__layout {
+    flex-direction: column;
+    height: auto;
+    max-height: 68vh;
+  }
+
+  .c-oreki-tut__nav {
+    flex: 0 0 auto;
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 0.3rem;
+  }
+
+  .c-oreki-tut__nav-btn {
+    flex: 0 0 auto;
+    width: auto;
+    white-space: nowrap;
+  }
+
+  .c-oreki-tut__scroll {
+    max-height: 40vh;
+  }
+}
+

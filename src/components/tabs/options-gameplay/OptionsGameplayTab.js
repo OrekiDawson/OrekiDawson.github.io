@@ -236,6 +236,12 @@ export default {
         >
           存档工具
         </OptionsButton>
+        <OptionsButton
+          class="o-primary-btn--option"
+          onclick="Modal.orekiTutorial.show()"
+        >
+          内置教程
+        </OptionsButton>
       </div>
       <div class="l-options-grid__row">
         <OptionsButton

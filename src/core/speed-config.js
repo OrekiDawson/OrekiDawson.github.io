@@ -200,7 +200,15 @@ export const GameSpeed = {
     try {
       const p = target_player();
       if (!p) return false;
-      const ex = v => (v && typeof v.exponent === "number") ? Math.round(v.exponent) : 0;
+      // 用 0.01 数量级的分辨率做指纹：只看 exponent 取整会把「同一数量级内的真实增长」
+      // 误判成停滞（例如 1.2e100 → 4.8e100）。尾数信息一起纳入，既不漏判也不过敏。
+      const ex = v => {
+        if (v && typeof v.exponent === "number") {
+          const m = (typeof v.mantissa === "number" && v.mantissa > 0) ? Math.log10(v.mantissa) : 0;
+          return Math.round((v.exponent + m) * 100);
+        }
+        return typeof v === "number" ? Math.round(v * 100) : 0;
+      };
       signal = [
         ex(p.infinities), ex(p.infinityPoints), ex(p.eternities), ex(p.realities),
         ex(p.records.thisEternity.maxAM), p.dimensionBoosts, p.galaxies,

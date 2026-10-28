@@ -3,6 +3,7 @@ import TWEEN from "../modules/tween.js";
 import { ElectronRuntime, SteamRuntime } from "./steam/index.js";
 
 import { DC } from "./core/constants.js";
+import { tryInstantCompleteChallenges } from "./core/oreki-instant-challenges.js";
 import { deepmergeAll } from "./utility/deepmerge.js";
 import { DEV } from "./env.js";
 import { SpeedrunMilestones } from "./core/speedrun.js";
@@ -596,6 +597,10 @@ export function gameLoop(passDiff, options = {}) {
   DeltaTimeState.update(realDiff, diff);
 
   updateNormalAndInfinityChallenges(diff);
+
+  // 挑战进入即完成（Oreki）：必须在挑战状态建立之后、EternityChallenge(12).tryFail() 之前，
+  // 否则 EC12 可能在同一帧里先被限时判定判失败。详见 core/oreki-instant-challenges.js。
+  tryInstantCompleteChallenges();
 
   // IP generation is broken into a couple of places in gameLoop; changing that might change the
   // behavior of eternity farming.

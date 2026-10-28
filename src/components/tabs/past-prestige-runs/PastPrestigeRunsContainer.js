@@ -280,4 +280,4 @@ export default {
     </div>
   </div>
   `
-};
+};

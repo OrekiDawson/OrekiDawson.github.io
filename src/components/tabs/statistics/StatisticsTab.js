@@ -333,4 +333,4 @@ export default {
     </div>
   </div>
   `
-};
+};

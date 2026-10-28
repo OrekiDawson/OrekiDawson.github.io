@@ -14,7 +14,16 @@ export class BigCrunchAutobuyerState extends UpgradeableAutobuyerState {
     // [Oreki AU4] 完成过首次无限后即可运行：原版锁在普通挑战 12 之后，
     // 而挑战 10-12 需要 16 次无限才解锁，导致每轮都要手点大坍缩。
     if (Pelle.isDoomed) return PelleStrikes.infinity.hasStrike;
-    return this.canBeUpgraded || PlayerProgress.infinityUnlocked();
+    const unlocked = this.canBeUpgraded || PlayerProgress.infinityUnlocked();
+    // [Oreki AU4b] 用默认策略（AMOUNT，amount = 1）开自动坍缩会把反物质永久卡在 1.8e308：
+    // 实测 120 s 内 maxAM 恒为 1e25.7、Infinity Dimension 永远不可用，进度实际停滞。
+    // 首次接管时换成「单次 IP ≥ 10× 历史最高才坍缩」，让反物质在两次坍缩之间继续成长。
+    // 只改策略默认值，不动坍缩条件、重置副作用与间隔。
+    if (unlocked && this.data.mode === AUTO_CRUNCH_MODE.AMOUNT && Decimal.lt(this.data.amount, 10)) {
+      this.data.mode = AUTO_CRUNCH_MODE.X_HIGHEST;
+      this.data.xHighest = new Decimal(10);
+    }
+    return unlocked;
   }
 
   get canBeUpgraded() {

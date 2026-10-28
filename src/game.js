@@ -486,7 +486,9 @@ export function gameLoop(passDiff, options = {}) {
     diff *= getGlobalSpeedFactor();
   }
 
-  Autobuyers.tick();
+  // 自动购买器与产量累积改为「按游戏时间微步」执行（见下方 steppedCore）：
+  // 此处不再每帧只采购一次，否则高倍率下每帧的游戏时间跨度可达数十万毫秒，
+  // 采购节奏会被稀释成每帧一次 → 现实加速远低于倍率。Tutorial 等仍每帧一次。
   Tutorial.tutorialLoop();
 
   if (Achievement(165).isUnlocked && player.celestials.effarig.autoAdjustGlyphWeights) {
@@ -532,6 +534,33 @@ export function gameLoop(passDiff, options = {}) {
   }
   player.celestials.ra.peakGamespeed = Math.max(player.celestials.ra.peakGamespeed, getGameSpeedupFactor());
   Enslaved.isReleaseTick = false;
+
+  // ── 微步核心：采购 + 产量累积 ──────────────────────────────────────────────
+  // 高倍率下一帧的游戏时间可达数十万毫秒；原版每帧只采购一次，采购节奏被稀释成
+  // 「每帧一次」，现实加速因此远低于倍率。这里按游戏时间把 diff 切成 k 段，
+  // 每段执行「一次采购 + 一次产量累积」，让采购跟上时间推进。
+  // 其余机制（记录/best 时间、成就、挑战、prestige 判定、UI、Enslaved、黑洞相位）
+  // 仍然每帧只跑一次，避免重复计时与一次性副作用。k=1 时与原版逐字段等价。
+  const microSteps = microStepCount(diff);
+  const stepDiff = diff / microSteps;
+  // 每个微步同时推进「现实时间」的记账位置，否则 interval 门控在一帧内始终
+  // 看到 timeSinceLastTick = 0，采购仍然只会发生一次。循环结束后还原，
+  // 由下方统一的 records 累加写入真实增量（不重复计时）。
+  const realBase = player.records.realTimePlayed;
+  const realStep = (realDiff / getGlobalSpeedFactor()) / microSteps;
+  for (let step = 0; step < microSteps; step++) {
+    player.records.realTimePlayed = realBase + realStep * step;
+    Autobuyers.tick();
+    // 采购会改变倍率，必须在产量累积前失效缓存
+    GameCache.antimatterDimensionCommonMultiplier.invalidate();
+    GameCache.antimatterDimensionFinalMultipliers.invalidate();
+    GameCache.infinityDimensionCommonMultiplier.invalidate();
+    GameCache.timeDimensionCommonMultiplier.invalidate();
+    TimeDimensions.tick(stepDiff);
+    InfinityDimensions.tick(stepDiff);
+    AntimatterDimensions.tick(stepDiff);
+  }
+  player.records.realTimePlayed = realBase;
 
   // These need to all be done consecutively in order to minimize the chance of a reset occurring between real time
   // updating and game time updating. This is only particularly noticeable when game speed is 1 and the player
@@ -589,9 +618,7 @@ export function gameLoop(passDiff, options = {}) {
   EternityChallenge(12).tryFail();
   Achievements._power.invalidate();
 
-  TimeDimensions.tick(diff);
-  InfinityDimensions.tick(diff);
-  AntimatterDimensions.tick(diff);
+  // 维度产量累积已在上方「微步核心」中按 stepDiff 完成，此处不再重复 tick。
 
   const gain = Math.clampMin(FreeTickspeed.fromShards(Currency.timeShards.value).newAmount - player.totalTickGained, 0);
   player.totalTickGained += gain;
@@ -670,6 +697,17 @@ export function gameLoop(passDiff, options = {}) {
   GameUI.update();
   player.lastUpdate = thisUpdate;
   PerformanceStats.end("Game Update");
+}
+
+// 微步参数：一帧的游戏时间超过 MICRO_STEP_TARGET_MS 才切步，最多 MICRO_STEP_MAX 步。
+// 依据：原版 Autobuyers.tick() 每帧一次；高倍率下 diff/frame 可达数十万游戏毫秒，
+// 采购被稀释成「每帧一次」。历史上 k=10 时 CPU ≈8.4ms/帧，仍在 20ms 预算内。
+const MICRO_STEP_TARGET_MS = 1000;
+const MICRO_STEP_MAX = 32;
+
+function microStepCount(gameDiff) {
+  if (!Number.isFinite(gameDiff) || gameDiff <= MICRO_STEP_TARGET_MS) return 1;
+  return Math.clamp(Math.ceil(gameDiff / MICRO_STEP_TARGET_MS), 1, MICRO_STEP_MAX);
 }
 
 function updatePrestigeRates() {

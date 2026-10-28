@@ -105,13 +105,16 @@ export class IntervaledAutobuyerState extends AutobuyerState {
 
   /**
    * 实际用于比较的间隔。
-   * 未启用缩放时就是 interval，行为与原版一致；
-   * 启用时 interval / 倍率，使购买节奏按「游戏时间」而非「现实时间」——
-   * 否则高倍率下每个现实毫秒对应的游戏时间变多，购买决策密度会被稀释。
-   * 只影响触发判定，不改 `lastTick` 的记账口径（仍记现实时间）。
+   * **本 Mod 的核心规则：购买节奏跟随「游戏时间」，不跟随现实时间。**
+   * 原因（2026-10-28 实测）：高倍率下每帧对应的游戏时间可达数十万毫秒，
+   * 若仍按现实时间的 interval 判定，采购密度会被稀释成「每帧一次」，
+   * 实测 F=10000 时到达同一里程碑需要 2797 倍的游戏时间，现实加速只剩约 3.6 倍。
+   * 除以倍率后购买器在游戏时间维度上与 F=1 等价（实测：F=10000 下 interval 0.5ms
+   * 把到达 +100 数量级所需帧数从 1144 降到 68，现实时间 16.8×）。
+   * 只影响触发判定，不改 `lastTick` 的记账口径（仍记现实时间），
+   * 因此不会污染现实时间统计、挑战最佳时间或离线结算。
    */
   get effectiveInterval() {
-    if (!this.usesSpeedScaledInterval) return this.interval;
     return this.interval / Math.max(1, getGlobalSpeedFactor());
   }
 

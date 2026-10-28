@@ -350,8 +350,8 @@ export const realityUpgrades = [
     cost: 100000,
     requirement: () => `在 ${formatInt(15)} 分钟内进行一次现实（按游戏内时间判定）。当前最佳：${
       timeStatText(Time.bestRealityRealTime.totalMilliseconds, Time.bestReality.totalMilliseconds)}`,
-    hasFailed: () => Time.thisReality.totalMinutes / getGlobalSpeedFactor() >= 15,
-    checkRequirement: () => Time.thisReality.totalMinutes / getGlobalSpeedFactor() < 15,
+    hasFailed: () => inGameSecondsOf(player.records.thisReality) / 60 >= 15,
+    checkRequirement: () => inGameSecondsOf(player.records.thisReality) / 60 < 15,
     checkEvent: GAME_EVENT.REALITY_RESET_BEFORE,
     description: "基于最快达成现实的时间加成复制器速度",
     effect: () => 15 / Math.clamp(Time.bestReality.totalMinutes, 1 / 12, 15),

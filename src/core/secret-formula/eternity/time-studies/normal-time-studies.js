@@ -396,7 +396,7 @@ ${formatInt(50)} 毫秒减少到 ${formatInt(1)} 毫秒`,
       : "无限点获得倍数加成，但在本次无限中逐渐衰减"),
     effect: () => (Perk.studyActiveEP.isBought
       ? DC.E45
-      : DC.E45.divide(thisInfinityMult(Time.thisInfinity.totalSeconds / getGlobalSpeedFactor())).clampMin(1)),
+      : DC.E45.divide(thisInfinityMult(inGameSecondsOf(player.records.thisInfinity))).clampMin(1)),
     formatEffect: value => (Perk.studyActiveEP.isBought ? undefined : formatX(value, 2, 1))
   },
   {

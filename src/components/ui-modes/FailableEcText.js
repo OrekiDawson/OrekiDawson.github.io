@@ -44,7 +44,8 @@ export default {
         if (this.currentEternityChallengeId === 4) {
           this.currentResource.copyFrom(Currency.infinities);
         } else {
-          this.currentResource = new Decimal(Time.thisEternity.totalSeconds / getGlobalSpeedFactor());
+          // 与 checkRestriction 用同一个时钟，避免"显示还剩余量、实际已判失败"的分叉
+          this.currentResource = new Decimal(inGameSecondsOf(player.records.thisEternity));
         }
         this.maximumResource = new Decimal(EternityChallenge.current.config.restriction(
           EternityChallenge.current.completions));

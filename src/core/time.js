@@ -73,6 +73,22 @@ export function inGameTimeOf(section, rawKey = "time", intoKey = "inGameTime") {
 }
 
 /**
+ * 同 inGameTimeOf，但按秒返回。凡是「挑战限时判定 / 时间门槛 / 时间相关效果」都应走这里，
+ * 而不是 `Time.thisX.totalSeconds / getGlobalSpeedFactor()`。
+ *
+ * 为什么必须用累加器：`totalSeconds / 当前倍率` 会把**整段历史**按改完之后的倍率重算。
+ * 玩家在「选项 → 游戏性」里把倍率从 1× 调到 10000×，已流逝的游戏内秒数会瞬间缩成万分之一
+ * ——挑战限时判定随之被拉长一万倍（或反方向瞬间超时），挑战成绩与限时判定也因此互不同源。
+ * 累加器逐帧记 `diff / 当时倍率`，与倍率变更历史无关。
+ * @param {object} section 形如 player.records.thisEternity 的记录段
+ * @returns {number} 游戏内秒数
+ */
+export function inGameSecondsOf(section) {
+  return inGameTimeOf(section) / 1000;
+}
+
+
+/**
  * 旧存档首次进入新版本时，把缺失的累计器按「当前倍率」补齐一次，使其与既有原始游戏时间对齐。
  * 只在累计器为 0 且原始时间大于 0 时执行，因此重复加载、重复保存不会二次换算。
  * @param {object} section 记录段

@@ -186,7 +186,9 @@ export const eternityChallenges = [
     pelleGoal: DC.E208000,
     goalIncrease: DC.E12000,
     restriction: completions => Math.max(10 - 2 * completions, 1) / 10,
-    checkRestriction: restriction => Time.thisEternity.totalSeconds / getGlobalSpeedFactor() < restriction,
+    // 限时判定与挑战成绩（bestTimes）必须同源：都走逐帧累加器，而不是「原始时间 ÷ 当前倍率」。
+    // 旧口径在玩家中途改倍率时会把整段历史按新倍率重算 → 限时被放大或瞬间超时。
+    checkRestriction: restriction => inGameSecondsOf(player.records.thisEternity) < restriction,
     formatRestriction: restriction => `在 ${format(restriction, 0, 1)} 现实秒内.`,
     failedRestriction: "(你超过了挑战时限，挑战失败)",
     reward: {

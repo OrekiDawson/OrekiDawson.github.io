@@ -1,5 +1,6 @@
 import { UpgradeableAutobuyerState } from "./autobuyer.js";
 import { PlayerProgress } from "../player-progress.js";
+import { DC } from "../constants.js";
 
 export class BigCrunchAutobuyerState extends UpgradeableAutobuyerState {
   get data() {
@@ -120,6 +121,11 @@ export class BigCrunchAutobuyerState extends UpgradeableAutobuyerState {
 
   get willInfinity() {
     if (!player.break || Player.isInAntimatterChallenge) return true;
+    // [Oreki AD3b] 首次 ID1 突破：IP 已经够了（AD3 兜底已到账）之后，别再坍缩，
+    // 让 thisEternity.maxAM 一路爬过 ID1 的反物质门槛（1e1100）。
+    // 否则「每轮坍缩把反物质打回低位」会让 maxAM 永远停在 1e3xx，
+    // 而 ID1 的 canUnlock 要求 maxAM ≥ 1e1100 —— 与 IP 无关，所以只补 IP 永远解锁不了。
+    if (this.waitingForId1Peak) return false;
 
     switch (this.mode) {
       case AUTO_CRUNCH_MODE.AMOUNT:
@@ -129,6 +135,23 @@ export class BigCrunchAutobuyerState extends UpgradeableAutobuyerState {
       case AUTO_CRUNCH_MODE.X_HIGHEST:
       default:
         return gainedInfinityPoints().gte(this.highestPrevPrestige.times(this.xHighest));
+    }
+  }
+
+  /**
+   * [Oreki AD3b] 是否应该「攒着不坍缩，等反物质爬到 ID1 门槛」。
+   * 只读判断；窗口：已 Break / 未解锁永恒 / 非挑战 / 非毁灭 / IP 已 ≥ 1e8 / maxAM 还没到 1e1100。
+   */
+  get waitingForId1Peak() {
+    try {
+      if (!player.break) return false;
+      if (PlayerProgress.eternityUnlocked()) return false;
+      if (NormalChallenge.isRunning || InfinityChallenge.isRunning) return false;
+      if (Pelle.isDoomed) return false;
+      if (Currency.infinityPoints.value.lt(DC.E8)) return false;
+      return player.records.thisEternity.maxAM.lt(DC.E1100);
+    } catch (e) {
+      return false;
     }
   }
 

@@ -118,7 +118,36 @@ export function gainedInfinityPoints() {
     ip = ip.pow(getSecondaryGlyphEffect("infinityIP"));
   }
 
-  return ip.floor();
+  ip = ip.floor();
+  // [Oreki AD3] 首次 ID1 突破兜底
+  // 事实（R13.1 同帧实测）：第一无限维度的解锁要求与初始成本同为 1e8 IP；
+  // 而 Break 后该阶段单次坍缩收益只有 ~3.5e5，同时 X_HIGHEST×10 的自动坍缩门槛是
+  // highestPrevPrestige(9.9e5)×10 = 9.9e6。两头都够不着 → willInfinity 恒 false、
+  // 一次坍缩都不会发生、IP 永远停在 1e6，ID1 在这条路径上不可能达成。
+  // 做法：只在「已 Break / 未解锁永恒 / ID1 还没解锁 / 不在挑战或毁灭现实」这个窗口内，
+  // 把**下一次坍缩的收益**抬到刚好够买下 ID1（1e8），既让真实入账达标，
+  // 也让自动坍缩的门槛得以通过（1e8 ≥ 9.9e6）。
+  // ID1 一旦解锁，本兜底立即失效，不会外溢成全局倍率；不改 BASE_COSTS，不改历史记录与阶段标志。
+  if (firstInfinityDimensionBoostActive(ip)) ip = ip.max(DC.E8);
+  return ip;
+}
+
+/**
+ * [Oreki AD3] 是否处于「首次 ID1 突破」窗口。只读判断，无副作用。
+ * @param {Decimal} pendingIP 本次坍缩按原版公式应得的 IP
+ */
+function firstInfinityDimensionBoostActive(pendingIP) {
+  try {
+    if (!player.break) return false;
+    if (PlayerProgress.eternityUnlocked()) return false;
+    if (InfinityDimension(1).isUnlocked) return false;
+    if (NormalChallenge.isRunning || InfinityChallenge.isRunning) return false;
+    if (Pelle.isDoomed) return false;
+    // 已经够买就不用兜底
+    return pendingIP.lt(DC.E8);
+  } catch (e) {
+    return false;
+  }
 }
 
 function totalEPMult() {

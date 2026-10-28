@@ -107,7 +107,12 @@ export class DimBoost {
     if (tier === 6 && NormalChallenge(10).isRunning) {
       amount += Math.round((targetResets - 3) * (20 - discount));
     } else if (tier === 8) {
-      amount += Math.round((targetResets - 5) * (15 - discount));
+      // [Oreki AD1] 原版 15/次 的 AD8 需求斜率在 Break 后会把成长反馈环卡死：
+      // R12 实测（干净驱动、无坍缩、150 s）：提升冻结在 32、星系 6，
+      // 反物质 15 s 就冲到 1e914 后 135 s 只再涨 15 个数量级并趋缓，
+      // 因为下一级提升要求 AD8 数量随次数线性抬升，而 AD8 自身已买不起。
+      // 改成 5/次 让提升继续、产量继续复利；其余（基础 20、折扣、EC5、charged 效果）全不动。
+      amount += Math.round((targetResets - 5) * (5 - discount));
     }
     if (EternityChallenge(5).isRunning) {
       amount += Math.pow(targetResets - 1, 3) + targetResets - 1;

@@ -1,4 +1,5 @@
 import { UpgradeableAutobuyerState } from "./autobuyer.js";
+import { PlayerProgress } from "../player-progress.js";
 
 export class BigCrunchAutobuyerState extends UpgradeableAutobuyerState {
   get data() {
@@ -10,9 +11,10 @@ export class BigCrunchAutobuyerState extends UpgradeableAutobuyerState {
   }
 
   get isUnlocked() {
-    return Pelle.isDoomed
-      ? PelleStrikes.infinity.hasStrike
-      : this.canBeUpgraded;
+    // [Oreki AU4] 完成过首次无限后即可运行：原版锁在普通挑战 12 之后，
+    // 而挑战 10-12 需要 16 次无限才解锁，导致每轮都要手点大坍缩。
+    if (Pelle.isDoomed) return PelleStrikes.infinity.hasStrike;
+    return this.canBeUpgraded || PlayerProgress.infinityUnlocked();
   }
 
   get canBeUpgraded() {

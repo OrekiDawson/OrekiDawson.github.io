@@ -1,4 +1,5 @@
 import { UpgradeableAutobuyerState } from "./autobuyer.js";
+import { PlayerProgress } from "../player-progress.js";
 
 export class GalaxyAutobuyerState extends UpgradeableAutobuyerState {
   get data() {
@@ -11,7 +12,8 @@ export class GalaxyAutobuyerState extends UpgradeableAutobuyerState {
 
   get isUnlocked() {
     if (Pelle.isDisabled("galaxyAutobuyer")) return false;
-    return this.canBeUpgraded;
+    // [Oreki AU3] 完成过首次无限后即可运行（与维度提升同一条规则）
+    return this.canBeUpgraded || PlayerProgress.infinityUnlocked();
   }
 
   get canBeUpgraded() {

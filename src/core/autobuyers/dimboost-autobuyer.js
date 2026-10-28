@@ -1,4 +1,5 @@
 import { UpgradeableAutobuyerState } from "./autobuyer.js";
+import { PlayerProgress } from "../player-progress.js";
 
 export class DimBoostAutobuyerState extends UpgradeableAutobuyerState {
   get data() {
@@ -11,7 +12,9 @@ export class DimBoostAutobuyerState extends UpgradeableAutobuyerState {
 
   get isUnlocked() {
     if (Pelle.isDisabled("dimBoostAutobuyer")) return false;
-    return this.canBeUpgraded;
+    // [Oreki AU3] 完成过首次无限后即可运行：原版把它锁在普通挑战 10 之后，
+    // 而挑战要先有无限才能进，导致首次无限到 1e308 之间全靠手点「维度提升」。
+    return this.canBeUpgraded || PlayerProgress.infinityUnlocked();
   }
 
   get canBeUpgraded() {

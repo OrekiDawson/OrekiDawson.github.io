@@ -29,11 +29,21 @@ export default {
       // 直接读 GameSpeed 的开关状态，不另设一份存档/本地状态
       scaleAutobuyerInterval: GameSpeed.scaleAutobuyerInterval,
       scaleTickspeedAutobuyerInterval: GameSpeed.scaleTickspeedAutobuyerInterval,
+      // 动态速度模式：唯一来源仍是 GameSpeed，这里只做镜像供 UI 绑定
+      dynamicSpeed: GameSpeed.isDynamic,
     };
   },
   computed: {
     speedFactorText() {
       return GameSpeed.format(this.speedFactor);
+    },
+    dynamicSpeedLabel() {
+      return GameSpeed.modeLabel;
+    },
+    dynamicSpeedHint() {
+      return this.dynamicSpeed
+        ? "进度连续停滞时会自动升档（每次 ×2，上限沿用倍率上限）；进度在走时不动"
+        : "手动模式：倍率只由你设定，控制器不会自动升档";
     },
     speedHint() {
       return `默认 ${GameSpeed.format(GameSpeed.defaultFactor)}×，可调范围 ${GameSpeed.min}× ~ ${GameSpeed.max}×`;
@@ -86,6 +96,10 @@ export default {
     scaleTickspeedAutobuyerInterval(newValue) {
       GameSpeed.setScaleTickspeedAutobuyerInterval(newValue);
     },
+    dynamicSpeed(newValue) {
+      GameSpeed.setDynamic(newValue);
+      this.speedFactor = GameSpeed.factor;
+    },
   },
   // This puts the slider in the right spot on initialization
   created() {
@@ -108,6 +122,7 @@ export default {
       this.speedFactor = GameSpeed.factor;
       this.scaleAutobuyerInterval = GameSpeed.scaleAutobuyerInterval;
       this.scaleTickspeedAutobuyerInterval = GameSpeed.scaleTickspeedAutobuyerInterval;
+      this.dynamicSpeed = GameSpeed.isDynamic;
     },
     applySpeedValue(value) {
       const result = GameSpeed.set(value);
@@ -194,6 +209,17 @@ export default {
         >
           恢复默认
         </button>
+      </div>
+      <div class="l-options-grid__row c-oreki-speed__autobuyer">
+        <PrimaryToggleButton
+          v-model="dynamicSpeed"
+          class="o-primary-btn--option"
+          label="自动动态速度"
+        />
+        <div class="o-primary-btn o-primary-btn--option c-oreki-speed__info">
+          <b>{{ dynamicSpeedLabel }}</b>
+          <span class="c-oreki-speed__hint">{{ dynamicSpeedHint }}</span>
+        </div>
       </div>
       <div class="l-options-grid__row c-oreki-speed__autobuyer">
         <PrimaryToggleButton

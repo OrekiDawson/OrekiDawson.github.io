@@ -133,6 +133,24 @@ export function gainedInfinityPoints() {
 }
 
 /**
+ * [Oreki AD3] 首次 ID1 的自动解锁/购买。只在阶段窗口内、且玩家开着自动购买器时执行。
+ * 幂等：ID1 解锁后条件不再成立，不会重复调用。
+ */
+export function tryFirstId1AutoUnlock() {
+  try {
+    if (!player.break || PlayerProgress.eternityUnlocked()) return false;
+    if (!player.auto.autobuyersOn) return false;
+    if (InfinityDimension(1).isUnlocked) return false;
+    if (NormalChallenge.isRunning || InfinityChallenge.isRunning || Pelle.isDoomed) return false;
+    if (Currency.infinityPoints.value.lt(DC.E8)) return false;
+    InfinityDimensions.buyMax();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
  * [Oreki AD3] 是否处于「首次 ID1 突破」窗口。只读判断，无副作用。
  * @param {Decimal} pendingIP 本次坍缩按原版公式应得的 IP
  */
@@ -143,6 +161,9 @@ function firstInfinityDimensionBoostActive(pendingIP) {
     if (InfinityDimension(1).isUnlocked) return false;
     if (NormalChallenge.isRunning || InfinityChallenge.isRunning) return false;
     if (Pelle.isDoomed) return false;
+    // 余额已够买 → 停止兜底。必须看「当前 IP 余额」而不是只看 isUnlocked：
+    // 玩家可能已经攒够却还没点 Max All，否则会每轮重复领到 1e8 的最低收益。
+    if (Currency.infinityPoints.value.gte(DC.E8)) return false;
     // 已经够买就不用兜底
     return pendingIP.lt(DC.E8);
   } catch (e) {
@@ -677,6 +698,11 @@ export function gameLoop(passDiff, options = {}) {
   updateTachyonGalaxies();
   Currency.timeTheorems.add(getTTPerSecond().times(diff / 1000));
   InfinityDimensions.tryAutoUnlock();
+  // [Oreki AD3] 首次 ID1 的自动解锁/购买：等价于玩家在 ID 页点「全部购买」。
+  // 只在「已 Break / 未解锁永恒 / ID1 未解锁 / 余额够 1e8 / 自动购买器总开关打开 /
+  // 非挑战 / 非毁灭现实」时执行一次；走原版 InfinityDimensions.buyMax()，
+  // 不直接写 isUnlocked，也不覆盖玩家的自动购买器开关。
+  tryFirstId1AutoUnlock();
 
   BlackHoles.updatePhases(blackHoleDiff);
 

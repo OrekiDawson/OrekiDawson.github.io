@@ -18,6 +18,16 @@ const STORAGE_KEY = "oreki-game-speed";
 const AUTOBUYER_SCALE_KEY = "oreki-autobuyer-interval-scale";
 /** 实验开关：Tick Speed 购买器的 interval 是否按全局倍率缩放（与上一个开关相互独立） */
 const TICKSPEED_SCALE_KEY = "oreki-tickspeed-autobuyer-interval-scale";
+/** 动态速度模式开关（默认开启，独立持久化） */
+const DYNAMIC_KEY = "oreki-game-speed-dynamic";
+/** 动态控制器参数：连续无进度多久算停滞、两次升档的最小间隔、每次升档的倍数 */
+const DYN_STALL_MS = 4000;
+const DYN_ADJUST_MS = 5000;
+const DYN_STEP = 2;
+/** 延迟读取全局 player，避免与 player.js 的初始化顺序耦合 */
+function target_player() {
+  return (typeof window !== "undefined" && window.player) ? window.player : null;
+}
 
 export const GAME_SPEED_DEFAULT = 10000;
 export const GAME_SPEED_MIN = 1;
@@ -110,6 +120,16 @@ let simulationToken = null;
 let autobuyerIntervalScaling = readStoredFlag(AUTOBUYER_SCALE_KEY);
 /** Tick Speed 购买器间隔缩放开关（实验特性，默认关闭，与上一个开关互不影响） */
 let tickspeedIntervalScaling = readStoredFlag(TICKSPEED_SCALE_KEY);
+/** 动态速度：是否启用（默认开）。关闭时完全退回手动固定倍率。 */
+let dynamicEnabled = readStoredFlag(DYNAMIC_KEY, true);
+/** 动态控制器的运行期状态（不持久化） */
+const dyn = {
+  lastSignal: null,     // 上一次「进度指纹」
+  stagnantMs: 0,        // 连续无进度累计
+  lastAdjustAt: 0,      // 上次调整倍率的墙钟
+  lastSampleAt: 0,
+  ramps: 0,             // 本次运行升档次数（诊断用）
+};
 
 export const GameSpeed = {
   get storageKey() { return STORAGE_KEY; },
@@ -147,6 +167,67 @@ export const GameSpeed = {
     return tickspeedIntervalScaling;
   },
   get tickspeedAutobuyerScaleStorageKey() { return TICKSPEED_SCALE_KEY; },
+
+  /**
+   * 动态速度模式（默认开）。
+   * 目的：自动消除「无意义等待」——进度真的停住时逐步提高倍率，进度在走时保持不升。
+   * 只在关卡信号（阶段解锁 / 无限次数 / IP / 本纪最高反物质 / 提升 / 星系）全部无变化时升档，
+   * 且带最小调整间隔、每次 ×2、上下限钳制，避免每帧抖动。
+   */
+  get isDynamic() { return dynamicEnabled; },
+  setDynamic(value) {
+    dynamicEnabled = !!value;
+    writeStoredFlag(DYNAMIC_KEY, dynamicEnabled);
+    if (!dynamicEnabled) { dyn.stagnantMs = 0; dyn.lastSignal = null; }
+    return dynamicEnabled;
+  },
+  get dynamicStorageKey() { return DYNAMIC_KEY; },
+  /** 诊断用：本次运行已自动升档次数 */
+  get dynamicRampCount() { return dyn.ramps; },
+  /** 界面用：一句话状态 */
+  get modeLabel() {
+    return dynamicEnabled ? `自动（当前 ${this.format(this.factor)}×）` : `手动（${this.format(this.factor)}×）`;
+  },
+
+  /**
+   * 由 1s 定时器调用。读取「进度指纹」，判断是否停滞。
+   * 返回本次是否调整了倍率（便于测试断言）。
+   */
+  tickDynamic(now = Date.now()) {
+    if (!dynamicEnabled || simulationToken !== null) return false;
+    // 游戏主循环没在跑（例如暂停/未开始）时不调整
+    let signal = null;
+    try {
+      const p = target_player();
+      if (!p) return false;
+      const ex = v => (v && typeof v.exponent === "number") ? Math.round(v.exponent) : 0;
+      signal = [
+        ex(p.infinities), ex(p.infinityPoints), ex(p.eternities), ex(p.realities),
+        ex(p.records.thisEternity.maxAM), p.dimensionBoosts, p.galaxies,
+        p.break ? 1 : 0,
+      ].join("|");
+    } catch (e) { return false; }
+
+    const dt = dyn.lastSampleAt === 0 ? 0 : Math.max(0, now - dyn.lastSampleAt);
+    dyn.lastSampleAt = now;
+    if (dyn.lastSignal !== signal) {
+      dyn.lastSignal = signal;
+      dyn.stagnantMs = 0;
+      return false;
+    }
+    dyn.stagnantMs += dt;
+    if (dyn.stagnantMs < DYN_STALL_MS) return false;
+    if (now - dyn.lastAdjustAt < DYN_ADJUST_MS) return false;
+    if (currentFactor >= GAME_SPEED_MAX) return false;
+    const next = Math.min(GAME_SPEED_MAX, Math.max(GAME_SPEED_MIN, currentFactor * DYN_STEP));
+    if (next <= currentFactor) return false;
+    currentFactor = next;
+    writeStored(next);
+    dyn.lastAdjustAt = now;
+    dyn.stagnantMs = 0;
+    dyn.ramps++;
+    return true;
+  },
 
   /**
    * 设置倍率。成功返回 { ok:true }，失败返回 { ok:false, message } 且不改变任何状态。
@@ -209,6 +290,16 @@ export function installSpeedGlobals(target = window) {
     configurable: true,
     get: () => GameSpeed.factor
   });
+  // 动态速度控制器：1 s 采样一次，足够分辨「停滞」又不会每帧抖倍率。
+  // 定时器回调与游戏主循环同线程，不会在单帧中途改变倍率，因此不会破坏
+  // 「同一帧乘/除使用同一倍率快照」的约束（game.js 每帧读一次的写法不受影响）。
+  try {
+    if (!target.__orekiDynSpeedTimer) {
+      target.__orekiDynSpeedTimer = setInterval(() => {
+        try { GameSpeed.tickDynamic(); } catch (e) { /* 控制器异常不得影响主循环 */ }
+      }, 1000);
+    }
+  } catch (e) { /* 非浏览器环境忽略 */ }
   return GameSpeed;
 }
 

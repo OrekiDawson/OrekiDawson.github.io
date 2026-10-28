@@ -285,7 +285,15 @@ export function maxAll() {
 
 export function buyMaxDimension(tier, bulk = Infinity) {
   const dimension = AntimatterDimension(tier);
-  if (Laitela.continuumActive || !dimension.isAvailableForPurchase || !dimension.isAffordableUntil10) return;
+  if (Laitela.continuumActive || !dimension.isAvailableForPurchase) return;
+  // [Oreki AB2] 整批 10 个买不起时退化为买 1 个。
+  // 原因（2026-10-28 双端实测）：维度自动购买器默认 mode = BUY_10，而每次重置后
+  // 反物质恰好是 10、维度是 0，整批要 100 —— 自动购买器永远买不起，
+  // 玩家每次重置后都必须手动点第一维度。买得起整批时下面的逻辑完全不变。
+  if (!dimension.isAffordableUntil10) {
+    if (dimension.isAffordable) buyOneDimension(tier);
+    return;
+  }
   const cost = dimension.costUntil10;
   let bulkLeft = bulk;
   const goal = Player.infinityGoal;

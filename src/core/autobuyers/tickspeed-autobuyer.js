@@ -1,5 +1,7 @@
 import { DC } from "../constants.js";
 
+import { PlayerProgress } from "../player-progress.js";
+
 import { UpgradeableAutobuyerState } from "./autobuyer.js";
 
 export class TickspeedAutobuyerState extends UpgradeableAutobuyerState {
@@ -13,7 +15,8 @@ export class TickspeedAutobuyerState extends UpgradeableAutobuyerState {
 
   get isUnlocked() {
     if (Pelle.isDisabled("tickspeedAutobuyer")) return false;
-    return this.canBeUpgraded;
+    // [Oreki AU2] 完成过首次无限后即解锁（与维度自动购买器同一条规则）
+    return this.canBeUpgraded || PlayerProgress.infinityUnlocked();
   }
 
   get canBeUpgraded() {

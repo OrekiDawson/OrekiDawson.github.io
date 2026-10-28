@@ -1,5 +1,7 @@
 import { DC } from "../constants.js";
 
+import { PlayerProgress } from "../player-progress.js";
+
 import { UpgradeableAutobuyerState } from "./autobuyer.js";
 
 export class AntimatterDimensionAutobuyerState extends UpgradeableAutobuyerState {
@@ -31,7 +33,9 @@ export class AntimatterDimensionAutobuyerState extends UpgradeableAutobuyerState
 
   get isUnlocked() {
     if (Pelle.isDisabled(`antimatterDimAutobuyer${this.tier}`)) return false;
-    return this.data.isBought || this.canBeUpgraded;
+    // [Oreki AU2] 完成过首次无限后即解锁：开局仍然全手动，
+    // 第一次无限之后自动化接管重复购买。不写 isBought，不绕过任何成本。
+    return this.data.isBought || this.canBeUpgraded || PlayerProgress.infinityUnlocked();
   }
 
   get isBought() {

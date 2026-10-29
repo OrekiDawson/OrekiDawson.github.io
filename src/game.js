@@ -212,6 +212,15 @@ export function orekiEcEntryHold() {
 }
 
 /**
+ * [Oreki AD14] 仅 EC3 的窄保护：暂停大坍缩，让第八反物质维度爬到 17300。
+ * 条件收窄到「下一关就是 EC3 / 研究 171 已买 / 入口未达标」，不影响 EC1、EC2 的永恒次数增长。
+ * @returns {boolean} true 表示本帧应当暂停坍缩
+ */
+export function orekiEc3CrunchHold() {
+  return OrekiEternityAutomation.shouldHoldCrunch();
+}
+
+/**
  * [Oreki AD7] 开局例行操作自动化：反物质维度 / 计数频率 / 维度提升 / 星系。
  *
  * 事实（R21 真新档实测）：首次无限之前，原版的维度自动器**不可用**
@@ -241,7 +250,12 @@ export function tryOrekiEarlyRoutine() {
     if (NormalChallenge.isRunning || InfinityChallenge.isRunning || EternityChallenge.isRunning) return false;
     if (Pelle.isDoomed) return false;
 
-    for (let tier = 8; tier >= 1; tier--) {
+    // 必须**升序**买：`AntimatterDimension.isAvailableForPurchase` 要求
+    // 「上一维度 totalAmount > 0」（antimatter-dimension.js:537），
+    // 降序买的话第 8 维永远看不到第 7 维有数量，一帧只能买到第 1 维，
+    // 而坍缩周期只有 100 ms —— 实测第八维度数量长期为 0，EC3 永远进不去。
+    // 升序可以在同一帧内把 1→8 全部级联买开。
+    for (let tier = 1; tier <= 8; tier++) {
       const dimension = AntimatterDimension(tier);
       if (dimension.isAvailableForPurchase && dimension.isAffordable) buyMaxDimension(tier);
     }

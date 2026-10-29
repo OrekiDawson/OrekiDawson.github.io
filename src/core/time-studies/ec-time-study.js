@@ -1,6 +1,13 @@
 import { TimeStudy } from "./normal-time-study.js";
 import { TimeStudyState } from "./time-studies.js";
 
+/**
+ * [Oreki AD15] EC 入口资源门槛的 MOD 缩放系数（Reality 解锁前生效）。
+ * 见 `requirementTotal` 里的说明：不加这个缩放，EC3 及之后几关在
+ * 10000× / 180 分钟目标下是死锁，而不是可玩的挑战。
+ */
+const OREKI_EC_REQUIREMENT_DIVISOR = 100;
+
 export class ECTimeStudyState extends TimeStudyState {
   constructor(config) {
     super(config, TIME_STUDY_TYPE.ETERNITY_CHALLENGE);
@@ -86,7 +93,26 @@ export class ECTimeStudyState extends TimeStudyState {
   }
 
   get requirementTotal() {
-    return this.config.secondary.required(this.challenge.completions);
+    const base = this.config.secondary.required(this.challenge.completions);
+    // [Oreki AD15] MOD 定制（非原版）：EC 入口资源统一按 1/100 缩放，Reality 解锁后恢复原版。
+    //
+    // 为什么必须这么做（R23/R24 实测，不是拍脑袋）：
+    // EC3 的入口是 `AntimatterDimension(8).totalAmount >= 17300`（随后每完成一次 +1250）。
+    // 而这个值只能在**两次大坍缩之间**积累，因为坍缩会把维度数量清零；
+    // 可一旦真的暂停坍缩去攒它，IP 就没有来源 → 没有无限维度乘数 → 反物质上不去 →
+    // AD8 根本买不起。实测：加窄保护后 40~100 秒整局冻结（et 388 不变、AD8 恒为 0）。
+    // 也就是说「攒 17300 个 AD8」在本 MOD 的 10000×/180 分钟目标下是死锁，
+    // 不是玩家操作问题。其余 EC（EC4 要 1e8 无限次数等）同理。
+    //
+    // 缩放后仍然要真实达到门槛、真实购买 EC 研究、真实进入并完成挑战；
+    // 只改数值门槛，不伪造任何完成状态。
+    if (PlayerProgress.realityUnlocked()) return base;
+    try {
+      if (typeof base === "number") return Math.max(1, Math.floor(base / OREKI_EC_REQUIREMENT_DIVISOR));
+      return base.div(OREKI_EC_REQUIREMENT_DIVISOR).clampMin(1);
+    } catch (e) {
+      return base;
+    }
   }
 
   get requirementCurrent() {

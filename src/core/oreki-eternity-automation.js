@@ -329,6 +329,46 @@ export const OrekiEternityAutomation = {
     }
   },
 
+  /**
+   * H) 仅针对 EC3 的「窄保护」：暂停大坍缩，让第八反物质维度在一次坍缩周期内爬够 17300。
+   *
+   * 为什么只做 EC3、且只暂停坍缩：
+   * - `AntimatterDimension(8).totalAmount`（antimatter-dimension.js:514）是
+   *   `amount.max(continuumAmount)`，而每次大坍缩都会 `reset()` 把 amount 清零，
+   *   所以这个值只能在**两次坍缩之间**积累。R23 实测：AD8 数量长期为 0、
+   *   EC3 采样只到 10/17300 —— 因为自动坍缩按「10× 最高 IP」触发，周期太短。
+   * - 但 R22 已实测：全局暂停坍缩会拖慢 EC1/EC2 需要的永恒次数增长（反效果）。
+   *   所以这里把条件收窄到「下一关就是 EC3、主研究 171 已买、入口还没达标」。
+   * - 不暂停永恒：EC3 的门槛是维度数量，不是跨永恒的累计量；而永恒会影响 AD8 重建速度，
+   *   这里只关掉坍缩这一个变量，便于定位。
+   *
+   * 退出条件（任一满足即恢复坍缩）：
+   *   1) EC3 入口达标（isEntryGoalMet 为真）
+   *   2) EC3 已买上（isBought）或已进入/完成
+   *   3) 下一关不再是 EC3
+   *   4) 不在自动化窗口（挑战中 / 毁灭现实 / 总开关关闭 / 已解锁 Reality）
+   */
+  shouldHoldCrunch() {
+    try {
+      if (!this.active) return false;
+      if (player.challenge.eternity.unlocked !== 0) return false;
+      if (this.nextUnfinishedEcId() !== 3) return false;
+      const study = TimeStudy.eternityChallenge(3);
+      if (!study || study.isBought) return false;
+      const primaryMet = (study.config.requirement || []).some(s => {
+        try {
+          return TimeStudy(s).isBought;
+        } catch (e) {
+          return false;
+        }
+      });
+      if (!primaryMet) return false;
+      return !study.isEntryGoalMet;
+    } catch (e) {
+      return false;
+    }
+  },
+
   tick() {
     if (!this.active) return { dims: false, tt: false, studies: 0, dilation: 0, ec: false };
     const dims = this.buyTimeDimensions();

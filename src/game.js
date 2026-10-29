@@ -250,18 +250,24 @@ export function tryOrekiEarlyRoutine() {
     if (NormalChallenge.isRunning || InfinityChallenge.isRunning || EternityChallenge.isRunning) return false;
     if (Pelle.isDoomed) return false;
 
+    // [Oreki AD16] 顺序很关键：**先做会重置维度的动作，再买维度**。
+    // 维度提升 `requestDimensionBoost(true)` 与星系重置 `requestGalaxyReset(true)`
+    // 都会走 softReset()，把反物质维度数量清零（AD4 只保留反物质，不保留维度）。
+    // 原来的顺序是「买维度 → 提升 → 星系」，于是本帧刚买到的第八维度
+    // 在同一帧就被清零，`AntimatterDimension(8).totalAmount` 永远停在 10（= 一次购买），
+    // EC3 的 17300 门槛因此永远读不到 —— 这就是 R24 卡在 10/173 的直接原因。
+    // 现在把重置类动作前置，买完的维度可以完整活到下一帧被采样。
+    buyMaxTickSpeed();
+    if (DimBoost.canBeBought) requestDimensionBoost(true);
+    if (Galaxy.canBeBought) requestGalaxyReset(true);
+
     // 必须**升序**买：`AntimatterDimension.isAvailableForPurchase` 要求
     // 「上一维度 totalAmount > 0」（antimatter-dimension.js:537），
-    // 降序买的话第 8 维永远看不到第 7 维有数量，一帧只能买到第 1 维，
-    // 而坍缩周期只有 100 ms —— 实测第八维度数量长期为 0，EC3 永远进不去。
-    // 升序可以在同一帧内把 1→8 全部级联买开。
+    // 降序买的话第 8 维永远看不到第 7 维有数量，一帧只能买到第 1 维。
     for (let tier = 1; tier <= 8; tier++) {
       const dimension = AntimatterDimension(tier);
       if (dimension.isAvailableForPurchase && dimension.isAffordable) buyMaxDimension(tier);
     }
-    buyMaxTickSpeed();
-    if (DimBoost.canBeBought) requestDimensionBoost(true);
-    if (Galaxy.canBeBought) requestGalaxyReset(true);
 
     // 首次无限：原版大坍缩自动器的间隔是 150000 ms，而 `Time.thisInfinityRealTime` 是**真实时间**
     // （速度倍率会在 realTimeMechanics 里被除回去），所以开局的第一次自动坍缩要等 150 秒真实时间。

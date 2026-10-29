@@ -154,7 +154,12 @@ export class BigCrunchAutobuyerState extends UpgradeableAutobuyerState {
   get waitingForId1Peak() {
     try {
       if (!player.break) return false;
-      if (PlayerProgress.eternityUnlocked()) return false;
+      // [Oreki R26] 原来这里是 `if (PlayerProgress.eternityUnlocked()) return false;`。
+      // 现实重置会把无限维度整体 `fullReset()`（ID1 重新锁定，门槛仍是 1e1100），
+      // 而永久进度标志永远为 true → 第一次现实之后这个「攒着别坍缩」的保护消失，
+      // 每次坍缩都把反物质打回低位，ID1 的反物质门槛再也爬不到。
+      // 改用真实状态：ID1 已解锁才停手。挑战里 `player.break` 为 false，已在上面返回。
+      if (InfinityDimension(1).isUnlocked) return false;
       if (NormalChallenge.isRunning || InfinityChallenge.isRunning) return false;
       if (Pelle.isDoomed) return false;
       if (Currency.infinityPoints.value.lt(DC.E8)) return false;
@@ -172,6 +177,17 @@ export class BigCrunchAutobuyerState extends UpgradeableAutobuyerState {
   reset() {
     super.reset();
     if (EternityMilestone.bigCrunchModes.isReached) return;
-    this.mode = AUTO_CRUNCH_MODE.AMOUNT;
+    // [Oreki R26] 原来这里把模式打回 `AMOUNT`。首次永恒前 `AMOUNT` 的 amount 还是 1
+    // （`isUnlocked` 会顺手改成 X_HIGHEST），所以看不出来；但 `amount` 会被
+    // `bumpAmount()` 一路乘大，一旦它 ≥ 10，上面那段归一化就再也不触发。
+    // 现实重置会把 `player.eternities` 清零 → `EternityMilestone.bigCrunchModes`
+    // 反而不成立 → 每次 `reset()` 都把模式锁死成 `AMOUNT` + 一个巨大的固定 amount。
+    // 后果（R26 真新档 300 s 实测）：坍缩阈值固定，`thisInfinity.maxAM` 被钉在
+    // 1e25.7、`thisEternity.maxAM` 冻结在 1e865.651 整整 200 秒，ID1 的 1e1100
+    // 门槛永远到不了 → 无限维度全锁、`et` 恒 0，现实层完全停摆。
+    // 改成与 `isUnlocked` 的归一化同口径：恢复「单次 IP ≥ 10× 本次永恒最高」策略，
+    // 让反物质每次坍缩都能上一个台阶。
+    this.mode = AUTO_CRUNCH_MODE.X_HIGHEST;
+    this.data.xHighest = new Decimal(10);
   }
 }

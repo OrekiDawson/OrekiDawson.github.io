@@ -10,6 +10,40 @@ export const V_REDUCTION_MODE = {
   DIVISION: 2
 };
 
+/**
+ * [Oreki R33] 薇（V）解锁三项「原版后期终点线」的 Mod 缩放。
+ *
+ * ── 为什么必须缩放 ────────────────────────────────────────────────────
+ * `vAchievementUnlock.requirement()` 是六项 mainUnlock 的 `.every(p => p.progress() >= 1)`
+ * （本文件 :196）。R33 用 600 秒真实新档（纯生产自动化，21 次现实）逐项实测：
+ *   · realities    原版 10000 → 实测 105。节奏 0.175 现实/秒（每次现实 +5，周期 28.6 s，
+ *     周期被「现实清空 EC 完成记录 → 每轮重打 EC1~12」支配，reality.js:651）。
+ *     ⇒ 10000 次需 2000 次现实 × 28.6 s ≈ **15.9 小时**，180 分钟预算内无解。
+ *   · dilatedTime  原版 1e320 → 实测 maxDT = **0**（生产自动化从未启动膨胀；全仓唯一
+ *     非 UI 入口是 automator 命令 automator-commands.js:506）。该项恒 0，与资源无关。
+ *   · replicanti   原版 1e320000 → 实测 maxReplicanti = **1e25495**。
+ *     上限 = `infinitiesTotal^120 × 1.79e308`（replicanti.js:164-171），要 1e320000 需
+ *     infinitiesTotal ≥ 1e2667，而实测 400 秒内它只在 1e202~1e210 摆动（差 12.8 个数量级）。
+ *
+ * ── 缩放后的取值依据（留余量但不放水）────────────────────────────────
+ *   · OREKI_V_UNLOCK_REALITIES = 200
+ *     ≈ 40 次现实 ≈ 19 分钟（0.175/s），比当前 105 留 1.9× 余量，仍要真实刷满。
+ *   · OREKI_V_UNLOCK_DILATED_TIME = 1e30
+ *     必须靠真实 `startDilatedEternity(true)` 跑出来。选 e30 而不是 e320 的原因：
+ *     `player.records.thisReality.maxDT` **每个现实清零**（reality.js:696），所以
+ *     e320 要跨现实累积（物理上不可能），e30 是「一个现实周期内可达」的量级。
+ *   · OREKI_V_UNLOCK_REPLICANTI = 1e20000
+ *     已实测 1e25495，留 1e5495 余量；仍是真实 `replicantiCap()` 校验。
+ *
+ * ── 纪律 ─────────────────────────────────────────────────────────────
+ * 只改这三个阈值（`requirement` 显示值 + `progress` 分母，两者必须同步，否则 progress
+ * 永远到不了 1）。**不改** `.every()` 结构、不改其余三项、不碰 `V.unlockCelestial()`，
+ * 更没有任何「写标志位」的捷径 —— 六项仍然必须同时由真实字段达成。
+ */
+export const OREKI_V_UNLOCK_REALITIES = 200;
+export const OREKI_V_UNLOCK_DILATED_TIME = DC.E30;
+export const OREKI_V_UNLOCK_REPLICANTI = DC.E20000;
+
 export const v = {
   // Note: mainUnlock IDs here are one-indexed to match with navigation indices
   mainUnlock: {
@@ -17,9 +51,9 @@ export const v = {
       id: 1,
       name: "现实次数",
       resource: () => Currency.realities.value,
-      requirement: 10000,
+      requirement: OREKI_V_UNLOCK_REALITIES,
       format: x => formatInt(x),
-      progress: () => Currency.realities.value / 10000,
+      progress: () => Currency.realities.value / OREKI_V_UNLOCK_REALITIES,
     },
     eternities: {
       id: 2,
@@ -41,17 +75,19 @@ export const v = {
       id: 4,
       name: "膨胀时间",
       resource: () => player.records.thisReality.maxDT,
-      requirement: DC.E320,
+      requirement: OREKI_V_UNLOCK_DILATED_TIME,
       format: x => format(x, 2),
-      progress: () => emphasizeEnd(player.records.thisReality.maxDT.pLog10() / 320),
+      progress: () => emphasizeEnd(player.records.thisReality.maxDT.pLog10() /
+        OREKI_V_UNLOCK_DILATED_TIME.pLog10()),
     },
     replicanti: {
       id: 5,
       name: "复制器",
       resource: () => player.records.thisReality.maxReplicanti,
-      requirement: DC.E320000,
+      requirement: OREKI_V_UNLOCK_REPLICANTI,
       format: x => format(x, 2),
-      progress: () => emphasizeEnd(player.records.thisReality.maxReplicanti.pLog10() / 320000),
+      progress: () => emphasizeEnd(player.records.thisReality.maxReplicanti.pLog10() /
+        OREKI_V_UNLOCK_REPLICANTI.pLog10()),
     },
     realityMachines: {
       id: 6,

@@ -71,7 +71,41 @@ export const OrekiEternityAutomation = {
 
   get active() {
     try {
-      if (PlayerProgress.realityUnlocked()) return false;
+      // [Oreki R26] 原来这里写着 `if (PlayerProgress.realityUnlocked()) return false;`，
+      // 意味着**第一次现实之后整套「买时间维度 / TT / 时间研究 / 自动永恒」全部停摆**。
+      // 但现实重置会把 `player.eternityChalls`（EC 完成记录）、时间定理、时间维度、
+      // 膨胀研究全部清空（reality.js:651 / :670 / :673），
+      // 而再次现实的唯一闸门仍是 `TimeStudy.reality.isBought`（需要 EC11/EC12 各 5 次 +
+      // 8 级时间维度 + 数百万 TT）。不放开这一层，第二次现实就永远等不到 —— 现实层直接卡死。
+      // 现在只排除天神现实（那里有各自的资源约束，不能乱买）。
+      //
+      // [Oreki R29] **上面这条「排除天神现实」是错的，已撤销 —— 它造成了一个真实死锁。**
+      //
+      // ── 死锁链（源码事实）─────────────────────────────────────────────
+      // 1. 天神 run 的结算写入点在 `reality.js:341-342`：
+      //      `if (Currency.antimatter.gt(player.celestials.teresa.bestRunAM))
+      //         player.celestials.teresa.bestRunAM = Currency.antimatter.value;`
+      //    —— 它发生在**现实结算**（`finishProcessReality` → `giveRealityRewards`）里。
+      //    也就是说：run 必须靠「一次带奖励的现实」才能真正结算。
+      // 2. 但 `isRealityAvailable()`（reality.js:119-121）是
+      //      `player.records.thisReality.maxEP.exponent >= 4000 && TimeStudy.reality.isBought`
+      //    —— 硬依赖 `TimeStudy.reality`（膨胀研究 6）。
+      // 3. 而现实重置会清空 EC 完成记录 / 时间定理 / 时间维度 / 膨胀研究
+      //    （reality.js:651 / :670 / :673），于是 `TimeStudy.reality` 变成未购买。
+      // 4. 重买它需要 EC11 + EC12 各 5 次 + 8 级时间维度 + 数百万 TT —— 全靠本模块。
+      // ⇒ 一旦进了天神 run，本模块停摆 → EC 再也打不回来 → `isRealityAvailable()` 永假
+      //   → run 永远等不到那次结算现实 → **天神链彻底卡死**。
+      //
+      // 实测证据（R28 300 秒真实新档，`web/_tools/_r28-300.jsonl`）：
+      //   t=202s 起 `realities` 永久停在 30 直到结束；末态 `ecDone` 全 0、
+      //   `teresaRun=true` 但 `effarigUnlocked=false`、`endState=0`。
+      //   即：进了特蕾莎 run 之后，现实再也发生不了。
+      //
+      // ── 为什么放开是安全的 ──────────────────────────────────────────
+      // 天神现实里本模块买的仍然是**原版允许买的东西**（时间维度 / TT / 时间研究 /
+      // 膨胀研究），全部走 `purchase()` 系列真实路径、真实扣费、真实前置判定；
+      // 买不上就返回 false，不存在伪造。Pelle 毁灭态仍由下面的 `Pelle.isDoomed` 排除。
+      // 唯一的变化是：不再因为「处于天神 run」而整套停摆。
       if (!player.auto.autobuyersOn) return false;
       if (NormalChallenge.isRunning || InfinityChallenge.isRunning || EternityChallenge.isRunning) return false;
       if (Pelle.isDoomed) return false;
@@ -421,10 +455,46 @@ export const OrekiEternityAutomation = {
     try {
       if (!this.active) return false;
       if (!Player.canEternity) return false;
+      // [Oreki R26] 现实升级 10「生存延续」的解锁条件是
+      //   `Currency.infinityPoints.exponent >= 400 && player.requirementChecks.reality.noEternities`
+      // （reality-upgrades.js:146-148），而 `noEternities` 在第一次永恒时就被置 false
+      // （eternity.js:96），现实重置又会把它复位为 true。
+      // 自动永恒默认在 `Player.canEternity`（IP = 1.797e308，指数 308）就立刻触发，
+      // 永远差 92 个指数 → 这条现实升级在**每一次现实**里都拿不到
+      // → 成就 147「购买所有的现实升级」永远不成立 → Teresa 永远不出现。
+      // 这里只在「还没拿到 RU10」时，把本现实运行里的第一次永恒压到 IP 指数 ≥ 400。
+      if (this.holdForRealityUpgrade10()) return false;
       // 入口保护：只在「主研究已买、只差资源」时生效，不拖慢 EC1/EC2 的永恒次数增长
       if (this.ecEntryPending()) return false;
       if (gainedEternityPoints().lt(Currency.eternityPoints.value.times(10))) return false;
       return eternity(false, true) === true;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  /**
+   * 是否应该为了现实升级 10 压住第一次永恒。
+   * 只读判断 + 会话内计时；**最多压 10 秒**，避免 IP 被自动买无限维度花掉时把这局卡死。
+   */
+  _ru10HoldSince: 0,
+
+  holdForRealityUpgrade10() {
+    try {
+      const noEternitiesYet = player.requirementChecks.reality.noEternities;
+      const upg = RealityUpgrade(10);
+      const stop = !noEternitiesYet || !upg || upg.isAvailableForPurchase || upg.isBought ||
+        player.eternities > 0 || Currency.infinityPoints.exponent >= 400;
+      if (stop) {
+        this._ru10HoldSince = 0;
+        return false;
+      }
+      if (!this._ru10HoldSince) this._ru10HoldSince = Date.now();
+      if (Date.now() - this._ru10HoldSince > 10000) {
+        this._ru10HoldSince = 0;
+        return false;
+      }
+      return true;
     } catch (e) {
       return false;
     }
@@ -556,3 +626,11 @@ export const OrekiEternityAutomation = {
     return { dims, tt, studies, dilation, ec };
   },
 };
+
+// 便于真实新档脚本观测内部判定（例如 ecEntryPending / nextUnfinishedEcId），
+// 与 oreki-reality-automation.js 的做法一致；不参与任何游戏逻辑。
+try {
+  globalThis.OrekiEternityAutomation = OrekiEternityAutomation;
+} catch (e) {
+  // 非浏览器环境忽略
+}

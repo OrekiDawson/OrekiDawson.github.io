@@ -1,5 +1,6 @@
 import { TimeStudy } from "./normal-time-study.js";
 import { TimeStudyState } from "./time-studies.js";
+import { isOrekiBootstrapRun } from "../oreki-bootstrap.js";
 
 /**
  * [Oreki R25] 膨胀研究 TT 成本的 MOD 缩放系数（Reality 解锁前生效）。
@@ -39,7 +40,12 @@ export class DilationTimeStudyState extends TimeStudyState {
     // 膨胀研究 6（= Reality）永远进不去。这不是操作问题，是数量级差距（1e9 vs 3.2e6）。
     // 缩放后仍需真实支付 TT、真实购买研究，Reality 依然要求真实满足
     // `TimeDimension(8).isBought && maxEP.exponent >= 4000 && 全部 pre-Reality 成就`。
-    if (!PlayerProgress.realityUnlocked() && typeof base === "number") {
+    // [Oreki R26] 原来这里是 `if (!PlayerProgress.realityUnlocked() && ...)`。
+    // 现实重置会 `Currency.timeTheorems.reset()` + `player.dilation.studies = []`
+    // （reality.js:669-681），所以每次现实后都要重新把膨胀研究 1~6 买一遍 ——
+    // 但永久标志永远为 true → 这一遍要用原版 1000 倍 TT 成本，也就是上面实测
+    // 证明不可达的那套。改用 `isOrekiBootstrapRun()`：每次现实后窗口自动重开。
+    if (isOrekiBootstrapRun() && typeof base === "number") {
       return Math.max(1, Math.floor(base / OREKI_DILATION_TT_DIVISOR));
     }
     return base;

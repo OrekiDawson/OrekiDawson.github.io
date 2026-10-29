@@ -6,6 +6,16 @@ export default {
   data() {
     return {
       enableAnimation: false,
+      // [Oreki R33] 用户要求 Web 版关闭新闻：不得显示新闻入口、新闻内容，
+      // 也不得为新闻保留可见空白区域。
+      // 做法：根节点 v-if 直接不渲染 —— Vue 2 会渲染一个空注释节点，
+      // 参与 flex 布局时尺寸为 0，因此不会留下可见空白。
+      // 不用 `display:none` / `visibility:hidden` / 高度置 0 的原因：
+      // 那三种都会保留 DOM 与定时器，滚动动画仍在跑（浪费性能），
+      // 且后续调样式容易把空白又露出来。
+      // 副作用：`prepareNextMessage()` 里 `this.$refs.line === undefined` 会早返回，
+      // 定时器链自然终止，不会产生空转。
+      orekiNewsDisabled: true,
     };
   },
   computed: {
@@ -126,6 +136,7 @@ export default {
   },
   template: `
   <div
+    v-if="!orekiNewsDisabled"
     ref="ticker"
     class="c-news-ticker"
   >

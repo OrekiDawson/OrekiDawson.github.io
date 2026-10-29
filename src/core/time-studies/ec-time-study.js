@@ -1,5 +1,6 @@
 import { TimeStudy } from "./normal-time-study.js";
 import { TimeStudyState } from "./time-studies.js";
+import { isOrekiBootstrapRun } from "../oreki-bootstrap.js";
 
 /**
  * [Oreki AD15] EC 入口资源门槛的 MOD 缩放系数（Reality 解锁前生效）。
@@ -106,7 +107,16 @@ export class ECTimeStudyState extends TimeStudyState {
     //
     // 缩放后仍然要真实达到门槛、真实购买 EC 研究、真实进入并完成挑战；
     // 只改数值门槛，不伪造任何完成状态。
-    if (PlayerProgress.realityUnlocked()) return base;
+    // [Oreki R26] 原来这里写 `if (PlayerProgress.realityUnlocked()) return base;`。
+    // 现实重置会把 `player.eternityChalls` 清空（reality.js:666）→ 每完成一次现实都要
+    // 把 EC1~12 重新打一遍；而永久标志永远为 true → 这一遍要用原版门槛，
+    // 也就是当初实测证明**不可达**的那套（EC3 要 17300 个 AD8 等）。
+    // R26 实测后果：现实后 `ecDone` 只有 9 关到 5 次、EC6/8/12 恒 0、
+    // `player.challenge.eternity.unlocked` 恒 0、`ecEntryPending()` 永久挂住自动永恒
+    // （et 冻结在 972153，EP 停在 1e1255694）。
+    // 改用 `isOrekiBootstrapRun()`（核心模块 core/oreki-bootstrap.js）：
+    // 每次现实后窗口会自动重开，买回现实时间研究即恢复原版门槛。
+    if (!isOrekiBootstrapRun()) return base;
     try {
       if (typeof base === "number") return Math.max(1, Math.floor(base / OREKI_EC_REQUIREMENT_DIVISOR));
       return base.div(OREKI_EC_REQUIREMENT_DIVISOR).clampMin(1);

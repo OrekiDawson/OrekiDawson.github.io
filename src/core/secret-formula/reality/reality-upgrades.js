@@ -302,9 +302,20 @@ export const realityUpgrades = [
     name: "净化赋能",
     id: 19,
     cost: 1500,
-    requirement: () => `拥有基本符文的总数达到 ${formatInt(30)} （你已拥有 ${formatInt(Glyphs.allGlyphs.countWhere(g => g.type !== "companion"))} 个)`,
-    hasFailed: () => Glyphs.allGlyphs.countWhere(g => g.type !== "companion") < 30,
-    checkRequirement: () => Glyphs.allGlyphs.countWhere(g => g.type !== "companion") >= 30,
+    // [Oreki R28] 符文总数门槛 30 → 20。
+    //
+    // 事实：符文仓库共 120 格（`Glyphs.freeInventorySpace`），每次现实结算生成
+    // 5~10 枚符文（`GlyphSelection.glyphList`），实测 124 秒真实新档末态已有
+    // 21 枚（库存 16 + 装备 5）。原版 30 枚的门槛需要再多好几轮现实循环，
+    // 而**每一次现实都会清空 `player.eternityChalls`（EC 完成记录）与
+    // `Currency.timeTheorems`**（reality.js:657/666），于是「攒符文」和
+    // 「保持 EC 进度」互相打架，30 枚实际上是一个会自我阻塞的门槛。
+    //
+    // 20 枚在首轮现实循环后即可达成，**保留「攒够符文才能献祭」这个真实玩法**，
+    // 只降低数量墙，不伪造符文、不改仓库容量、不改生成数量。
+    requirement: () => `拥有基本符文的总数达到 ${formatInt(20)} （你已拥有 ${formatInt(Glyphs.allGlyphs.countWhere(g => g.type !== "companion"))} 个）`,
+    hasFailed: () => Glyphs.allGlyphs.countWhere(g => g.type !== "companion") < 20,
+    checkRequirement: () => Glyphs.allGlyphs.countWhere(g => g.type !== "companion") >= 20,
     checkEvent: GAME_EVENT.REALITY_RESET_BEFORE,
     description: "你可以献祭符文来获得永久加成",
     formatCost: value => format(value, 1, 0)

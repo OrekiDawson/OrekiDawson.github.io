@@ -273,9 +273,17 @@ function maxBuyDimBoosts() {
   // 让这一帧变慢，而不是抛异常把主循环打死。
   const increase = req2.amount - req1.amount;
   const dim = AntimatterDimension(req1.tier);
-  const maxBoosts = Math.min(Number.MAX_VALUE,
+  // [Oreki R26] 这里原来是 `const maxBoosts`，而下面二分查找里有 `maxBoosts = middle;`
+  // —— 严格模式下这是「Assignment to constant variable」TypeError。
+  // 触发条件恰好是 `bulkRequirement(maxBoosts)` 不满足（EC5、以及现实重置后
+  // 提升成本曲线与一次解析外推不一致的时候），于是**每帧**在
+  // 维度提升自动器（dimboost-autobuyer.js:107 → requestDimensionBoost → maxBuyDimBoosts）
+  // 抛异常击穿 gameLoop。R26 真新档实测：第一次现实后 t≈47 s 起 inf / et / 反物质
+  // 全部冻结（页面仍可读状态，所以是主循环被打死而不是浏览器挂起）。
+  let maxBoosts = Math.min(Number.MAX_VALUE,
     1 + Math.floor((dim.totalAmount.toNumber() - req1.amount) / increase));
-  if (!(increase > 0) || !Number.isFinite(maxBoosts) || maxBoosts < 2) {    softReset(1);
+  if (!(increase > 0) || !Number.isFinite(maxBoosts) || maxBoosts < 2) {
+    softReset(1);
     return;
   }
   if (DimBoost.bulkRequirement(maxBoosts).isSatisfied) {

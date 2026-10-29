@@ -69,12 +69,12 @@ export default {
           {{ UILabel }}
         </OptionsButton>
         <UpdateRateSlider />
-        <OptionsButton
-          class="o-primary-btn--option"
-          onclick="Modal.newsOptions.show();"
-        >
-          打开新闻选项
-        </OptionsButton>
+        <!-- [Oreki R33] 「打开新闻选项」按钮已移除：用户要求 Web 关闭新闻，
+             不得再显示新闻入口。新闻滚动条本身也已在 NewsTicker.js 里
+             用根节点 v-if 整体不渲染（不留空白），所以这个入口没有存在意义。
+             NewsOptionsModal.js 文件保留，仅是不可达状态，方便将来要恢复时少改一处。
+             注意：本段位于反引号模板字符串内，注释里**不得**再出现反引号，
+             否则会提前结束字符串并造成 SyntaxError（R33 首次冒烟就是这样炸的）。 -->
       </div>
       <div class="l-options-grid__row">
         <ExpandingControlBox

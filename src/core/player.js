@@ -784,7 +784,11 @@ window.player = {
       includeAnimated: true,
       chineseNews: true
     },
-    notation: "Mixed scientific",
+    // [Oreki R33] 默认记数法：原版是 "Mixed scientific"（混合型，形如 8.62e2.781e10，
+    // 指数本身再套一层科学记数法）。用户要求双端默认科学记数法（形如 8.62e27810000000），
+    // 一眼能比大小，直接服务「看数值 → 决定买什么」这个最高频动作。
+    // 只改默认值：已有存档里玩家自己选过的记数法不受影响（读档走各自的持久化值）。
+    notation: "Scientific",
     notationDigits: {
       comma: 5,
       notation: 9

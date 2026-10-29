@@ -20,7 +20,7 @@
 // （等价于提前给 `antimatterNoReset` 的反物质部分），其余一切不变：
 // - 不改任何成本、不改 IP 公式、不改 maxAM 记录、不改挑战/毁灭规则；
 // - 不写存档字段，不需要迁移；
-// - 窗口关闭后（首次永恒达成 / 进入挑战 / 毁灭现实）自动失效，恢复原版行为；
+// - 窗口关闭后（进入天神现实 / 挑战 / 毁灭现实）自动失效，恢复原版行为；
 // - 挑战、毁灭现实下仍按原版清零，避免破坏挑战计时与毁灭规则。
 //
 // 判定口径（与 Web 既有 AD3/AD3b 一致）：
@@ -33,8 +33,6 @@
 // - 不在任何挑战中（普通挑战 / 无限挑战 / 永恒挑战）
 // - 不在毁灭现实（Pelle.isDoomed）
 
-import { PlayerProgress } from "./player-progress.js";
-
 /**
  * [Oreki AD4] 是否处于「保留反物质」窗口。
  * 只读判断，无副作用。true 表示维度提升 / 星系重置不应清零反物质。
@@ -42,7 +40,24 @@ import { PlayerProgress } from "./player-progress.js";
 export const OrekiKeepAntimatter = {
   get active() {
     try {
-      if (PlayerProgress.eternityUnlocked()) return false;
+      // [Oreki R26] 原来这里写着 `if (PlayerProgress.eternityUnlocked()) return false;`，
+      // 而 `eternityUnlocked()` 在**现实之后恒为 true**（`isEternityUnlocked` 里
+      // `|| isRealityUnlocked`，player-progress.js:16）。于是第一次现实一发生，
+      // 这条窗口立刻关闭 —— 而现实重置恰好把 `player.break`、`dimensionBoosts`、
+      // `galaxies`、IP 全部清零（reality.js:629-635），等于把 AD4 当初解决的
+      // 「维度提升/星系重置把反物质清零 → 爬不到 1.797e308 → 永远不能无限」死锁
+      // 在每一次现实后重新演一遍。
+      // R26 实测：现实后 maxAM 卡在 1e270 量级、ID1 需要的 1e1100 永远到不了、
+      // `et` 从头到尾是 0，整个现实层直接停摆。
+      // 现在改成：只在毁灭现实与天神现实里关闭（那里有各自的资源约束）。
+      // [Oreki R32] 鹿颈长 run 例外：阶段 1 的目标就是「真实把反物质打到 1.8e308
+      // 触发 Big Crunch」，而 run 内维度提升/星系重置同样会把当前反物质清零。
+      // R32 实测（_r32-nerf.jsonl）：关掉本窗口时 maxAM 在 t=245 起锁死 1e159 整整
+      // 350 秒零增长，而门槛是 1e308 —— 与 R19 首次无限前完全同构的死锁闭环。
+      // 这里只放开「鹿颈长 run 进行中」，毁灭现实、普通/无限/永恒挑战仍按原版清零
+      // （时序上把天神判断放在挑战判断之前，但只针对 effarig.run，不影响其他天神）。
+      if (player.celestials.effarig.run === true) return true;
+      if (isInCelestialReality()) return false;
       if (NormalChallenge.isRunning || InfinityChallenge.isRunning) return false;
       if (EternityChallenge.isRunning) return false;
       if (Pelle.isDoomed) return false;

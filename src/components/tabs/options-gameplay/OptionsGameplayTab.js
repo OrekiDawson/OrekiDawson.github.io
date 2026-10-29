@@ -239,12 +239,12 @@ export default {
         <PrimaryToggleButton
           v-model="scaleTickspeedAutobuyerInterval"
           class="o-primary-btn--option c-oreki-speed__autobuyer-toggle c-oreki-speed__tickspeed-toggle"
-          label="Tick Speed 购买器间隔随倍率缩短："
+          label="计数频率自动购买器间隔随倍率缩短："
         />
         <div class="o-primary-btn o-primary-btn--option c-oreki-speed__info c-oreki-speed__autobuyer-hint">
-          <b>仅影响 Tick Speed 自动购买器</b>
+          <b>仅影响计数频率自动购买器</b>
           <span class="c-oreki-speed__hint">
-            开启后，Tick Speed 自动购买器的购买间隔会按游戏速度倍率缩短，
+            开启后，计数频率自动购买器的购买间隔会按游戏速度倍率缩短，
             让计数频率升级跟得上游戏时间；默认关闭，×1 时行为不变。
           </span>
         </div>

@@ -200,7 +200,7 @@ export const MultiplierTabHelper = {
   },
 
   pluralizeDimensions(dims) {
-    return dims === 1 ? "Dimension\xa0" : "Dimensions";
+    return "个维度";
   },
 
   // All of the following NC12-related functions are to make the parsing within the GameDB entry easier in terms of

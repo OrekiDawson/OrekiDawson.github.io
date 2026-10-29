@@ -145,17 +145,71 @@ export const OrekiEternityAutomation = {
     }
   },
 
+  /**
+   * E) 购买永恒挑战（EC）的研究，并自动进入当前已解锁的 EC。
+   *
+   * 事实：EC 的解锁不是靠「打完上一个」，而是靠**买下对应的 EC 时间研究**——
+   *   `ECTimeStudyState.purchase()` 里写着 `player.challenge.eternity.unlocked = this.id`
+   *   （src/core/time-studies/ec-time-study.js:34）。
+   * 而 `EternityChallenge.isUnlocked` 就是 `player.challenge.eternity.unlocked === this.id`
+   * （src/core/eternity-challenge.js:54），也就是**同一时刻只有一关是开着的**。
+   *
+   * 这条链是 Reality 的必经之路：膨胀研究 1 要求 EC11 与 EC12 全部完成
+   * （secret-formula/eternity/time-studies/dilation-time-studies.js:19），
+   * 而膨胀研究 6（= TimeStudy.reality）还要求全部 pre-Reality 成就。
+   *
+   * 进入挑战后由既有的 core/oreki-instant-challenges.js「进入即完成」接管，
+   * 这里只负责按下「开始」那一下，不重复实现完成逻辑。
+   */
+  buyEcStudiesAndStart() {
+    try {
+      // 1) 能买的 EC 研究都买掉（前置不满足时 purchase 自己返回 false）
+      for (let id = 1; id <= 12; id++) {
+        try {
+          const study = TimeStudy.eternityChallenge(id);
+          if (study && !study.isBought) study.purchase();
+        } catch (e) {
+          // 该 EC 研究暂不可买
+        }
+      }
+
+      // 2) 已有挑战在跑就不插手
+      if (EternityChallenge.isRunning) return false;
+
+      // 3) 进入当前已解锁的那一关；没打完就不重复进入
+      const unlockedId = player.challenge.eternity.unlocked;
+      if (!unlockedId) return false;
+      let challenge;
+      try {
+        challenge = EternityChallenge(unlockedId);
+      } catch (e) {
+        return false;
+      }
+      if (!challenge || !challenge.isUnlocked) return false;
+      if (challenge.completions >= challenge.maxCompletions) {
+        // 这一关已满，尝试把下一关的研究买掉（下一次 tick 会重新走 1)）
+        return false;
+      }
+      return challenge.start(true) === true;
+    } catch (e) {
+      return false;
+    }
+  },
+
   tick() {
-    if (!this.active) return { dims: false, tt: false, studies: 0, dilation: 0 };
+    if (!this.active) return { dims: false, tt: false, studies: 0, dilation: 0, ec: false };
     const dims = this.buyTimeDimensions();
     const tt = this.buyTimeTheorems();
     this._frame++;
     let studies = 0;
     let dilation = 0;
+    let ec = false;
     if (this._frame % STUDY_TICK_INTERVAL === 0) {
       studies = this.buyTimeStudies();
       dilation = this.buyDilationStudies();
     }
-    return { dims, tt, studies, dilation };
+    // EC 的进入会触发 eternity 重置，节流到每 20 帧才尝试一次
+    if (this._frame % 20 === 0) ec = this.buyEcStudiesAndStart();
+    return { dims, tt, studies, dilation, ec };
   },
 };

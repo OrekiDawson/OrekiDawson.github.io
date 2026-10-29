@@ -9,6 +9,13 @@
   align-items: stretch;
 }
 
+/* 选项页栅格：上游 .l-options-grid 没有宽度上限，会按子项的
+   min-content 撑宽。在 700~800px 这一档（侧栏占位后内容区变窄）
+   会把倍率输入框与开关整行推出视口，这里把栅格限制在容器内。 */
+.l-options-grid {
+  max-width: 100%;
+}
+
 /* 信息区：显示当前倍率与说明 */
 .c-oreki-speed__info {
   width: auto !important;
@@ -49,6 +56,8 @@
 .c-oreki-speed__field {
   width: 100%;
   box-sizing: border-box;
+  /* 3.2rem = 32px，满足触屏最小点击目标（上游 input 默认仅 23px 高） */
+  min-height: 3.2rem;
   padding: 0.35rem 0.4rem;
   font-family: inherit;
   font-size: 1.05rem;
@@ -145,6 +154,9 @@
 
   .c-oreki-speed__autobuyer-toggle {
     flex: 1 1 100%;
+    /* 窄屏放不下「自动购买器间隔随倍率缩短：开启」整行，允许换行；
+       否则按钮的 min-content 宽度会把整行撑破视口。 */
+    white-space: normal;
   }
 }
 
@@ -338,7 +350,72 @@
   }
 }
 
-/* ===== 内置教程（选项 → 游戏性 → 内置教程） ===== */
+/* ===== 内置教程（选项 → 游戏玩法 → 内置教程 + 右下角常驻入口） ===== */
+
+/* 常驻教程入口：固定在视口右下角，任何页签、任何滚动位置都点得到。
+   z-index 5 低于 .l-modal-overlay（6）：弹窗打开时被遮罩盖住，不会与弹窗按钮抢焦点。
+   尺寸按触屏最小点击目标给（≥ 3.6rem = 36px），窄屏也不缩到手指点不到。 */
+.c-oreki-tut-entry {
+  display: flex;
+  position: fixed;
+  right: 0.6rem;
+  bottom: calc(0.6rem + env(safe-area-inset-bottom, 0px));
+  z-index: 5;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 3.6rem;
+  padding: 0 0.9rem;
+  font-family: inherit;
+  font-size: 1.15rem;
+  color: var(--color-text);
+  background: var(--color-base);
+  border: 0.1rem solid var(--color-good);
+  border-radius: 2rem;
+  box-shadow: 0 0 0.8rem rgb(0 0 0 / 55%);
+  cursor: pointer;
+  opacity: 0.92;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 常驻入口不吃 hover 的全局按钮样式，只提亮边框 */
+.c-oreki-tut-entry:hover,
+.c-oreki-tut-entry:focus-visible {
+  opacity: 1;
+  border-color: var(--color-reality);
+  outline: none;
+}
+
+.c-oreki-tut-entry__icon {
+  width: 1.7rem;
+  height: 1.7rem;
+  font-size: 1.15rem;
+  font-weight: bold;
+  line-height: 1.6rem;
+  text-align: center;
+  border: 0.1rem solid currentColor;
+  border-radius: 50%;
+  opacity: 0.85;
+}
+
+.c-oreki-tut-entry__label {
+  line-height: 1;
+}
+
+/* 上游 .c-modal-message 带 min-width: 50rem（根字号 10px 时即 500px），
+   会把教程弹窗内容撑破窄屏面板。教程/工具类弹窗自带 max-width 与滚动，
+   这里解除该下限，让内容跟随面板宽度收缩。 */
+.c-modal:has(.c-oreki-tut) .c-modal-message,
+.c-modal:has(.c-oreki-tool) .c-modal-message {
+  min-width: 0;
+}
+
+/* 成就/通知条（.l-notification-container，z-index 1000）会整片盖住教程弹窗标题与右上角关闭按钮。
+   这里只把「带教程 / 工具的弹窗面板」抬到通知之上；遮罩保持原位，
+   于是通知仍在暗化背景之上、但不会压在弹窗内容上。 */
+.l-modal:has(.c-oreki-tut),
+.l-modal:has(.c-oreki-tool) {
+  z-index: 1001;
+}
 
 .c-oreki-tut {
   width: 100%;
@@ -367,6 +444,8 @@
   align-items: center;
   gap: 0.6rem;
   width: 100%;
+  /* 3.6rem = 36px，满足触屏最小点击目标（与底部翻章按钮一致） */
+  min-height: 3.6rem;
   padding: 0.5rem 0.7rem;
   font-family: inherit;
   font-size: 1.2rem;
@@ -547,6 +626,12 @@
   gap: 0.6rem;
   padding-top: 0.5rem;
   border-top: 0.1rem solid rgb(255 255 255 / 15%);
+}
+
+/* 教程弹窗底部按钮（关闭教程等）：上游 .o-primary-btn 固定 2.5rem（25px），
+   窄屏上手指不好点，这里抬到 3.2rem = 32px 的最小触控高度。 */
+.c-modal:has(.c-oreki-tut) .l-modal-buttons .o-primary-btn {
+  min-height: 3.2rem;
 }
 
 .c-oreki-tut__nav-move {

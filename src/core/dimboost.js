@@ -1,4 +1,5 @@
 import { DC } from "./constants.js";
+import { OrekiKeepAntimatter } from "./oreki-keep-antimatter.js";
 
 class DimBoostRequirement {
   constructor(tier, amount) {
@@ -196,7 +197,7 @@ export function softReset(tempBulk, forcedADReset = false, forcedAMReset = false
   const canKeepAntimatter = Pelle.isDoomed
     ? PelleUpgrade.dimBoostResetsNothing.canBeApplied
     : (Achievement(111).isUnlocked || Perk.antimatterNoReset.canBeApplied);
-  if (!forcedAMReset && canKeepAntimatter) {
+  if (!forcedAMReset && (canKeepAntimatter || OrekiKeepAntimatter.active)) {
     Currency.antimatter.bumpTo(Currency.antimatter.startingValue);
   } else {
     Currency.antimatter.reset();

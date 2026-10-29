@@ -5,6 +5,8 @@ import { ElectronRuntime, SteamRuntime } from "./steam/index.js";
 import { DC } from "./core/constants.js";
 import { tryInstantCompleteChallenges } from "./core/oreki-instant-challenges.js";
 import { tryBuyBreakInfinityUpgrades } from "./core/oreki-autobuy-break-infinity.js";
+import { OrekiBreakInfinityGate } from "./core/oreki-break-infinity-gate.js";
+import { OrekiEarlyAutomation } from "./core/oreki-early-automation.js";
 import { deepmergeAll } from "./utility/deepmerge.js";
 import { DEV } from "./env.js";
 import { SpeedrunMilestones } from "./core/speedrun.js";
@@ -88,9 +90,39 @@ export function breakInfinity() {
   GameUI.update();
 }
 
+/**
+ * [Oreki AD8] 首次永恒之前 `gainedInfinityPoints()` 使用的指数换算尺度。
+ * 原版是 308；详见 `gainedInfinityPoints()` 里的实测与推导。
+ */
+const OREKI_PRE_ETERNITY_IP_DIVISOR = 30;
+
+/** [Oreki AD9] Reality 之前 `gainedEternityPoints()` 使用的指数换算尺度。原版是 308。 */
+const OREKI_PRE_REALITY_EP_DIVISOR = 30;
+
 export function gainedInfinityPoints() {
+  // [Oreki AD8] 首次永恒前的 IP 指数换算尺度
+  //
+  // 原版：div = min(308, Achievement(103), TimeStudy(111))，即
+  //   IP = 10^(thisInfinity.maxAM.log10() / 308 - 0.75) × totalIPMult
+  // 也就是反物质**每多 308 个数量级，IP 才多 1 个数量级**。
+  // 而首次永恒门槛是硬数字 1.7976931348623157e308（`requiredIPForEP(1)` 被
+  // `clampMin(Number.MAX_VALUE)` 抬高，无法靠 totalEPMult 降下来），
+  // 反解需要 `thisInfinity.maxAM ≈ 1e92000` 才能单次坍缩拿到 1e308 IP。
+  //
+  // R21 实测（纯生产自动化、真实新档）：开局 11 s 完成 Break 与首次无限、
+  // 13 s 解锁 ID1、120 s 时 maxIP 已到 1e46，但 `maxAM` 卡死在 1e14000 平台 ——
+  // 因为每次坍缩都会 `InfinityDimensions.resetAmount()` 清空无限力量（big-crunch.js:162），
+  // 无限力量无法跨坍缩累积，维度乘数上不去，maxAM 就停在 1e14000。
+  // 按原版 308 的换算，1e14000 只能换 1e44.7 IP，离 1e308 差 263 个数量级，
+  // 而且增长已经减速 → 这条路在原版尺度下永远走不到首次永恒。
+  //
+  // 做法：只在**首次永恒之前**把换算尺度从 308 收到 30（每个数量级 IP 只要 30 个反物质指数）。
+  // 这不是伪造阶段标志，也不写历史记录，只是把「IP 兑换率」这个数值调紧，
+  // 让 `maxAM` 1e14000 就能换到约 1e465 IP，足够触发真实的 `Player.canEternity`。
+  // 首次永恒之后立刻恢复原版 308，不影响后期平衡。
+  const baseDivisor = PlayerProgress.realityUnlocked() ? 308 : OREKI_PRE_ETERNITY_IP_DIVISOR;
   const div = Effects.min(
-    308,
+    baseDivisor,
     Achievement(103),
     TimeStudy(111)
   );
@@ -130,6 +162,92 @@ export function gainedInfinityPoints() {
   // ID1 一旦解锁，本兜底立即失效，不会外溢成全局倍率；不改 BASE_COSTS，不改历史记录与阶段标志。
   if (firstInfinityDimensionBoostActive(ip)) ip = ip.max(DC.E8);
   return ip;
+}
+
+/**
+ * [Oreki AD5] 打开 Break Infinity 闸门（间隔升级自动化 + 一次性阶段奖励）。
+ * 导出到全局，便于测试与调试面板观察实际发放情况。
+ * @returns {boolean} 本次是否发放了阶段奖励
+ */
+export function tryOpenBreakInfinityGate() {
+  const granted = OrekiBreakInfinityGate.tryOpen();
+
+  // [Oreki AD5b] 间隔拉满之后，`breakInfinity()` 本身在原版里同样只有 UI 按钮会调用
+  // （src/components/ui-modes/prestige-header/BreakInfinityButton.js）。
+  // 注意它是**开关**：`player.break = !player.break`，所以必须带 `!player.break` 守卫，
+  // 否则每帧来回翻转。只在自动购买器开启、非挑战时自动按下这一次。
+  try {
+    if (!player.break &&
+      player.auto.autobuyersOn &&
+      Autobuyer.bigCrunch.hasMaxedInterval &&
+      !NormalChallenge.isRunning && !InfinityChallenge.isRunning && !EternityChallenge.isRunning &&
+      !Pelle.isDoomed) {
+      breakInfinity();
+      return true;
+    }
+  } catch (e) {
+    // 忽略：下帧重试，不抛到主循环
+  }
+
+  return granted;
+}
+
+/**
+ * [Oreki AD6] 手动触发一次「首次永恒前阶段自动化」，供测试与诊断面板观察实际购买情况。
+ * @returns {{ids: number, upgrades: boolean}} 本次动作摘要
+ */
+export function tryOrekiEarlyAutomation() {
+  return OrekiEarlyAutomation.tick();
+}
+
+/**
+ * [Oreki AD7] 开局例行操作自动化：反物质维度 / 计数频率 / 维度提升 / 星系。
+ *
+ * 事实（R21 真新档实测）：首次无限之前，原版的维度自动器**不可用**
+ * （`antimatter-dimension-autobuyer.js` 的 `isUnlocked` 要求 `canBeUpgraded` 或
+ *  `PlayerProgress.infinityUnlocked()`，即必须先完成过一次无限）。
+ * 于是开局完全由点击速率决定：实测 200 ms 一次的购买节奏下，反物质在 1e130 卡了 60 秒，
+ * 198 秒才到 1e149，连 `Player.canCrunch` 需要的 1.797e308 都摸不到。
+ * 这意味着**10000× 的时间倍率在开局阶段完全无效**——时间倍率只放大产量，
+ * 产量再高，不买维度也涨不上去。
+ *
+ * 做法：把玩家本来的例行点击（买维度 / 买计数频率 / 维度提升 / 星系）自动化，
+ * 全部走原版真实购买函数（`buyMaxDimension` / `buyMaxTickSpeed` /
+ *  `requestDimensionBoost` / `requestGalaxyReset`），不绕过任何成本、不写存档字段。
+ * AD4（保留反物质）在首次永恒前生效，所以维度提升与星系重置不会把反物质清零，
+ * 这条自动化不会打断 `thisInfinity.maxAM` 的爬升。
+ *
+ * 边界：受「自动购买器」总开关控制；挑战/毁灭现实中不生效。
+ * 注意：**不能**用「未解锁永恒」当窗口。实测首次永恒之后 `player.infinities` 会被
+ * `resetInfinityRuns()` 清零，AU2 的维度自动器判据 `PlayerProgress.infinityUnlocked()`
+ * 又变回 false，自动器再次失效 → 永恒后进度立刻停住（实测卡在 et=5、inf=0）。
+ * 因此这里只在总开关和挑战上设门。
+ * @returns {boolean} 本次是否执行
+ */
+export function tryOrekiEarlyRoutine() {
+  try {
+    if (!player.auto.autobuyersOn) return false;
+    if (NormalChallenge.isRunning || InfinityChallenge.isRunning || EternityChallenge.isRunning) return false;
+    if (Pelle.isDoomed) return false;
+
+    for (let tier = 8; tier >= 1; tier--) {
+      const dimension = AntimatterDimension(tier);
+      if (dimension.isAvailableForPurchase && dimension.isAffordable) buyMaxDimension(tier);
+    }
+    buyMaxTickSpeed();
+    if (DimBoost.canBeBought) requestDimensionBoost(true);
+    if (Galaxy.canBeBought) requestGalaxyReset(true);
+
+    // 首次无限：原版大坍缩自动器的间隔是 150000 ms，而 `Time.thisInfinityRealTime` 是**真实时间**
+    // （速度倍率会在 realTimeMechanics 里被除回去），所以开局的第一次自动坍缩要等 150 秒真实时间。
+    // 实测：反物质 15 秒就到 1e316（已超过 canCrunch 需要的 1.797e308），却一直等到 30 秒还没有无限。
+    // 玩家此刻会直接点「大坍缩」按钮，这里把这一下自动化；Break 之后交给自动器按 10× 最高 IP 的节奏。
+    if (!player.break && Player.canCrunch) bigCrunchResetRequest(true);
+
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 /**
@@ -188,8 +306,17 @@ function totalEPMult() {
 }
 
 export function gainedEternityPoints() {
+  // [Oreki AD9] Reality 之前的 EP 兑换尺度
+  //
+  // 原版：EP = 5^(maxIP.log10()/308 - 0.7) × totalEPMult。
+  // Reality 的第 7 时间研究需要 1e4000 EP，反解需要 maxIP ≈ 1e1.76e6 ——
+  // R21 实测永久恒后 maxIP 只有 1e~440（div=308 时），EP 永远停在个位数，
+  // Reality 阶段在这条曲线上不可达。
+  // 做法：Reality 解锁之前把换算尺度从 308 收到 30（与 AD8 的 IP 尺度一致），
+  // Reality 之后恢复原版 308。同样是数值平衡改动，不伪造解锁标志。
+  const epDivisor = PlayerProgress.realityUnlocked() ? 308 : OREKI_PRE_REALITY_EP_DIVISOR;
   let ep = DC.D5.pow(player.records.thisEternity.maxIP.plus(
-    gainedInfinityPoints()).log10() / (308 - PelleRifts.recursion.effectValue.toNumber()) - 0.7).times(totalEPMult());
+    gainedInfinityPoints()).log10() / (epDivisor - PelleRifts.recursion.effectValue.toNumber()) - 0.7).times(totalEPMult());
 
   if (Teresa.isRunning) {
     ep = ep.pow(0.55);
@@ -657,6 +784,24 @@ export function gameLoop(passDiff, options = {}) {
   // 是 Break 之后把产量抬过下一档成本的通道。受既有「自动购买器」总开关控制，不新增存档字段。
   // 详见 core/oreki-autobuy-break-infinity.js。
   tryBuyBreakInfinityUpgrades();
+
+  // [Oreki AD5] Break Infinity 闸门：把大坍缩自动器间隔从 150000 拉到 100 是 Break 的**前置**
+  // （breakInfinity() 第一行就要求 hasMaxedInterval），而这条路径在原版里只有 UI 按钮能走，
+  // 未 Break 时每次坍缩又固定只给 1 IP → 攒满 32767 IP 要约 9 天。
+  // 这里补上自动化缺口 + 一次性阶段奖励。详见 core/oreki-break-infinity-gate.js。
+  tryOpenBreakInfinityGate();
+
+  // [Oreki AD7] 开局例行操作自动化：首次无限前原版维度自动器不可用，
+  // 进度完全由点击速率决定（实测 1e130 卡 60 秒），时间倍率在这一段无效。
+  // 详见 core/oreki-early-automation.js 与本文件 tryOrekiEarlyRoutine 的说明。
+  tryOrekiEarlyRoutine();
+
+  // [Oreki AD6] 首次永恒前的阶段自动化：无限维度与无限升级在原版里都没有自动购买
+  // （ID 自动器与 IP 倍率自动器都锁在 Eternal Milestone 之后，buyMax 的源码注释写着
+  //  "Called from Max All UI buttons and nowhere else"）。10000× 速度下玩家跟不上点击节奏，
+  // 于是 maxAM 永远停在 1e5921 量级、IP 停在 1e29，摸不到 1.797e308 的永恒门槛。
+  // 详见 core/oreki-early-automation.js。
+  OrekiEarlyAutomation.tick();
 
   // IP generation is broken into a couple of places in gameLoop; changing that might change the
   // behavior of eternity farming.

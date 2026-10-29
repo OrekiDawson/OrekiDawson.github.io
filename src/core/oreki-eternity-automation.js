@@ -42,16 +42,28 @@ import { PlayerProgress } from "./player-progress.js";
 const STUDY_TICK_INTERVAL = 30;
 
 /**
- * 普通时间研究可能存在的 id 区间。
- * 原版是 11~73 的前置行、81~103 的维度分叉行、以及 111~243 的各 EC 行，
- * 每 10 个一组、组内最多 3 个。这里按这个形状枚举，不存在的 id 由 try/catch 跳过。
+ * 普通时间研究 id 列表：直接从数据库取，不再手写区间。
+ *
+ * [Oreki R25] 原来手写的是「11~73 + 每组 x01~x03」，漏掉了所有 x04：214 / 224 / 234
+ * （normal-time-studies.js 里确实存在这三个）。R25 实测末态 boughtIds 里恰好没有 214/234。
+ * 影响：
+ *   · 234 是 EC12 的另一条入口（ec-time-studies.js:139 `requirement: [233, 234]`，
+ *     AT_LEAST_ONE），214 又是 227/228 的前置（normal-time-studies.js:633）——
+ *     这条路整条不可达；
+ *   · 好在 233（←225/226←213）这一条能走通，所以 EC12 还能靠 233 满足；
+ *     真正的 EC12 死锁是「买错维度分叉（71）」，见 `blockedStudies()`。
+ *   但手写枚举与数据库脱节本身就是隐患（以后再加 x04 还会漏），改为直接读数据库。
  */
 function* studyIds() {
-  for (let id = 11; id <= 73; id++) yield id;
-  for (let hundred = 80; hundred <= 240; hundred += 10) {
-    for (let k = 1; k <= 3; k++) yield hundred + k;
+  const db = (typeof GameDatabase !== "undefined" && GameDatabase.eternity?.timeStudies?.normal) || [];
+  for (const study of db) yield study.id;
+  // 兜底：万一数据库还没初始化，仍用旧的枚举形状（不会更差）
+  if (!db.length) {
+    for (let id = 11; id <= 73; id++) yield id;
+    for (let hundred = 80; hundred <= 240; hundred += 10) {
+      for (let k = 1; k <= 4; k++) yield hundred + k;
+    }
   }
-  yield 111;
 }
 
 export const OrekiEternityAutomation = {
@@ -69,11 +81,20 @@ export const OrekiEternityAutomation = {
     }
   },
 
-  /** A) 用 EP 买时间维度 1~4（5 以上需要时间研究，留给第二步） */
+  /**
+   * A) 用 EP 买时间维度 1~8。
+   *
+   * [Oreki R25] 原来只买到 4 级。但膨胀研究 6（`TimeStudy.reality`）的第一条要求是
+   * `TimeStudy.timeDimension(8).isBought`（dilation-time-studies.js:50），
+   * 而 `TimeStudy.timeDimension(8)` 就是**膨胀研究 5**（dilation-time-study.js:78
+   * `studies[tier - 3]`），也就是 5~8 级时间维度的解锁链。
+   * 这里按 `isUnlocked` 自己判定（8→1 顺序，高级维度对 DD 的加成最大），
+   * 只买得起才买，成本与扣费全走原版 `buyMaxTimeDimension`。
+   */
   buyTimeDimensions() {
     try {
       let bought = false;
-      for (let tier = 4; tier >= 1; tier--) {
+      for (let tier = 8; tier >= 1; tier--) {
         const td = TimeDimension(tier);
         if (!td.isUnlocked) continue;
         if (!td.isAffordable) continue;
@@ -99,11 +120,86 @@ export const OrekiEternityAutomation = {
     }
   },
 
+  /**
+   * 目标 EC 需要的「互斥研究列」。
+   *
+   * 时间研究树有三组互斥列（`requiresST` 表示「买了对方就要花空间定理」，
+   * 而 Reality 之前 `V.availableST` 恒为 0，等于只能选一列）：
+   *   列 A：121 / 122 / 123（normal-time-studies.js:306-345）
+   *   列 B：131(←121) / 132(←122) / 133(←123)（:352-...）
+   *   列 C：141(←131) / 142(←132) / 143(←133)（:388-...）
+   *   151 只要列 C 任意一个（:430）。
+   *
+   * 而各 EC 的主前置是写死的（ec-time-studies.js）：
+   *   · EC4 → 143 → 133 → 123（第 43-44 行 `requirement: [143]`）
+   *   · EC8 → 123（第 90-92 行 `requirement: [123]`）
+   *   · EC6 → 121（第 65-68 行 `requirement: [121]`）
+   * 也就是说 EC4/EC8 与 EC6 必须在**不同列**里打，必须靠 respec 换列。
+   * R25 实测：贪心按 id 升序只会买到 121 列，末态 `ts143 = false`、`ts123 = false`，
+   * 于是 ec4.cur 早就 ≥ tot（met = true）却 `bought = false`、EC4 永远是 0 次。
+   */
+  preferredColumn() {
+    try {
+      const id = this.nextUnfinishedEcId();
+      if (id === 4 || id === 8) return 123;
+      return 121;
+    } catch (e) {
+      return 121;
+    }
+  },
+
+  /**
+   * 当前不允许购买的研究集合：
+   *   1) 与目标 EC 所需列互斥的另外两列；
+   *   2) 维度分叉里没选中的那两条（71/73 只能留一条，见下）。
+   *
+   * 维度分叉（DIMENSION_PATH，normal-time-studies.js:146/188）：
+   *   · EC11 的 forbiddenStudies = [72, 73]（ec-time-studies.js:131）→ 只能走 71 那条；
+   *   · EC12 的 forbiddenStudies = [71, 72]（ec-time-studies.js:141）→ 只能走 73 那条；
+   *   81 的前置是 71、83 的前置是 73，而默认 allowedDimPathCount = 1，
+   *   买错一条就再也买不到另一条 → 对应 EC 的 `hasForbiddenStudies` 恒真。
+   *   R25 实测：末态 `ts71 = true` → `ec12.forb = true, met = false`。
+   */
+  blockedStudies() {
+    const col = this.preferredColumn();
+    const blocked = new Set();
+    for (const id of [121, 122, 123]) if (id !== col) blocked.add(id);
+    if (col === 123) {
+      blocked.add(131).add(132);
+      blocked.add(141).add(142);
+    } else if (col === 122) {
+      blocked.add(131).add(133);
+      blocked.add(141).add(143);
+    } else {
+      blocked.add(132).add(133);
+      blocked.add(142).add(143);
+    }
+    const path = this.nextUnfinishedEcId() === 12 ? 73 : 71;
+    for (const id of [71, 72, 73]) if (id !== path) blocked.add(id);
+    return blocked;
+  },
+
+  /** 已经买错列/买错分叉 → 只能靠 respec 换回来 */
+  needsBranchRespec() {
+    try {
+      if (!this.active) return false;
+      if (player.challenge.eternity.unlocked !== 0) return false;
+      for (const id of this.blockedStudies()) {
+        if (TimeStudy(id).isBought) return true;
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  },
+
   /** C) 逐个尝试购买时间研究；前置不满足的 purchase 会自己返回 false */
   buyTimeStudies() {
     try {
+      const blocked = this.blockedStudies();
       let bought = 0;
       for (const id of studyIds()) {
+        if (blocked.has(id)) continue;
         try {
           const study = TimeStudy(id);
           if (!study || study.isBought) continue;
@@ -300,6 +396,11 @@ export const OrekiEternityAutomation = {
       if (player.challenge.eternity.unlocked !== 0) return false;
       const id = this.nextUnfinishedEcId();
       if (!id) return false;
+      // [Oreki R25] EC4 例外：它的入口是 `Currency.infinitiesTotal`（无限次数），
+      // 而 `Currency.infinities` 每次永恒都会清零，只有 `infinitiesBanked`
+      // 会在永恒时按 5% 结算累积（eternity.js:53 + 时间研究 191）。
+      // 也就是说「暂停永恒」对 EC4 是**反效果**：攒不到 1e6，反而把唯一的累积途径关掉。
+      if (id === 4) return false;
       const study = TimeStudy.eternityChallenge(id);
       if (!study || study.isBought) return false;
       const primaryMet = (study.config.requirement || []).some(s => {
@@ -369,6 +470,68 @@ export const OrekiEternityAutomation = {
     }
   },
 
+  /**
+   * I) EC6 的入口是「复制器星系 ≥ 1」（ec-time-studies.js:71，AD15 已按 /100 缩放）。
+   *
+   * 为什么必须单独处理（R25 实测 + 源码核对）：
+   * 1. `Replicanti.galaxies.max = ReplicantiUpgrade.galaxies.value + extra`
+   *    （replicanti.js:550-552），而 `value` 就是 `player.replicanti.boughtGalaxyCap`，
+   *    初始 0；`extra` 来自时间研究 131，效果是 `floor(boughtGalaxyCap / 2)` = 0。
+   *    所以不先买「复制器星系上限」升级，上限恒为 0 → `canBuyMore` 恒 false → 永远 0 个。
+   *    R25 实测末态 `repGalMax: 0`、`repGal: 0`。
+   * 2. 复制器星系的自动购买器在**买到时间研究 131 后被硬性禁用**：
+   *    `ReplicantiGalaxyAutobuyerState.isEnabled` 是
+   *    `Achievement(138).isUnlocked || !TimeStudy(131).isBought`（replicanti-galaxy-autobuyer.js:16）。
+   *    自动化为了推进研究树一定买了 131 → 自动器永久关闭（R25 实测 rgAutoOn = false）。
+   *    这里直接走原版手动购买函数 `replicantiGalaxy(true)`（它本身只校验
+   *    `RealityUpgrade(6)` 与 `canBuyMore`，不受自动器开关影响），不伪造任何状态。
+   * 3. `player.replicanti.galaxies` 会被 `Replicanti.reset()`（eternity.js:120）清零，
+   *    所以只在下一次 EC 就是 EC6 时才刷，避免每帧拖慢别的关。
+   */
+  tryReplicantiGalaxyForEc6() {
+    try {
+      if (!this.active) return false;
+      if (this.nextUnfinishedEcId() !== 6) return false;
+      const study = TimeStudy.eternityChallenge(6);
+      if (!study || study.isBought) return false;
+      const primaryMet = (study.config.requirement || []).some(s => {
+        try {
+          return TimeStudy(s).isBought;
+        } catch (e) {
+          return false;
+        }
+      });
+      if (!primaryMet) return false;
+      if (EternityChallenge(6).completions >= EternityChallenge(6).maxCompletions) return false;
+      let did = false;
+      if (Replicanti.galaxies.bought < 1) {
+        if (Replicanti.galaxies.max < 1) {
+          // 上限升级（1e170 IP 起，成本对当前进度可以忽略）
+          ReplicantiUpgrade.galaxies.purchase();
+          did = true;
+        }
+        // `replicantiGalaxy()` 内部自己做 canBuyMore（复制器数量 ≥ 1.8e308）校验
+        if (Replicanti.galaxies.max >= 1) {
+          replicantiGalaxy(true);
+          did = did || Replicanti.galaxies.bought >= 1;
+        }
+      }
+      if (Replicanti.galaxies.bought >= 1 && !study.isBought) {
+        // [R25] 必须在**同一个函数调用里**把 EC6 研究买掉：
+        // `player.replicanti.galaxies` 每次永恒都会被 `Replicanti.reset()` 清零
+        // （eternity.js:120），而永恒自动化每帧都在跑（et 每秒几千次）。
+        // 若留到 20 帧一次的 EC 循环再买，`requirementCurrent` 缓存早被
+        // `invalidateCachedRequirements()` 清掉，又要重新攒 —— 与 AD16 修的是同一类
+        // 「同帧被重置冲掉」问题。
+        study.purchase();
+        did = true;
+      }
+      return did;
+    } catch (e) {
+      return false;
+    }
+  },
+
   tick() {
     if (!this.active) return { dims: false, tt: false, studies: 0, dilation: 0, ec: false };
     const dims = this.buyTimeDimensions();
@@ -378,9 +541,16 @@ export const OrekiEternityAutomation = {
     let dilation = 0;
     let ec = false;
     if (this._frame % STUDY_TICK_INTERVAL === 0) {
-      studies = this.buyTimeStudies();
-      dilation = this.buyDilationStudies();
+      // 换列（121 ↔ 123）或换维度分叉（71 ↔ 73）只能靠 respec：
+      // 这些研究互斥，买了一条就再也买不到另一条
+      if (this.needsBranchRespec()) {
+        respecTimeStudies(true);
+      } else {
+        studies = this.buyTimeStudies();
+        dilation = this.buyDilationStudies();
+      }
     }
+    this.tryReplicantiGalaxyForEc6();
     // EC 的进入会触发 eternity 重置，节流到每 20 帧才尝试一次
     if (this._frame % 20 === 0) ec = this.buyEcStudiesAndStart();
     return { dims, tt, studies, dilation, ec };

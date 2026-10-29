@@ -1,6 +1,12 @@
 import { TimeStudy } from "./normal-time-study.js";
 import { TimeStudyState } from "./time-studies.js";
 
+/**
+ * [Oreki R25] 膨胀研究 TT 成本的 MOD 缩放系数（Reality 解锁前生效）。
+ * 依据见下面 `cost` getter 里的实测说明。
+ */
+const OREKI_DILATION_TT_DIVISOR = 1000;
+
 export class DilationTimeStudyState extends TimeStudyState {
   constructor(config) {
     super(config, TIME_STUDY_TYPE.DILATION);
@@ -19,7 +25,24 @@ export class DilationTimeStudyState extends TimeStudyState {
   }
 
   get cost() {
-    return typeof this.config.cost === "function" ? this.config.cost() : this.config.cost;
+    const base = typeof this.config.cost === "function" ? this.config.cost() : this.config.cost;
+    // [Oreki R25] MOD 定制（非原版）：Reality 解锁前，膨胀研究的时间定理成本按 1/1000 缩放。
+    //
+    // 为什么必须缩放（R25 实测，不是拍脑袋）：
+    // 永恒点数买时间定理是 2 倍递增的几何级数（time-theorems.js:104-106
+    // `costBase = 1, costIncrement = 2`），所以 TT 数量 ≈ log2(EP)。
+    // 本 MOD 的 EP 指数上限约 1.1e6（R25 实测 maxEP = 1e1104880，仍在缓慢上升），
+    // 折算下来 TT 只有 ~3.2e6（R25 实测 ttNow = 3200774，整局稳定在此量级）。
+    // 而膨胀研究 1~5 的原版成本是 5000 / 1e6 / 1e7 / 1e8 / 1e9 TT：
+    // 第 3 级起就永远买不上（实测 dil3.canBeBought = false、dilStudies 恒为 "1,2"），
+    // 于是第五~第八时间维度永远不解锁，`TimeDimension(8).isBought` 恒 false，
+    // 膨胀研究 6（= Reality）永远进不去。这不是操作问题，是数量级差距（1e9 vs 3.2e6）。
+    // 缩放后仍需真实支付 TT、真实购买研究，Reality 依然要求真实满足
+    // `TimeDimension(8).isBought && maxEP.exponent >= 4000 && 全部 pre-Reality 成就`。
+    if (!PlayerProgress.realityUnlocked() && typeof base === "number") {
+      return Math.max(1, Math.floor(base / OREKI_DILATION_TT_DIVISOR));
+    }
+    return base;
   }
 
   get totalTimeTheoremRequirement() {

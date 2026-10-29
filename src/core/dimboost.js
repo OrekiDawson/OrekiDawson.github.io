@@ -113,7 +113,17 @@ export class DimBoost {
       // 反物质 15 s 就冲到 1e914 后 135 s 只再涨 15 个数量级并趋缓，
       // 因为下一级提升要求 AD8 数量随次数线性抬升，而 AD8 自身已买不起。
       // 改成 5/次 让提升继续、产量继续复利；其余（基础 20、折扣、EC5、charged 效果）全不动。
-      amount += Math.round((targetResets - 5) * (5 - discount));
+      //
+      // [Oreki R25] 斜率必须钳在 ≥1。`discount` 是时间研究 211/222 的效果之和，
+      // 买到 211 后 discount 正好 = 5，原来的 `(5 - discount)` 于是变成 0：
+      // AD8 的需求量从此恒为 20 不再增长，而 maxBuyDimBoosts()（本文件:256）用
+      // `increase = req2.amount - req1.amount` 做线性外推，一旦 AD8 数量恰好等于 20
+      // 就出现 0/0 = NaN → bulkRequirement(NaN) → AntimatterDimension(NaN) 为 undefined
+      // → 「Cannot read properties of undefined (reading 'totalAmount')」每帧抛出，
+      // gameLoop 直接停摆（R25 实测：t≈20 s 起 et / IP / EC 全部冻结）。
+      // 钳到 ≥1 既保留「比原版 15 宽松」的设计意图，也恢复 vanilla 依赖的需求单调性。
+      const perBoost = Math.max(1, 5 - discount);
+      amount += Math.round((targetResets - 5) * perBoost);
     }
     if (EternityChallenge(5).isRunning) {
       amount += Math.pow(targetResets - 1, 3) + targetResets - 1;
@@ -249,10 +259,25 @@ function maxBuyDimBoosts() {
   }
   // Linearly extrapolate dimboost costs. req1 = a * 1 + b, req2 = a * 2 + b
   // so a = req2 - req1, b = req1 - a = 2 req1 - req2, num = (dims - b) / a
+  //
+  // [Oreki R25] 根因守卫：线性外推必须保证斜率 a > 0 且结果有限。
+  // 这里两个需求的 tier 在 AD8 处会被 clamp 到 8，需求量之差完全由 `bulkRequirement`
+  // 的斜率决定；一旦斜率退化为 0（AD1 把斜率写成 `5 - discount`，而买下时间研究 211 后
+  // discount 恰好 = 5），`increase === 0`；此时分子 `dims - req1.amount` 也可能为 0
+  // （AD8 数量正好等于需求量 20），0/0 = NaN →
+  // `bulkRequirement(NaN)` → `AntimatterDimension(NaN)` 为 undefined →
+  // 「Cannot read properties of undefined (reading 'totalAmount')」每帧抛出，
+  // gameLoop 直接停摆（R25 实测：t≈20 s 起 et / IP / EC 全部冻结，EC4/6/8 全卡死）。
+  // 与 AD16「同帧状态退化导致 NaN 击穿主循环」同族，所以不再依赖斜率本身健康：
+  // 退化（0 / 负 / NaN / 非有限）时只买 1 个 —— 最保守、绝不越级，
+  // 让这一帧变慢，而不是抛异常把主循环打死。
   const increase = req2.amount - req1.amount;
   const dim = AntimatterDimension(req1.tier);
-  let maxBoosts = Math.min(Number.MAX_VALUE,
+  const maxBoosts = Math.min(Number.MAX_VALUE,
     1 + Math.floor((dim.totalAmount.toNumber() - req1.amount) / increase));
+  if (!(increase > 0) || !Number.isFinite(maxBoosts) || maxBoosts < 2) {    softReset(1);
+    return;
+  }
   if (DimBoost.bulkRequirement(maxBoosts).isSatisfied) {
     softReset(maxBoosts);
     return;

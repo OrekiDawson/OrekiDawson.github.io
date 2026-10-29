@@ -7,6 +7,7 @@ import { tryInstantCompleteChallenges } from "./core/oreki-instant-challenges.js
 import { tryBuyBreakInfinityUpgrades } from "./core/oreki-autobuy-break-infinity.js";
 import { OrekiBreakInfinityGate } from "./core/oreki-break-infinity-gate.js";
 import { OrekiEarlyAutomation } from "./core/oreki-early-automation.js";
+import { OrekiEternityAutomation } from "./core/oreki-eternity-automation.js";
 import { deepmergeAll } from "./utility/deepmerge.js";
 import { DEV } from "./env.js";
 import { SpeedrunMilestones } from "./core/speedrun.js";
@@ -802,6 +803,13 @@ export function gameLoop(passDiff, options = {}) {
   // 于是 maxAM 永远停在 1e5921 量级、IP 停在 1e29，摸不到 1.797e308 的永恒门槛。
   // 详见 core/oreki-early-automation.js。
   OrekiEarlyAutomation.tick();
+
+  // [Oreki AD10] Eternity 阶段的通路自动化：时间维度 → 时间定理 → 时间研究。
+  // 实测 EP 已到 1e694437 却一个时间研究都没买上，因为
+  // `TimeTheorems.checkForBuying()` 要求先买过时间维度（time-theorems.js:112），
+  // 而 Reality 的唯一闸门是 `TimeStudy.reality.isBought`（reality.js:119）。
+  // 详见 core/oreki-eternity-automation.js。
+  OrekiEternityAutomation.tick();
 
   // IP generation is broken into a couple of places in gameLoop; changing that might change the
   // behavior of eternity farming.

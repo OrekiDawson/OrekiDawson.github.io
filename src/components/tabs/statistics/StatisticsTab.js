@@ -186,7 +186,7 @@ export default {
         <div>您总共制造了 {{ format(totalAntimatter, 2, 1) }} 个反物质。</div>
         <div>你已经玩了 {{ realTimePlayed }}（现实时间）。</div>
         <div v-if="reality.isUnlocked">
-          游戏中的你经历了 {{ totalInGameTime }}（游戏内时间，已扣除本 Mod 的全局速度倍率）。
+          游戏中的你经历了 {{ totalInGameTime }}（游戏内时间，已扣除本模组的全局速度倍率）。
         </div>
         <div>
           你的存档创建于 {{ startDate }}（{{ saveAge }}之前）。

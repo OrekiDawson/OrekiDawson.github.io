@@ -5,7 +5,7 @@ export const shopPurchases = {
   dimPurchases: {
     key: "dimPurchases",
     cost: 30,
-    description: "Double all your Antimatter Dimension multipliers. Forever.",
+    description: "永久使所有反物质维度倍数翻倍。",
     multiplier: purchases => Math.pow(2, purchases),
     formatEffect: x => `×${x > 1000 ? Notation.scientific.formatDecimal(new Decimal(x), 2) : x.toFixed(0)}`,
   },
@@ -13,10 +13,10 @@ export const shopPurchases = {
     key: "allDimPurchases",
     cost: 60,
     description: () => {
-      const dims = ["Antimatter"];
-      if (InfinityDimension(1).isUnlocked || PlayerProgress.eternityUnlocked()) dims.push("Infinity");
-      if (PlayerProgress.eternityUnlocked()) dims.push("Time");
-      return `Double ALL Dimension multipliers (${makeEnumeration(dims)}; multiplicative until 32x). Forever.`;
+      const dims = ["反物质"];
+      if (InfinityDimension(1).isUnlocked || PlayerProgress.eternityUnlocked()) dims.push("无限");
+      if (PlayerProgress.eternityUnlocked()) dims.push("时间");
+      return `使所有维度倍数翻倍（${makeEnumeration(dims)}；累乘至 ×32 后改为累加）。永久生效。`;
     },
     multiplier: purchases => (purchases > 4 ? 32 + (purchases - 5) * 2 : Math.pow(2, purchases)),
     formatEffect: x => `×${x.toFixed(0)}`,
@@ -24,52 +24,52 @@ export const shopPurchases = {
   IPPurchases: {
     key: "IPPurchases",
     cost: 40,
-    description: "Double your Infinity Point gain from all sources. (additive)",
+    description: "使所有来源的无限点数收益翻倍。（累加）",
     multiplier: purchases => (purchases === 0 ? 1 : 2 * purchases),
     formatEffect: x => `×${x.toFixed(0)}`,
     isUnlocked: () => PlayerProgress.infinityUnlocked(),
-    lockText: "Infinity",
+    lockText: "无限",
   },
   replicantiPurchases: {
     key: "replicantiPurchases",
     cost: 60,
-    description: "Increase your Replicanti gain by 50%. (additive)",
+    description: "使复制器收益提高 50%。（累加）",
     multiplier: purchases => (purchases === 0 ? 1 : 1 + 0.5 * purchases),
     formatEffect: x => `×${x.toFixed(1)}`,
     isUnlocked: () => Replicanti.areUnlocked || PlayerProgress.eternityUnlocked(),
-    lockText: "Replicanti",
+    lockText: "复制器",
   },
   EPPurchases: {
     key: "EPPurchases",
     cost: 50,
-    description: "Triple your Eternity Point gain from all sources. (additive)",
+    description: "使所有来源的永恒点数收益变为三倍。（累加）",
     multiplier: purchases => (purchases === 0 ? 1 : 3 * purchases),
     formatEffect: x => `×${x.toFixed(0)}`,
     isUnlocked: () => PlayerProgress.eternityUnlocked(),
-    lockText: "Eternity",
+    lockText: "永恒",
   },
   dilatedTimePurchases: {
     key: "dilatedTimePurchases",
     cost: 40,
-    description: "Increase your Dilated Time gain by 50%. (additive)",
+    description: "使膨胀时间收益提高 50%。（累加）",
     multiplier: purchases => (purchases === 0 ? 1 : 1 + 0.5 * purchases),
     formatEffect: x => `×${x.toFixed(1)}`,
     isUnlocked: () => PlayerProgress.dilationUnlocked() || PlayerProgress.realityUnlocked(),
-    lockText: "Dilation",
+    lockText: "时间膨胀",
   },
   RMPurchases: {
     key: "RMPurchases",
     cost: 60,
-    description: "Increase your Reality Machine gain by 100%. (additive)",
+    description: "使现实机器收益提高 100%。（累加）",
     multiplier: purchases => purchases + 1,
     formatEffect: x => `×${x.toFixed(0)}`,
     isUnlocked: () => PlayerProgress.realityUnlocked(),
-    lockText: "Reality",
+    lockText: "现实",
   },
   smallTimeSkip: {
     key: "smallTimeSkip",
     cost: 10,
-    description: "Get 6 hours worth of offline production. (Autobuyers don't work at full speed)",
+    description: "获得相当于 6 小时的离线产量。（自动购买器不会全速运行）",
     instantPurchase: true,
     onPurchase: () => {
       shop.purchaseTimeSkip();
@@ -78,7 +78,7 @@ export const shopPurchases = {
   bigTimeSkip: {
     key: "bigTimeSkip",
     cost: 20,
-    description: "Get 24 hours worth of offline production. (Autobuyers don't work at full speed)",
+    description: "获得相当于 24 小时的离线产量。（自动购买器不会全速运行）",
     instantPurchase: true,
     onPurchase: () => {
       shop.purchaseLongerTimeSkip();
@@ -87,18 +87,18 @@ export const shopPurchases = {
   singleCosmeticSet: {
     key: "singleCosmeticSet",
     cost: 20,
-    description: "Unlock a Glyph cosmetic set of your choice",
+    description: "解锁一套你选择的符文外观套装",
     instantPurchase: true,
     onPurchase: () => {
       // The actual unlocks are handled in the ShopPurchaseData object, so we just show notifications here
       GameUI.notify.info(
-        `You have purchased the "${GlyphAppearanceHandler.chosenFromModal.name}" Set for Glyph cosmetics!`,
+        `你已购买“${GlyphAppearanceHandler.chosenFromModal.name}”符文外观套装！`,
         10000);
       GlyphAppearanceHandler.chosenFromModal = null;
       GlyphAppearanceHandler.applyNotification();
     },
     isUnlocked: () => PlayerProgress.realityUnlocked(),
-    lockText: "Reality",
+    lockText: "现实",
   },
   allCosmeticSets: {
     key: "allCosmeticSets",
@@ -112,15 +112,15 @@ export const shopPurchases = {
       const currentSetCount = GlyphAppearanceHandler.expectedSetCount;
       return Math.floor(baseCost * (totalSets - currentSetCount) / totalSets);
     },
-    description: "Unlock all remaining Glyph cosmetic sets at once",
+    description: "一次性解锁其余所有符文外观套装",
     instantPurchase: true,
     onPurchase: () => {
       // The actual unlocks are handled in the ShopPurchaseData object, so we just show notifications here
-      GameUI.notify.info(`You have unlocked all sets for Glyph cosmetics!`, 15000);
+      GameUI.notify.info(`你已解锁所有符文外观套装！`, 15000);
       GlyphAppearanceHandler.applyNotification();
     },
     isUnlocked: () => PlayerProgress.realityUnlocked(),
-    lockText: "Reality",
+    lockText: "现实",
   },
 };
 

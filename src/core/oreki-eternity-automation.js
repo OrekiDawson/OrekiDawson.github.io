@@ -191,7 +191,14 @@ export const OrekiEternityAutomation = {
       for (let id = 1; id <= 12; id++) {
         try {
           const study = TimeStudy.eternityChallenge(id);
-          if (study && !study.isBought) study.purchase();
+          if (!study || study.isBought) continue;
+          // 关键：**已经打满 5 次的 EC 不要再买它的研究**。
+          // 否则会出现死循环：买下已满级的 EC 研究 → 下一帧判定「已满」→ respec 清空研究树
+          // → 再把同一关买回来…… 实测后果是 TT 一直在退，但已买普通研究恒为 0，
+          // 整个时间研究链永远建立不起来（R23 实测：59 秒 TT 367 万、研究 0 个）。
+          const challenge = EternityChallenge(id);
+          if (challenge && challenge.completions >= challenge.maxCompletions) continue;
+          study.purchase();
         } catch (e) {
           // 该 EC 研究暂不可买
         }
@@ -252,6 +259,71 @@ export const OrekiEternityAutomation = {
       });
       if (!primaryMet) return false;
       return !study.isEntryGoalMet;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  /**
+   * G) 自动永恒（带 EC 入口保护）。
+   *
+   * 为什么需要：原版没有「自动永恒」，玩家必须手动点；而 10000× 下永恒收益变化极快，
+   * 新手不可能一直盯着。更重要的是——**永恒会把 EC 的入口采样清空**：
+   * `eternity()` 里有一行 `ECTimeStudyState.invalidateCachedRequirements();`（eternity.js:147），
+   * 它会丢掉 `requirementCurrent` 缓存的「本次运行内观察到的最高资源值」。
+   * EC3 的入口要求是 `AntimatterDimension(8).totalAmount >= 17300`
+   * （ec-time-studies.js:35-36，且每完成一次 +1250），这个量必须**在一次永恒之内**爬到，
+   * 一旦中途永恒就前功尽弃 —— 这正是实测「EC2 满级后永远进不去 EC3」的直接原因。
+   *
+   * 所以：当「下一个未完成的 EC」的**主研究已经买好、只差入口资源**时，
+   * 暂停自动永恒（但**不暂停大坍缩**，坍缩不影响 totalAmount 的峰值记录，
+   * 而且 EC1/EC2 需要的永恒次数增长不能被拖慢 —— R22 实测过全局暂停坍缩是反效果）。
+   *
+   * 其余情况按「EP 收益 ≥ 当前 EP 的 10 倍」才永恒，避免无意义的频繁重置。
+   */
+  nextUnfinishedEcId() {
+    try {
+      for (let id = 1; id <= 12; id++) {
+        const challenge = EternityChallenge(id);
+        if (challenge && challenge.completions < challenge.maxCompletions) return id;
+      }
+      return 0;
+    } catch (e) {
+      return 0;
+    }
+  },
+
+  /** 下一个 EC 是否「只差入口资源」（主研究已买、但二级门槛未满足） */
+  ecEntryPending() {
+    try {
+      if (!this.active) return false;
+      if (player.challenge.eternity.unlocked !== 0) return false;
+      const id = this.nextUnfinishedEcId();
+      if (!id) return false;
+      const study = TimeStudy.eternityChallenge(id);
+      if (!study || study.isBought) return false;
+      const primaryMet = (study.config.requirement || []).some(s => {
+        try {
+          return TimeStudy(s).isBought;
+        } catch (e) {
+          return false;
+        }
+      });
+      if (!primaryMet) return false;
+      return !study.isEntryGoalMet;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  tickEternity() {
+    try {
+      if (!this.active) return false;
+      if (!Player.canEternity) return false;
+      // 入口保护：只在「主研究已买、只差资源」时生效，不拖慢 EC1/EC2 的永恒次数增长
+      if (this.ecEntryPending()) return false;
+      if (gainedEternityPoints().lt(Currency.eternityPoints.value.times(10))) return false;
+      return eternity(false, true) === true;
     } catch (e) {
       return false;
     }

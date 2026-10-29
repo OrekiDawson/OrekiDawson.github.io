@@ -821,6 +821,12 @@ export function gameLoop(passDiff, options = {}) {
   // 详见 core/oreki-eternity-automation.js。
   OrekiEternityAutomation.tick();
 
+  // [Oreki AD13] 自动永恒（带 EC 入口保护）：原版没有自动永恒，而永恒会
+  // `invalidateCachedRequirements()` 清掉 EC 的入口资源峰值采样（eternity.js:147），
+  // 导致 EC3 要求的「单次运行内第八维度 17300」永远攒不到。
+  // 前提已满足：AD11.1 修好「已满级 EC 不要重复买研究」后，研究链稳定为 22 个且含 171。
+  OrekiEternityAutomation.tickEternity();
+
   // IP generation is broken into a couple of places in gameLoop; changing that might change the
   // behavior of eternity farming.
   preProductionGenerateIP(diff);

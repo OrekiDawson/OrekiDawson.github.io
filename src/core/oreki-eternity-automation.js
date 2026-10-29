@@ -161,9 +161,33 @@ export const OrekiEternityAutomation = {
    * 进入挑战后由既有的 core/oreki-instant-challenges.js「进入即完成」接管，
    * 这里只负责按下「开始」那一下，不重复实现完成逻辑。
    */
+  /** 下一个要打的 EC 序号（1~12），只前进不后退 */
+  _ecTarget: 1,
+
+  /**
+   * E) 推进永恒挑战（EC1→EC12），为 Reality 的膨胀研究 1 铺路。
+   *
+   * 关键机制（源码逐个核对，这是之前卡在 EC2 的真正原因）：
+   * 1. `ECTimeStudyState.canBeBought` 里有
+   *      `if (player.challenge.eternity.unlocked !== 0) return false;`
+   *    ——**只要已经解锁了某一关，就再也买不了别的 EC 研究**。
+   *    `unlocked` 只在 `respecTimeStudies()` 里被清 0（time-studies.js:149），
+   *    而它会退款并清空普通研究。所以原版流程是：打完一关 → 重洗时间研究 → 买下一关。
+   *    之前只调 `purchase()`，一关满级后 `unlocked` 永远停在那，于是永远买不到 EC3。
+   * 2. 官方购买入口不是 `purchase()` 而是 `purchaseUntil()`
+   *    （ec-time-study.js:52）：它会先 `commitToGameState(buyStudiesUntil(目标, id))`
+   *    补齐该 EC 需要的研究路径再重试购买；EC11/12 还补 191/193。
+   *
+   * 本方法一关一关推进，每步都走原版真实路径：
+   *   - 挑战在跑 → 不插手（交给「进入即完成」模块）
+   *   - 当前关没满 5 次 → start(true)
+   *   - 当前关已满 → respecTimeStudies(true) 清 unlocked 并退款
+   *   - unlocked === 0 → 对目标关 purchaseUntil()，买上了立刻 start(true)
+   *   - 买不上就停在这一关等资源（不跳关、不伪造）
+   */
   buyEcStudiesAndStart() {
     try {
-      // 1) 能买的 EC 研究都买掉（前置不满足时 purchase 自己返回 false）
+      // 1) 能买的 EC 研究都买掉（canBeBought 会自己校验：unlocked 为 0 / 主研究已买 / 二级资源达标）
       for (let id = 1; id <= 12; id++) {
         try {
           const study = TimeStudy.eternityChallenge(id);
@@ -173,10 +197,10 @@ export const OrekiEternityAutomation = {
         }
       }
 
-      // 2) 已有挑战在跑就不插手
+      // 2) 已有挑战在跑就不插手（完成逻辑交给 oreki-instant-challenges）
       if (EternityChallenge.isRunning) return false;
 
-      // 3) 进入当前已解锁的那一关；没打完就不重复进入
+      // 3) 进入当前已解锁的那一关
       const unlockedId = player.challenge.eternity.unlocked;
       if (!unlockedId) return false;
       let challenge;
@@ -187,10 +211,47 @@ export const OrekiEternityAutomation = {
       }
       if (!challenge || !challenge.isUnlocked) return false;
       if (challenge.completions >= challenge.maxCompletions) {
-        // 这一关已满，尝试把下一关的研究买掉（下一次 tick 会重新走 1)）
+        // [AD11.1] 这一关已满：必须 respecTimeStudies 才能把 unlocked 清 0，
+        // 否则 ECTimeStudyState.canBeBought 里那条 unlocked !== 0 就直接 return false，
+        // 后面所有 EC 研究永远买不上（实测卡在 EC2 满级后无法推进）。
+        // respec 会退款并清空普通研究，下一步由 AD10 的自动买研究重新补齐。
+        respecTimeStudies(true);
         return false;
       }
       return challenge.start(true) === true;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  shouldHoldReset() {
+    try {
+      if (!this.active) return false;
+      if (player.challenge.eternity.unlocked !== 0) return false;
+      const id = this._ecTarget;
+      if (!id || id > 12) return false;
+      const challenge = EternityChallenge(id);
+      if (!challenge) return false;
+      if (challenge.completions >= challenge.maxCompletions) return false;
+      const study = TimeStudy.eternityChallenge(id);
+      if (!study) return false;
+      if (study.isBought) return false;
+      // 守卫一：必须先进入时间研究阶段（TT 已经能攒起来），否则开局会被永久卡住。
+      // R22 实测教训：没有这个守卫时，EC1 的入口门槛在开局就不满足，
+      // 于是全程不坍缩 → 无限次数为 0、TT 为 0，整局停摆。
+      if (Currency.timeTheorems.max.lt(100)) return false;
+      // 守卫二：只差「二级资源」时才值得暂停。
+      // EC 研究的主前置是某条时间研究（config.requirement），
+      // 若连这条研究都没买上，暂停坍缩也换不来进度，反而拖死开局。
+      const primaryMet = (study.config.requirement || []).some(s => {
+        try {
+          return TimeStudy(s).isBought;
+        } catch (e) {
+          return false;
+        }
+      });
+      if (!primaryMet) return false;
+      return !study.isEntryGoalMet;
     } catch (e) {
       return false;
     }

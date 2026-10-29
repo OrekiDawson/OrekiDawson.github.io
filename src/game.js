@@ -202,6 +202,16 @@ export function tryOrekiEarlyAutomation() {
 }
 
 /**
+ * [Oreki AD12] 给大坍缩自动器调用的只读判断：
+ * 下一个 EC 的入口资源门槛还没攒够时，不要坍缩（否则资源被反复清零，永远达不到）。
+ * 详见 core/oreki-eternity-automation.js 的 shouldHoldReset。
+ * @returns {boolean} true 表示本帧应当暂停坍缩
+ */
+export function orekiEcEntryHold() {
+  return OrekiEternityAutomation.shouldHoldReset();
+}
+
+/**
  * [Oreki AD7] 开局例行操作自动化：反物质维度 / 计数频率 / 维度提升 / 星系。
  *
  * 事实（R21 真新档实测）：首次无限之前，原版的维度自动器**不可用**

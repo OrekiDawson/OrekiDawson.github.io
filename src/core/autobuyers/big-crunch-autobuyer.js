@@ -126,6 +126,11 @@ export class BigCrunchAutobuyerState extends UpgradeableAutobuyerState {
     // 否则「每轮坍缩把反物质打回低位」会让 maxAM 永远停在 1e3xx，
     // 而 ID1 的 canUnlock 要求 maxAM ≥ 1e1100 —— 与 IP 无关，所以只补 IP 永远解锁不了。
     if (this.waitingForId1Peak) return false;
+    // [Oreki AD12 已回退] 曾在这里挂「EC 入口资源未满足时暂停坍缩」，
+    // 但实测反向亏损：EC1 的入口门槛就是**永恒次数**，暂停坍缩只会让永恒次数涨得更慢；
+    // 实测 90 秒时 TT 8.3 万、et 仅 21、EC 一次都没完成（挂钩前 49 秒就能完成 EC1/EC2）。
+    // 因此撤掉挂钩，保留原版的 10× 最高 IP 节奏。
+    // 需要时 OrekiEternityAutomation.shouldHoldReset 仍可单独调用。
 
     switch (this.mode) {
       case AUTO_CRUNCH_MODE.AMOUNT:

@@ -70,6 +70,14 @@ export default {
         data-v-pelle-tab
       />
       <div
+        class="c-oreki-pelle-goal"
+        style="max-width: 100%; margin: 0.4rem 0 1.2rem; padding: 0 0.6rem; font-size: 1.8rem;
+          line-height: 1.45; text-align: center; color: var(--color-pelle--base);"
+        data-v-pelle-tab
+      >
+        终局目标：反物质最大值达到 1×10<sup>1000</sup>
+      </div>
+      <div
         class="button-container"
         data-v-pelle-tab
       >

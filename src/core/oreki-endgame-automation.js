@@ -36,8 +36,7 @@ import { Pelle, PelleUpgrade } from "./celestials/pelle/pelle.js";
 import { maxAll } from "./dimensions/antimatter-dimension.js";
 import { requestDimensionBoost } from "./dimboost.js";
 import { requestGalaxyReset } from "./galaxy.js";
-import { bigCrunchResetRequest } from "./big-crunch.js";
-import { eternity } from "./eternity.js";
+import { Autobuyer } from "./autobuyers/autobuyers.js";
 import { Laitela } from "./celestials/laitela/laitela.js";
 import { OREKI_IU25_COST } from "./secret-formula/reality/imaginary-upgrades.js";
 
@@ -73,12 +72,37 @@ const LAT_TIER_WINDOW_MS = 28000;
 const SLOW_TICK_MS = 500;
 /** IM 购买节流（真实毫秒）：IM 是指数逼近上限，10 s 粒度完全够用 */
 const IM_TICK_MS = 2000;
-/** 毁灭态（佩勒）驱动节流：购买节奏（真实毫秒） */
+/**
+ * [Oreki R38-M] 佩勒阶段「只长大、不重置」——停掉一切会把当前反物质清零的路径。
+ *
+ * ── 实测事实（这是本轮的关键修正，之前 105 秒的假停摆就是它）────────────────
+ * 终局判据 `game-end.js:43` 读 `player.celestials.pelle.records.totalAntimatter`，
+ * 而该字段是 `currency.js:216` 的 `max(value)` —— **历史峰值**。
+ * 佩勒阶段只要还有人在坍缩，反物质一涨到 `Player.canCrunch` 的门槛
+ * （`Decimal.NUMBER_MAX_VALUE` = 1.797e308，id 见 `player.js:958`）就被清零，
+ * 于是「每周期峰值」永远停在 e308 量级，峰值字段再也抬不动。
+ *
+ * `_tools/_r38a/lai6.jsonl` 的原始采样（1 s 粒度，t = 进入佩勒后的秒数）：
+ *   t=323.6 pamE=316  amE=154  ad1=6.86e130
+ *   t=350.8 pamE=316  amE=308  ad1=1.51e316
+ *   t=420.2 pamE=316  amE=308  ad1=1.96e316
+ * `pamE` 从 t=323.6 起 **105 秒一动不动**，同期 `ad1` 涨了 186 个数量级
+ * （6.86e130 → 1.96e316）—— 产量完全正常，是**重置把峰值按住了**。
+ *
+ * `crunchL`（无限次数 log10）在同 100 秒内从 0 涨到 3.59，即约 39 次/秒，
+ * 远超本文件自己的 3 s 节流 ⇒ 真正的坍缩源是原版自动购买器：
+ * `Pelle.initializeRun` 会强制 `Autobuyer.bigCrunch.mode = AMOUNT`（pelle.js:87），
+ * 而 `big-crunch-autobuyer.js:107` 的 `canTick` 就是 `Player.canCrunch`，
+ * 反物质一过 1.797e308 当帧就坍缩。
+ *
+ * ── 结论 ────────────────────────────────────────────────────────────
+ * 佩勒阶段必须让反物质**单调增长**：关 `Autobuyer.bigCrunch` / `Autobuyer.eternity`，
+ * 本文件也不再主动调 `bigCrunchResetRequest` / `eternity` / `Pelle.armageddon`。
+ * 大灾变同样要停：`Pelle.armageddon` → `finishProcessReality({ reset: true, armageddon: true })`
+ * （pelle.js:149-155），那是整局现实重置，比坍缩更彻底。
+ * 只保留「全部最大 + 维度提升 + 星系 + 佩勒升级」——这四件都不清空当前反物质。
+ */
 const DOOM_BUY_MS = 100;
-/** 大坍缩 / 永恒 / 大灾变的最小间隔（真实毫秒）。太频繁会把反物质产出重置掉。 */
-const DOOM_CRUNCH_MS = 3000;
-const DOOM_ETERNITY_MS = 6000;
-const DOOM_ARMAGEDDON_MS = 15000;
 
 export const OrekiEndgameAutomation = {
   _lastSlowMs: 0,
@@ -94,10 +118,8 @@ export const OrekiEndgameAutomation = {
   _pelleUpgrades: 0,
   _pelleEntered: false,
   _lastDoomBuyMs: 0,
-  _lastDoomCrunchMs: 0,
-  _lastDoomEternityMs: 0,
-  _lastArmageddonMs: 0,
-  _armageddons: 0,
+  /** [Oreki R38-M] 佩勒阶段已关掉的重置购买器次数（只读观测；正常应一直为 0 或很小） */
+  _doomResetsOff: 0,
   _lastError: "",
 
   /**
@@ -183,7 +205,13 @@ export const OrekiEndgameAutomation = {
         Glyphs.unequipAll(true);
         return Glyphs.activeWithoutCompanion.length <= 1;
       }
-      return Currency.imaginaryMachines.value.gte(OREKI_IU25_COST);
+      // [Oreki R39] 这里原本写的是 `.gte(OREKI_IU25_COST)`。
+      // 本作的 `Currency.imaginaryMachines.value` 是**普通 Number**（没有 Decimal 方法），
+      // 调用 `.gte` 会抛 TypeError，被外层 catch 吞掉后恒返回 false ——
+      // 结果 IU25 的前置判定**永远是「不就位」**，即使 tier 8 / 研究 / 符文 / IM 全部满足。
+      // 这与本文件 176 行刚记录过的同类 bug 是同一个坑（IM 不是 Decimal）。
+      // 实测（R39 probe.mjs）：imLog10=10、OREKI_IU25_COST=5e9 时仍返回 false。
+      return Number(Currency.imaginaryMachines.value) >= OREKI_IU25_COST;
     } catch (e) {
       return false;
     }
@@ -350,40 +378,28 @@ export const OrekiEndgameAutomation = {
    * · `requestDimensionBoost(true)` / `requestGalaxyReset(true)` = UI 按钮的无弹窗版本
    *   （galaxy.js:151 / dimboost.js:239，都不碰 Modal，不会挡住 GameEnd 的
    *   `ui.$viewModel.modal.progressBar === undefined` 前置）；
-   * · `bigCrunchResetRequest(true)` / `eternity(true, true)` = 大坍缩 / 永恒（跳过动画）；
-   * · `Pelle.armageddon(true)` = 佩勒的「大灾变」按钮（pelle.js:149），拿遗迹碎片；
-   * · `PelleUpgrade.all[i].purchase()` = 佩勒升级按钮。
+   * · `PelleUpgrade.all[i].purchase()` = 佩勒升级按钮；
+   * · 大坍缩 / 永恒 / 大灾变**故意不调**——它们都会把 `records.totalAntimatter` 按住不动，
+   *   推导与实测见文件头 `DOOM_BUY_MS` 上方那段注释（R38-M 修正）。
    *
    * ── 节流 ───────────────────────────────────────────────────────────
-   * 坍缩 3 s / 永恒 6 s / 大灾变 15 s：这三者都会重置反物质产出，太频繁只会把
-   * `records.totalAntimatter`（终局判据用的字段）压回去。
+   * 全部动作合并到 100 ms 一帧（`DOOM_BUY_MS`），不再分别节流：
+   * 现在佩勒阶段只剩「不清零反物质」的三件事，没有互相打架的重置节奏。
    */
   driveDoomed() {
     const now = Date.now();
     if (now - this._lastDoomBuyMs < DOOM_BUY_MS) return;
     this._lastDoomBuyMs = now;
     try {
+      // ⓪ 先掐掉会清零当前反物质的三条路径（见 DOOM_BUY_MS 上方的实测推导）
+      this._stopDoomedResets();
       // ① 反物质维度 + 计数频率：原版「全部最大」
       maxAll();
-      // ② 维度提升 / 星系
+      // ② 维度提升 / 星系（两者都只减反物质、不清零；Pelle.isDoomed 分支见 dimboost.js:207）
       if (DimBoost.canBeBought) requestDimensionBoost(true);
       if (Galaxy.canBeBought) requestGalaxyReset(true);
-      // ③ 无限 / 永恒：毁灭态里两类自动器大多未解锁，这里直接走真实函数
-      if (now - this._lastDoomCrunchMs > DOOM_CRUNCH_MS && Player.canCrunch) {
-        this._lastDoomCrunchMs = now;
-        bigCrunchResetRequest(true);
-      }
-      if (now - this._lastDoomEternityMs > DOOM_ETERNITY_MS && Player.canEternity) {
-        this._lastDoomEternityMs = now;
-        eternity(true, true);
-      }
-      // ④ 大灾变（拿遗迹碎片）：`Pelle.canArmageddon` = `remnantsGain >= 1`（pelle.js:145）
-      if (now - this._lastArmageddonMs > DOOM_ARMAGEDDON_MS && Pelle.canArmageddon) {
-        this._lastArmageddonMs = now;
-        Pelle.armageddon(true);
-        this._armageddons++;
-      }
-      // ⑤ 佩勒升级：先用遗迹碎片买可重复项（产出乘子），再买单次项
+      // ③ 佩勒升级：先用遗迹碎片买可重复项（产出乘子），再买单次项。
+      //    没碎片时 `canBeBought` 为 false，是纯 no-op，不会触发大灾变。
       for (const up of PelleUpgrade.rebuyables) {
         if (up.canBeBought && up.purchase() === true) this._pelleUpgrades++;
       }
@@ -392,6 +408,28 @@ export const OrekiEndgameAutomation = {
       }
     } catch (e) {
       this._lastError = `doomed: ${(e && e.message) || e}`;
+    }
+  },
+
+  /**
+   * [Oreki R38-M] 关掉佩勒阶段会自动触发的重置购买器。
+   *
+   * 只置 `isActive = false`，走的是选项页里那个开关的同一条路径，不碰任何公式；
+   * `Pelle.initializeRun` 之后原版会强制 `Autobuyer.bigCrunch.mode = AMOUNT`
+   * （pelle.js:87），所以我们**每帧检查一次**、被重开就再关，成本可忽略。
+   */
+  _stopDoomedResets() {
+    try {
+      if (Autobuyer.bigCrunch.isActive) {
+        Autobuyer.bigCrunch.isActive = false;
+        this._doomResetsOff++;
+      }
+      if (Autobuyer.eternity.isActive) {
+        Autobuyer.eternity.isActive = false;
+        this._doomResetsOff++;
+      }
+    } catch (e) {
+      this._lastError = `doomed-stop: ${(e && e.message) || e}`;
     }
   },
 

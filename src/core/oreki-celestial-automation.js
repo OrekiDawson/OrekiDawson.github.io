@@ -614,6 +614,9 @@ export const OrekiCelestialAutomation = {
     // ID1 就恒为 0，现实照常循环反而让乘数继续涨。`holding` 恒为 false。
     try {
       if (globalThis.OrekiIu15Sprint?.holding === true) return true;
+      // [Oreki R38-A] 莱特拉刷层：熵 0→1 必须落在同一个现实的前 30 s（game.js:1104），
+      // 中途被现实打断就会被 reality.js:701 清零。由 endgame 模块自己带 28 s 上限。
+      if (globalThis.OrekiEndgameAutomation?.holdForLaitela === true) return true;
     } catch (e) { /* 读取失败不影响既有判定 */ }
     return false;
   },

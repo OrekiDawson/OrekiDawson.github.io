@@ -87,6 +87,10 @@ export const OrekiEndgameAutomation = {
   _iuBought: {},
   _laitelaRuns: 0,
   _laitelaTiers: 0,
+  /** [Oreki R38-A] 本次 tick 是否要求压住现实（供 `OrekiCelestialAutomation.holdReality` 读取） */
+  _laiHold: false,
+  /** [Oreki R38-A] tier 8 起 run 的时刻（真实毫秒），用于「买不上就撤 run」的兜底计时 */
+  _laiRunAtMs0: 0,
   _pelleUpgrades: 0,
   _pelleEntered: false,
   _lastDoomBuyMs: 0,
@@ -95,6 +99,19 @@ export const OrekiEndgameAutomation = {
   _lastArmageddonMs: 0,
   _armageddons: 0,
   _lastError: "",
+
+  /**
+   * [Oreki R38-A] 莱特拉刷层期间是否要压住现实。
+   *
+   * 事实链：
+   *   · `reality.js:766` 现实重置**保留**天体 run，但 `reality.js:701` 把熵清零；
+   *   · `game.js:1104` 只有 `thisRealityRealTime < 30 s` 才 `difficultyTier++`；
+   *   ⇒ 熵 0→1 必须落在**同一个现实的前 30 s**，中途被现实打断就前功尽弃。
+   * 只在「run 在位且还在 28 s 窗口内」或「正在爬 amE」时压，窗口一到立刻放手。
+   */
+  get holdForLaitela() {
+    return this._laiHold === true;
+  },
 
   get step() {
     try {
@@ -133,7 +150,11 @@ export const OrekiEndgameAutomation = {
     const now = Date.now();
     if (now - this._lastImMs < IM_TICK_MS) return;
     this._lastImMs = now;
-    if (Currency.imaginaryMachines.value.lte(0)) return;
+    // [Oreki R38-A] 这里**不能**写成 `.lte(0)`：本作的 IM 是普通数字（Number），
+    // 没有 Decimal 方法。R38-A 实测 `_r38a/diag-iu25.mjs` 报
+    // `Currency.imaginaryMachines.value.lte is not a function`，异常被外层 catch 吞掉，
+    // 结果整条 IU 购买链**一次都没执行过**（IU15 是冲刺模块自己买的，掩盖了这个 bug）。
+    if (!(Number(Currency.imaginaryMachines.value) > 0)) return;
     for (const id of [15, 25]) {
       try {
         const up = ImaginaryUpgrade(id);
@@ -189,11 +210,66 @@ export const OrekiEndgameAutomation = {
       const ent = player.celestials.laitela.entropy;
       const amE = Number(player.antimatter?.exponent ?? 0);
 
-      // 已经 8 级：只需要保持一个 run 在位，让 IU25 的 `Laitela.isRunning` 成立。
-      // 同时压住现实 —— `game.js:1092` 在 run 消失后会把熵停在 -1，反复现实没意义。
+      // 已经 8 级：这里**不能**无条件常驻一个 run。
+      //
+      // R38-A 实测 `_r38a/lai4.jsonl` + `_r38a/diag-iu25.mjs`：tier 8 时
+      // `maxAllowedDimension = 0`，8 层无限维度全部停产，EP 不再增长 ⇒
+      //   ① `TimeStudy.reality`（膨胀研究 6，「解锁现实」）永远买不到
+      //      （要 `thisReality.maxEP.exponent >= 4000`）；
+      //   ② 而 IU25 的 `checkRequirement` 又要求 `TimeStudy.reality.isBought`
+      //      —— 于是「常驻 run」把 IU25 自己锁死了（实测 180 s 里 iu25=false 恒定）。
+      // 正确时序：让现实照常循环，等现实研究买上、IM 攒够，**再**起 run、卸符文、买 IU25。
       if (tier >= 8) {
+        const im = Number(Currency.imaginaryMachines.value);
+        if (!TimeStudy.reality.isBought) {
+          // 现实研究没买上：run 必须让开，否则 EP 涨不动、研究永远买不回来
+          if (Laitela.isRunning) clearCelestialRuns();
+          return;
+        }
+        if (im < OREKI_IU25_COST) return;             // 钱不够就不白停产
+        // 「至少 4 个符文槽为空」：先卸符文。卸不干净时补一刀「删除全部未保护符文」
+        // （与玩家点同名按钮走的是同一条 `deleteAllUnprotected()`），腾出仓库格再卸。
+        if (Glyphs.activeWithoutCompanion.length > 1) {
+          Glyphs.unequipAll(true);
+          if (Glyphs.activeWithoutCompanion.length > 1) {
+            try { Glyphs.deleteAllUnprotected(); } catch (e) { /* 无可用删除时忽略 */ }
+            Glyphs.unequipAll(true);
+          }
+        }
         if (!Laitela.isRunning) Laitela.initializeRun();
+        // 原版的解锁位是 `player.reality.imaginaryUpgReqs`（`imaginary-upgrades.js:63`），
+        // 由 `tryUnlock()` 在条件成立时置位、**且跨现实保留**（`player.js:496` 只在
+        // 新存档初始化）。这里显式补一次 tryUnlock：它自己会再核一遍
+        // `checkRequirement()`，不成立就不置位，不存在绕过条件。
+        const iu25 = ImaginaryUpgrade(25);
+        if (!iu25.isAvailableForPurchase) iu25.tryUnlock();
         this._laiHold = true;
+        // 同一次 tick 内立刻尝试真实购买：符文可能被现实自动化的 manageGlyphs
+        // 在下一帧重新装上，拖到下一个 IM tick（2 s）条件就可能又变了。
+        try {
+          if (iu25.purchase() === true) {
+            this._iuBought[25] = (this._iuBought[25] || 0) + 1;
+            console.log(`[R38-IU25] 已买入（tier=8 im=${im.toExponential(2)} ` +
+              `符文=${Glyphs.activeWithoutCompanion.length}）`);
+          } else {
+            // 诊断用：每 5 s 打一次「为什么没买成」
+            if (now - (this._iu25LogAt || 0) > 5000) {
+              this._iu25LogAt = now;
+              console.log(`[R38-IU25] 未买成：要求=${iu25.isAvailableForPurchase} ` +
+                `可能=${iu25.isPossible} 符文=${Glyphs.activeWithoutCompanion.length} ` +
+                `研究=${TimeStudy.reality.isBought} run=${Laitela.isRunning} ` +
+                `maxDim=${Laitela.maxAllowedDimension}`);
+            }
+            // run 在位会让 EP 彻底冻结；20 s 还买不上就撤掉，让现实循环推进再来一次
+            if (this._laiRunAtMs0 && now - this._laiRunAtMs0 > 20000) {
+              clearCelestialRuns();
+              this._laiRunAtMs0 = 0;
+              this._laiHold = false;
+            } else if (!this._laiRunAtMs0) {
+              this._laiRunAtMs0 = now;
+            }
+          }
+        } catch (e) { /* 购买失败下个 tick 重试 */ }
         return;
       }
 

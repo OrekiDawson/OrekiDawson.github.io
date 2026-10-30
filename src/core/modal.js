@@ -236,7 +236,14 @@ Modal.notation = new Modal(NotationModal);
 // AD: Oreki Edition 新增的可选工具（默认不启用，需玩家主动打开并确认）
 Modal.orekiAchievement = new Modal(OrekiAchievementModal);
 Modal.orekiSave = new Modal(OrekiSaveModal);
-Modal.orekiTutorial = new Modal(OrekiTutorialModal);
+// priority 4：教程是玩家主动发起的阅读会话，被任何东西顶掉都是错的。
+// 实测（FACTS C.37）：不设 priority 时它排在 `Modal.message`（priority 0）之后，
+// 而成就说明走 `Modal.message.show(text, {}, 3)`（normal-achievement.js:64），
+// 于是开跑 3 秒后点教程，1.4 秒内就被一条「成就：XXX」顶出屏幕 ——
+// 组件被销毁但**仍在队列里**（queue=2、current=MessageModal），
+// 重建时重跑 data()，`index: getTutorialStartIndex()` 直接把第 10 章重置回第 7 章。
+// 4 高于全部既有值（玩法确认弹窗 1、成就/特殊说明 3），够用且不越权。
+Modal.orekiTutorial = new Modal(OrekiTutorialModal, 4);
 
 Modal.upgradeLock = new Modal(UpgradeMechanicLockModal, 1);
 Modal.deleteCompanion = new Modal(DeleteCompanionGlyphModal, 1);

@@ -53,7 +53,12 @@ const HOLD_MAX_MS = 240000;
 /** EC 完成总数停滞多久就放手（真实毫秒） */
 const HOLD_STALL_MS = 90000;
 /** 放手后的冷却（真实毫秒），避免刚放手又立刻压回去 */
-const HOLD_COOLDOWN_MS = 60000;
+// [Oreki R40-A2] 60000 → 10000。实测（`_tools/_r40/r40a2-t1.jsonl`）：
+//   5 次 release 各带 60 s 冷却 ⇒ 0~484 s 里有 **300.1 s（62% 的时间）**处于冷却态；
+//   而 `realities` 刚好在 release 后 24 s 就到达 60，冷却却要再压 36 s 才肯放手，
+//   于是 V 被拖到 484.5 s（R39 是 407.6 s）。冷却只需要避开「刚放手立刻压回去」的抖动，
+//   10 s 足够。
+const HOLD_COOLDOWN_MS = 10000;
 /** 达标后继续压住现实的宽限（真实毫秒） */
 const HOLD_GRACE_MS = 20000;
 /**
@@ -163,13 +168,38 @@ export const OrekiDilationAutomation = {
       // 而收益最大（现实每 ~25 s 就会把 EC 记录与整棵研究树清空）。
       if (!EternityChallenge(11).isFullyCompleted) return this._release("shallow");
 
-      // V 的第一项门槛是 realities ≥ 200。没到之前压现实等于把现实次数按死，
+      // V 的第一项门槛是 realities ≥ 60（R37-A 由 200 下调，见 `OREKI_V_UNLOCK_REALITIES`）。
+      // 没到之前压现实等于把现实次数按死，
       // 所以只允许极少数早期演练，其余时间必须让现实照常循环。
       // 注意：`Currency.realities.value` 在本工程里是**普通数字**（不是 Decimal），
       // 直接 `.gte()` 会抛 `is not a function` —— 第一次 300 s 真跑就是这么静默失效的，
       // 所以这里统一走 `Decimal.gte`，两种类型都能吃。
       const atGate = Decimal.gte(Currency.realities.value, OREKI_V_UNLOCK_REALITIES);
       if (!atGate && this._earlyHoldUsedMs >= EARLY_HOLD_BUDGET_MS) return this._release("grow-realities");
+
+      // ── [Oreki R40-A2] 曾经想在这里加「DS6 已到手就放手」，**实测否决，不要再加** ──
+      //
+      // 动机：`_r40/r40a2-t1.jsonl` 显示 DS6 在 25.1 s 就买到，此后 5 段压现实共 139.4 s
+      //   `realities` 一动不动，`realities=60` 被拖到 446.5 s（R39 是 362.6 s）。
+      //   看上去「档位前压现实 = 把门槛冻住，纯亏」。
+      //
+      // 两次真跑都失败（证据在 `_tools/_r40/`）：
+      //   ① 判据用 `EternityChallenge(11) && (12).isFullyCompleted`（`r40a3-d1v1-rejected.log`）：
+      //      `[FIRST] ds1 t=23.6s` 时链已满，但 DS6 还要再等 `231~234 + TT` 约 1.5 s；
+      //      这 1.5 s 一放手，现实立刻清空研究树 ⇒ **全程 ds6 一次都没出现过**。
+      //   ② 判据改用 `TimeStudy.reality.isBought`（`r40a3-d1v2-rejected.log`）：
+      //      DS6 保住了、`realities=60` 也提前到 380 s（省 66 s），**但 V 反而解不开**——
+      //      641 s 时 `VUnlocks` 六项里 `infinities` 只有 **0.063**（1e121 / 要求 1e160），
+      //      而基线 r40a2-t1 在 484.5 s 就 V=1。
+      //      根因：那几段「白压」同时也是**每个现实内攒产能的窗口**（复制器 1e20000、
+      //      无限次数 1e160 这些 per-reality 记录），放手太勤 ⇒ 20 s 一轮现实 ⇒ 产能记录
+      //      永远长不起来 ⇒ V 的其余五项反而永远不达标。
+      //
+      // 结论：**门槛前的压现实不是纯浪费，它是「产能窗口」与「现实次数」的交换**。
+      //   一句话记牢：**V 的 maxDT / maxReplicanti / infinitiesTotal 全是
+      //   `records.thisReality.*`，每一个现实都会清零，放手太勤就永远长不起来。**
+      //   要动只能动冷却（见下面的 HOLD_COOLDOWN_MS）与「达标后立刻放手」，
+      //   不能动「门槛前是否压」。
 
       if (!this._holdSinceMs) {
         this._holdSinceMs = now;

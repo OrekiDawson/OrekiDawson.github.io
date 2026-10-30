@@ -1490,3 +1490,194 @@
     font-size: 2rem;
   }
 }
+
+/* ==========================================================================
+   R40-C · 移动端布局修复（全部有 AVD 内 Chrome 156 实测数据支撑）
+   测量脚本：web/_tools/_r40c/measure.mjs、probe.mjs、probe-bottom.mjs
+   报告：web/_tools/_r40c/R40C-Web移动端.md
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1) 移动 Chrome 的 100vh ≠ 可视高度
+   现象：AVD（1080x2340 / 440dpi）实测 window.innerHeight=676，而 .c-game-ui
+        的 computed height = 732px（100vh 取的是「地址栏收起」时的大视口）。
+        滚动容器因此比屏幕高 56px，页面最底部那行内容永远滚不进可视区：
+        把 #ui 滚到底后，最后一个按钮 bottom=742，视口只到 676，差 66px 点不到。
+   修法：改用 dvh（动态视口高度）。不支持 dvh 的浏览器会忽略本行，
+        自动回退到上面的 100vh，行为与现在一致。
+        不加媒体查询：桌面浏览器上 dvh 恒等于 vh（无动态工具栏），
+        行为与 100vh 完全一致；但 Android 平板横屏（>900px）同样会有
+        56px 的 100vh 虚高，一并修掉。
+   -------------------------------------------------------------------------- */
+.c-game-ui {
+  height: 100dvh;
+}
+
+/* --------------------------------------------------------------------------
+   2) 手机上被 GitHub Pages（Slate 文档模板）的遗留样式吃掉 30px 宽度
+   现象：styles.css 里混入了文档站 CSS，其中
+        @media screen and (max-width: 480px) { body { padding: 15px } }
+        对游戏页面同样生效。AVD 实测：body computed padding=15px，
+        392 视口下 #ui 只有 362 宽，320 视口只剩 290，正文被挤到竖排
+        （"买到10个" 按钮实测 44×122、文字竖排）。
+   修法：≤480px 时清零 body 内边距，让游戏 UI 自己管边界（侧栏本来就是贴左的）。
+   -------------------------------------------------------------------------- */
+@media screen and (max-width: 480px) {
+  body {
+    padding: 0;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   3) 底部悬浮件压住内容
+   现象：右下角「教程」悬浮入口（.c-oreki-tut-entry，48px 高，bottom 距底 6px）
+        与左下角存档计时条（.o-save-timer）盖在滚动内容上。
+        实测滚到最底部时，「教程」压住选项页最后一个按钮
+        「打开自动备份存档菜单」8%~12% 面积（320/392/430 三档都复现）。
+   修法：窄屏给页签内容留出底部净空（原 2rem=20px 不够），
+        并叠加 iOS 安全区。不缩小任何控件。
+   -------------------------------------------------------------------------- */
+@media screen and (max-width: 900px) {
+  .c-game-tab {
+    padding-bottom: calc(2rem + 5.6rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* --------------------------------------------------------------------------
+   4) 右上角「?」「i」两个悬浮按钮互相重叠
+   现象：R36 为满足 44×44 触控下限，给 .l-help-me / .l-information 加了
+        min-width/min-height 48px，但它们的定位仍按 20px 图标写死：
+        「?」由内联 margin-top:45px 定位（占 45~93），
+        「i」是 top:7rem + 内联 margin-top:-1px（占 69~117），
+        48px 高度下两者竖向重叠 24px（截图中两个圆相交）。
+   修法：只把「i」的 top 下移到 9.7rem（97px），保持「?」原位置（45px），
+        两者净距 3px。不缩小触控目标，也不隐藏按钮。
+        （注意：「?」的 45px 来自内联 margin-top，如果再给它写 top，
+          会叠加成 90px 反而更靠下 —— 实测验证过，故不覆盖 top。）
+   -------------------------------------------------------------------------- */
+@media screen and (max-width: 900px) {
+  .o-tab-btn.l-information {
+    top: 9.7rem;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   5) 左侧页签：实测 4 字标签文字固有宽度 56px、页签内宽 55px，
+      横向溢出 1px（subpixel，截图肉眼不可见）。
+      已评估：去掉内边距无效（new-ui-styles.css:934 的
+      .c-modern-sidebar .l-tab-btn-inner 特异性更高），唯一解法是把
+      --sidebar-width 从 5.6rem 加到 6rem 以上，会从 320px 档的内容列里
+      再切走 4~6px（该档已是最紧的一档）。1px 亚像素裁切不影响可读性，
+      按「不为 1px 牺牲可用宽度」的原则**本轮不改**，仅记录。
+   -------------------------------------------------------------------------- */
+
+/* --------------------------------------------------------------------------
+   6) 移动端画出 16px 宽的桌面式滚动条，压在内容右缘
+   现象：styles.css 全局 `::-webkit-scrollbar { width: 1.6rem }`（16px）+
+        #ui 是滚动容器，Android Chrome 上会画出常驻灰条，
+        实测其覆盖 #ui 右缘 16px 的正文（截图可见贯穿全高的灰条）。
+        触摸设备没有"拖滚动条"的操作需求，改由滑动承担。
+   修法：窄屏下把 #ui 的滚动条宽度归零，并取消 scrollbar-gutter 预留。
+   -------------------------------------------------------------------------- */
+@media screen and (max-width: 900px) {
+  #ui {
+    scrollbar-gutter: auto;
+    scrollbar-width: none;
+  }
+
+  #ui::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   7) 「离线进度模拟」弹窗在手机上横向溢出，正文被裁
+   现象：components.css:2330 `.modal-progress-bar { width: 40rem }` = 400px 写死。
+        AVD 实测 392 视口：.c-modal 宽 372（右缘 382），内部 .modal-progress-bar
+        却是 400 宽、右缘到 423 —— 超出视口 31px；.c-modal 自身
+        scrollWidth 410 > clientWidth 366，正文最后几个字被裁掉（截图为证）。
+        这个弹窗每个「离线回来」的玩家都会看到，属于主线路径。
+   修法：窄屏改为按容器自适应（仍保留 40rem 上限），进度条与按钮行同理。
+   -------------------------------------------------------------------------- */
+@media screen and (max-width: 900px) {
+  /* 上游用 vue 作用域属性选择器（.modal-progress-bar[data-v-modal-progress-bar]），
+     特异性 0,2,0；这里必须同样带上属性选择器才能覆盖，否则不会被应用（已实测验证）。 */
+  .c-modal[data-v-modal-progress-bar] {
+    width: calc(100vw - 2rem);
+    max-width: 44rem;
+  }
+
+  .modal-progress-bar[data-v-modal-progress-bar] {
+    width: 100%;
+    max-width: 40rem;
+    box-sizing: border-box;
+  }
+
+  .modal-progress-bar__buttons[data-v-modal-progress-bar] {
+    width: 100%;
+    max-width: 25rem;
+    box-sizing: border-box;
+  }
+
+  .modal-progress-bar__bg[data-v-modal-progress-bar] {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   [Oreki R40-S2] 智能自动购买器状态面板（设置 → 游戏玩法）
+   七项：阶段 / 目标 / 策略 / 正在执行 / 下一步 / 阻塞 / 最近切换
+   加「让路原因」（手动操作后 60 秒内暂停必须写出来，不许静默暂停）。
+   放在设置页而不是 HUD：它解释「为什么自动层这样动」，与倍率设置同屏更合理。
+   -------------------------------------------------------------------------- */
+.c-oreki-smart__panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  padding: 0.8rem 1rem;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  white-space: normal;
+}
+
+.c-oreki-smart__line {
+  display: flex;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  width: 100%;
+}
+
+.c-oreki-smart__key {
+  flex: 0 0 6.5rem;
+  opacity: 0.75;
+}
+
+.c-oreki-smart__value {
+  flex: 1 1 auto;
+  word-break: break-word;
+}
+
+.c-oreki-smart__line--hold {
+  color: var(--color-reality, #ffb84d);
+}
+
+.c-oreki-smart__line--note {
+  opacity: 0.8;
+  font-size: 0.85rem;
+}
+
+@media screen and (max-width: 600px) {
+  .c-oreki-smart__line {
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .c-oreki-smart__key {
+    flex: 0 0 auto;
+  }
+}

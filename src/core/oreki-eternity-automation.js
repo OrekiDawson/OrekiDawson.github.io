@@ -68,6 +68,9 @@ function* studyIds() {
 
 export const OrekiEternityAutomation = {
   _frame: 0,
+  /** [Oreki R40-A] 「满级关换关 respec」的次数与上次快照，仅用于观测与防抖 */
+  _respecCount: 0,
+  _fullEcRespec: null,
 
   get active() {
     try {
@@ -183,6 +186,46 @@ export const OrekiEternityAutomation = {
   },
 
   /**
+   * [Oreki R40-A] 目标维度分叉：73（时间维度）还是 71（反物质维度）。
+   *
+   * ── 为什么需要单独一个判定（R40-A 200ms 真实新档实测）───────────────
+   * 原实现是 `path = this.nextUnfinishedEcId() === 12 ? 73 : 71`，即「只有当前目标正好是
+   * EC12 时才走 73」。但两条自动化对「当前目标」的定义不同：
+   *   · 本模块 `nextUnfinishedEcId()` 按 1→12 取第一个未满 = 可能是 **EC6**
+   *     （EC6 卡在复制器星系资源上，会长期停在那里）；
+   *   · `OrekiDilationAutomation._targetEc()` 按 9→10→11→12 取，此时是 **EC12**，
+   *     而 EC12 的 `secondary.forbiddenStudies = [71,72]`（ec-time-studies.js:141），
+   *     只要 71 在树里它每 6 s 就 `respecTimeStudies(true)` 一次。
+   * 于是形成闭环：dilation 清空整棵树（期望换到 73）→ 本模块认为目标是 EC6（允许 71）
+   * → 立刻把 71 买回来 → dilation 再次判定被 71 阻挡 → 再 respec……
+   *
+   * 实测证据（`_r40/r40a-diag.refunds.jsonl`，700 s 真实新档）：
+   *   t=27.8 / 34.0 / 40.3 / 46.6 / 52.8 / 59.1 / 65.3 s 连续 7 次 respec，
+   *   间隔恒为 6.2 s，`unlocked=0`、`studiesLen=38` 全程不变、EC 完成数一次都没增加
+   *   —— 纯抖动，38 s 里把 38 个研究反复清空重建，EC12 需要的 233/234 链永远建不完。
+   *
+   * 修法：把「维度分叉」从「当前目标是不是 12」改成「EC11 是否已满、EC12 是否未满」。
+   * 这是**全局树状态**问题，与「下一个要打哪一关」解耦，因此不影响
+   * `nextUnfinishedEcId()` 对 EC6/EC3 等窄保护的语义。
+   *
+   * 为什么必须换到 73：原版 71 要求 `!EternityChallenge(12).isUnlocked`、
+   * 73 要求 `!EternityChallenge(11).isUnlocked`（normal-time-studies.js:146 / :190），
+   * 而 EC12 的 `forbiddenStudies=[71,72]`、EC11 的是 `[72,73]` —— 两关天然互斥，
+   * 在 EC11 打满之后必须常驻 73 一侧，直到 EC12 也打满。
+   * 全程只走原版 `purchase()`，不写任何解锁位。
+   */
+  dimensionPathId() {
+    try {
+      const ec11 = EternityChallenge(11);
+      const ec12 = EternityChallenge(12);
+      if (ec11.completions >= ec11.maxCompletions && ec12.completions < ec12.maxCompletions) return 73;
+      return 71;
+    } catch (e) {
+      return 71;
+    }
+  },
+
+  /**
    * 当前不允许购买的研究集合：
    *   1) 与目标 EC 所需列互斥的另外两列；
    *   2) 维度分叉里没选中的那两条（71/73 只能留一条，见下）。
@@ -208,7 +251,8 @@ export const OrekiEternityAutomation = {
       blocked.add(132).add(133);
       blocked.add(142).add(143);
     }
-    const path = this.nextUnfinishedEcId() === 12 ? 73 : 71;
+    // [Oreki R40-A] 由 `dimensionPathId()` 统一决定，不再看 nextUnfinishedEcId()。
+    const path = this.dimensionPathId();
     for (const id of [71, 72, 73]) if (id !== path) blocked.add(id);
     return blocked;
   },
@@ -396,6 +440,22 @@ export const OrekiEternityAutomation = {
         // 否则 ECTimeStudyState.canBeBought 里那条 unlocked !== 0 就直接 return false，
         // 后面所有 EC 研究永远买不上（实测卡在 EC2 满级后无法推进）。
         // respec 会退款并清空普通研究，下一步由 AD10 的自动买研究重新补齐。
+        //
+        // [Oreki R40-A] 加一层「同一关 + 同一完成次数快照只 respec 一次」的会话内闸门。
+        // 正常路径下 respec 会把 unlocked 清 0、本分支自然只走一次；但若有别的模块
+        // 在同一帧内又把这一关的研究买回来（实测 `_driveEcChain` 每 6 s 会 respec 一次，
+        // 之后本模块 30 帧内的 `buyTimeStudies` 会把 71/EC 研究补回去），
+        // 就会出现「重置 → 重买 → 再重置」的无限循环。
+        // 3 s 窗口只抑制这种同快照抖动：一旦这一关的完成次数真的变了（例如现实重置后
+        // 从 5 回到 0 再打回 5），快照不同，闸门自动放行。
+        const now = Date.now();
+        const mark = this._fullEcRespec;
+        if (mark && mark.id === unlockedId && mark.completions === challenge.completions
+          && now - mark.at < 3000) {
+          return false;
+        }
+        this._fullEcRespec = { id: unlockedId, completions: challenge.completions, at: now };
+        this._respecCount++;
         respecTimeStudies(true);
         return false;
       }

@@ -3,6 +3,7 @@ import OptionsButton from "../../OptionsButton.js";
 import PrimaryToggleButton from "../../PrimaryToggleButton.js";
 import SliderComponent from "../../SliderComponent.js";
 import { GameSpeed } from "../../../core/speed-config.js";
+import { OrekiSmartExecutor } from "../../../core/oreki-smart-executor.js";
 
 export default {
   name: "OptionsGameplayTab",
@@ -31,6 +32,12 @@ export default {
       scaleTickspeedAutobuyerInterval: GameSpeed.scaleTickspeedAutobuyerInterval,
       // 动态速度模式：唯一来源仍是 GameSpeed，这里只做镜像供 UI 绑定
       dynamicSpeed: GameSpeed.isDynamic,
+      // 智能自动购买器状态（七项 + 让路原因）。数值全部来自 OrekiSmartExecutor.debugState()，
+      // 这里不推导、不估算 —— 算不出来就显示「无法判定」。
+      smartRows: [],
+      smartHold: "",
+      smartNote: "",
+      smartAt: 0,
     };
   },
   computed: {
@@ -123,6 +130,73 @@ export default {
       this.scaleAutobuyerInterval = GameSpeed.scaleAutobuyerInterval;
       this.scaleTickspeedAutobuyerInterval = GameSpeed.scaleTickspeedAutobuyerInterval;
       this.dynamicSpeed = GameSpeed.isDynamic;
+      this.refreshSmartRows();
+    },
+    /**
+     * [Oreki R40-S2] 智能自动购买器面板：七项 + 让路原因。
+     * 数据只有 `OrekiSmartExecutor.debugState()` 一个来源；异常时整块显示「无法判定」，
+     * 不回落到上次的值（上次的值已经过期，显示出来比不显示更误导）。
+     */
+    refreshSmartRows() {
+      // 设置页的 update() 是 20 fps 调的，每帧重建 7 个对象会让这块每帧重渲染。
+      // 面板信息本身只有「秒级」意义，节流到 500 ms 足够，且不影响「已暂停 N 秒」的准确性。
+      const nowMs = Date.now();
+      if (nowMs - this.smartAt < 500) return;
+      this.smartAt = nowMs;
+      const rows = [];
+      let hold = "";
+      let note = "";
+      let s = null;
+      try {
+        s = OrekiSmartExecutor.debugState();
+      } catch (e) {
+        s = null;
+      }
+      if (!s) {
+        this.smartRows = [{ k: "状态", v: "无法判定（执行层未就绪）" }];
+        this.smartHold = "";
+        this.smartNote = "";
+        return;
+      }
+      const fmtAgo = at => {
+        if (!at) return "—";
+        const sec = Math.max(0, Math.round((Date.now() - at) / 1000));
+        return `${sec} 秒前`;
+      };
+      const stageText = s.stage ? `${s.stage.title}（${s.stage.id}）` : "无法判定";
+      const goalText = s.goal
+        ? `${s.goal.title}${s.goal.done === true ? "（已完成）" : s.goal.done === false ? "（未完成）" : s.goal.done === null ? "（完成度无法判定）" : ""}`
+        : "无法判定";
+      const strategyText = s.strategy ? `${s.strategy.title}（${s.strategy.id}）` : "无法判定";
+      const actionText = s.action
+        ? `${s.action.label} → ${s.action.acted ? "已执行" : "无可买"}｜${s.action.source} ${fmtAgo(s.action.at)}`
+        : "本层未动手（阶段模块在推进）";
+      const nextText = s.next
+        ? `${s.next.label}${s.next.policy === "owned" ? "" : `（${s.next.policy === "delegated" ? "归阶段模块" : s.next.policy === "unsupported" ? "原版无此入口" : "未登记"}）`}`
+        : "—";
+      const blockerText = s.blockers.length ? s.blockers.map(b => b.title).join("；") : "无";
+      const switchText = s.lastSwitch
+        ? `${s.lastSwitch.from ? `${s.lastSwitch.from} → ` : ""}${s.lastSwitch.to}（${fmtAgo(s.lastSwitch.at)}）`
+        : "—";
+      rows.push({ k: "① 阶段", v: stageText });
+      rows.push({ k: "② 目标", v: goalText });
+      rows.push({ k: "③ 策略", v: strategyText });
+      rows.push({ k: "④ 正在执行", v: actionText });
+      rows.push({ k: "⑤ 下一步", v: nextText });
+      rows.push({ k: "⑥ 阻塞", v: blockerText });
+      rows.push({ k: "⑦ 最近切换", v: switchText });
+      if (s.manualHold) {
+        // 让路必须写明原因和剩余时间：禁止静默暂停
+        hold = `你刚刚手动操作过，已暂停 ${s.manualHold.remainSec} 秒（目标：${s.manualHold.goalId}）`;
+      }
+      if (s.degraded) {
+        note = `策略层降级：${s.error || "未知错误"}（沿用上一次成功决策）`;
+      } else if (s.blockers.length) {
+        note = s.blockers[0].advice || "";
+      }
+      this.smartRows = rows;
+      this.smartHold = hold;
+      this.smartNote = note;
     },
     applySpeedValue(value) {
       const result = GameSpeed.set(value);
@@ -247,6 +321,27 @@ export default {
             开启后，计数频率自动购买器的购买间隔会按游戏速度倍率缩短，
             让计数频率升级跟得上游戏时间；默认关闭，×1 时行为不变。
           </span>
+        </div>
+      </div>
+      <div class="l-options-grid__row c-oreki-smart">
+        <div class="o-primary-btn o-primary-btn--option c-oreki-smart__panel">
+          <b>智能自动购买器</b>
+          <span
+            v-for="row in smartRows"
+            :key="row.k"
+            class="c-oreki-smart__line"
+          >
+            <span class="c-oreki-smart__key">{{ row.k }}</span>
+            <span class="c-oreki-smart__value">{{ row.v }}</span>
+          </span>
+          <span
+            v-if="smartHold"
+            class="c-oreki-smart__line c-oreki-smart__line--hold"
+          >{{ smartHold }}</span>
+          <span
+            v-if="smartNote"
+            class="c-oreki-smart__line c-oreki-smart__line--note"
+          >{{ smartNote }}</span>
         </div>
       </div>
       <div class="l-options-grid__row">

@@ -44,10 +44,21 @@ export default {
       type: Function,
       required: false,
       default: undefined
+    },
+    /**
+     * 是否把全局「确认弹窗」热键（Enter）接到 doConfirm。
+     *
+     * 默认 true，保持所有既有弹窗的行为不变。纯阅读类弹窗（按 Enter 并没有「确认」
+     * 语义，只是误关）传 false —— 否则玩家读教程时随手按一下回车，弹窗就没了。
+     */
+    useEnterToConfirm: {
+      type: Boolean,
+      required: false,
+      default: true
     }
   },
   created() {
-    this.on$(GAME_EVENT.ENTER_PRESSED, this.doConfirm);
+    if (this.useEnterToConfirm) this.on$(GAME_EVENT.ENTER_PRESSED, this.doConfirm);
   },
   methods: {
     doConfirm() {

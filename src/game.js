@@ -11,6 +11,8 @@ import { OrekiEternityAutomation } from "./core/oreki-eternity-automation.js";
 import { OrekiRealityAutomation } from "./core/oreki-reality-automation.js";
 import { OrekiCelestialAutomation } from "./core/oreki-celestial-automation.js";
 import { OrekiEndgameAutomation } from "./core/oreki-endgame-automation.js";
+import { OrekiSmartStrategy } from "./core/oreki-smart-strategy.js";
+import { OrekiSmartExecutor } from "./core/oreki-smart-executor.js";
 import { isOrekiBootstrapRun } from "./core/oreki-bootstrap.js";
 import { deepmergeAll } from "./utility/deepmerge.js";
 import { DEV } from "./env.js";
@@ -24,6 +26,14 @@ if (GlobalErrorHandler.handled) {
   throw new Error("Initialization failed");
 }
 GlobalErrorHandler.cleanStart = true;
+
+// [Oreki R40-S2] 把执行层的四个动手目标交给它（执行层自己不 import 这些模块：
+// 它只认识「函数」或「带方法的对象」，这样它能在 node 里单测，也不会与 game.js 形成环）。
+// 注册的是模块本体，不是包装 —— 执行层调 `buyInfinityDimensions()` 与本文件调是同一条路。
+OrekiSmartExecutor.register("routine", tryOrekiEarlyRoutine);
+OrekiSmartExecutor.register("early", OrekiEarlyAutomation);
+OrekiSmartExecutor.register("eternity", OrekiEternityAutomation);
+OrekiSmartExecutor.register("reality", OrekiRealityAutomation);
 
 export function playerInfinityUpgradesOnReset() {
 
@@ -856,21 +866,21 @@ export function gameLoop(passDiff, options = {}) {
   // [Oreki AD7] 开局例行操作自动化：首次无限前原版维度自动器不可用，
   // 进度完全由点击速率决定（实测 1e130 卡 60 秒），时间倍率在这一段无效。
   // 详见 core/oreki-early-automation.js 与本文件 tryOrekiEarlyRoutine 的说明。
-  tryOrekiEarlyRoutine();
+  const orekiRoutineResult = tryOrekiEarlyRoutine();
 
   // [Oreki AD6] 首次永恒前的阶段自动化：无限维度与无限升级在原版里都没有自动购买
   // （ID 自动器与 IP 倍率自动器都锁在 Eternal Milestone 之后，buyMax 的源码注释写着
   //  "Called from Max All UI buttons and nowhere else"）。10000× 速度下玩家跟不上点击节奏，
   // 于是 maxAM 永远停在 1e5921 量级、IP 停在 1e29，摸不到 1.797e308 的永恒门槛。
   // 详见 core/oreki-early-automation.js。
-  OrekiEarlyAutomation.tick();
+  const orekiEarlyResult = OrekiEarlyAutomation.tick();
 
   // [Oreki AD10] Eternity 阶段的通路自动化：时间维度 → 时间定理 → 时间研究。
   // 实测 EP 已到 1e694437 却一个时间研究都没买上，因为
   // `TimeTheorems.checkForBuying()` 要求先买过时间维度（time-theorems.js:112），
   // 而 Reality 的唯一闸门是 `TimeStudy.reality.isBought`（reality.js:119）。
   // 详见 core/oreki-eternity-automation.js。
-  OrekiEternityAutomation.tick();
+  const orekiEternityResult = OrekiEternityAutomation.tick();
 
   // [Oreki AD13] 自动永恒（带 EC 入口保护）：原版没有自动永恒，而永恒会
   // `invalidateCachedRequirements()` 清掉 EC 的入口资源峰值采样（eternity.js:147），
@@ -881,7 +891,7 @@ export function gameLoop(passDiff, options = {}) {
   // [Oreki R26] 现实层自动化：首次现实 / 现实循环 / 现实升级 / 符文装备。
   // 原版现实没有无条件自动器（RealityAutobuyerState.isUnlocked 要求 RealityUpgrade 25，
   // 而 25 要 100000 RM），首次现实因此永远不会发生。详见 core/oreki-reality-automation.js。
-  OrekiRealityAutomation.tick();
+  const orekiRealityResult = OrekiRealityAutomation.tick();
 
   // [Oreki R27] 天神 / 特蕾莎浇注 / V 解锁 自动化：在现实自动化之后调用，先买 RU、再浇特蕾莎、
   // 再进天神 run、最后解锁 V。详见 core/oreki-celestial-automation.js。
@@ -891,6 +901,24 @@ export function gameLoop(passDiff, options = {}) {
   // 这四步在原版里只有 UI 调用点，没有任何自动器，所以即使 V 解锁也会原地停住。
   // 详见 core/oreki-endgame-automation.js。
   OrekiEndgameAutomation.tick();
+
+  // [Oreki R40-S1] 智能策略层：**只读解释器**，不按任何购买键。
+  // 规则全部来自 src/core/oreki-smart-strategy.json（经 gen_spec_module.mjs 转成 ESM），
+  // 阶段识别 / 目标 / 阻塞只在 1 s 一次或阶段指纹变化时重算（由模块内部节流）。
+  // 详见 core/oreki-smart-strategy.js。
+  OrekiSmartStrategy.evaluate();
+
+  // [Oreki R40-S2] 智能执行层：购买权边界选 B —— **只在上面各阶段模块本帧无动作时才动手**。
+  // 把六个模块本帧的动作摘要喂进去，连续 3 帧都无事可做的那一个 source 才允许补一手，
+  // 且调的是该模块自己的公开方法（同一条购买路径、同样的成本检查），不写任何 player 字段。
+  // 手动优先：玩家在 #ui 上点一下，当前 goal 静默 60 s（面板显示剩余秒数）。
+  // 详见 core/oreki-smart-executor.js 头注释。
+  OrekiSmartExecutor.tick({
+    routine: orekiRoutineResult,
+    early: orekiEarlyResult,
+    eternity: orekiEternityResult,
+    reality: orekiRealityResult,
+  });
 
   // IP generation is broken into a couple of places in gameLoop; changing that might change the
   // behavior of eternity farming.

@@ -556,7 +556,22 @@ export const OrekiCelestialAutomation = {
         return true;
       }
 
-      if (!active && now - this._lastDilationStartOkMs > 60000) {
+      // [Oreki R40-A2] 护栏①只在「DS1 已经买到、却还是起不来膨胀」时才成立。
+      //
+      // 为什么必须加 `PlayerProgress.dilationUnlocked()`：
+      //   `_lastDilationStartOkMs` 只在 `startDilatedEternity()` **成功**时更新
+      //   （本文件 :420 / :446），失败时**从不刷新**。于是当上一次膨胀是 60 s 之前启动的、
+      //   而当前 `player.dilation.active === false` 时，这个 getter 会变成
+      //   「第一帧置位 → 第二帧命中本条 → `_vHoldSinceMs = 0` → 下一帧再置位」的循环，
+      //   对外恒为 false。而 `tickDilation()` 的第一道闸正是 `if (!this.holdReality) return false;`
+      //   （:429），买 DS1 的代码在它后面 ⇒ **hold 要 DS1 才不会自杀，DS1 要 hold 才买得到**。
+      //
+      // 实测（`_tools/_r40/r40a2-t1.jsonl`）：realities 在 446.5 s 达标后，`holdReality`
+      // 整整 36 s 是 false、`dsB=000000`、`maxDTL=0`，直到 482.6 s 另一条来源
+      // （`OrekiDilationAutomation.hold` 的 60 s 冷却走完）把 hold 顶起来，DS1 才在 484.1 s 买到，
+      // maxDT 0 → 1e180 只用 0.4 s，V 在 484.5 s 解锁。
+      // DS1 买上之后这条护栏的语义完全不变（「膨胀起不来就放手」）。
+      if (!active && PlayerProgress.dilationUnlocked() && now - this._lastDilationStartOkMs > 60000) {
         console.warn(`[V-HOLD] 膨胀连续 60 s 未能启动，放开现实（压现实 ${Math.round((now - this._vHoldSinceMs) / 1000)} s）`);
         this._vHoldSinceMs = 0;
         return false;

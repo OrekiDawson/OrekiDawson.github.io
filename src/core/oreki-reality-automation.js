@@ -262,7 +262,29 @@ export const OrekiRealityAutomation = {
     }
   },
 
-  /** 装备评分最高的 3 个符文（空槽优先，必要时替换更弱的） */
+  /**
+   * 装备评分最高的符文，**只往空槽装，绝不替换已占用的槽**。
+   *
+   * [Oreki R40-A · 实测根因，不是猜测]
+   * 原来这里是「空槽优先，必要时替换更弱的」（`freeSlot < 0` 时挑最差的槽覆盖）。
+   * 但原版 `Glyphs.equip()` 在目标槽**已占用**时走的是 `swapIntoActive()`
+   * （glyphs/glyph-core.js:319-323），而 `swapIntoActive()` 里有一行
+   *   `finishProcessReality({ reset: true, ... })`（glyph-core.js:759）
+   * —— 那是**一次完整现实重置**：清空 `player.eternityChalls`（EC 完成记录）、
+   * `Currency.timeTheorems`（时间定理 + 整棵时间研究树）、`player.dilation.studies`（膨胀研究），
+   * 而 `reset: true` 表示**不发奖励**、`realities` 也不增加（reality.js 只有 `!isReset` 才结算）。
+   *
+   * 于是自动现实循环每一轮都会出现「现实 → 0.4 s 后 equipGlyphs 又静默重置一次」：
+   * 实测 `_r40/r40a-fix.refunds.jsonl`，8 次可观测的现实重置里有 **3 次**来自本条：
+   *   t=140.9s r=15、t=256.1s r=20、t=387.8s r=25  —— 全部紧跟在上一次真实现之后
+   *   （t=255.7s 真实现 → t=256.1s 静默重置），且 `realities` 均未变化。
+   * 后果：刚打通的 EC1~EC12 与 DS1~DS6 在同一个现实周期内被抹掉，EC 链被迫重打，
+   * `realities` 增长被拖慢（V 需要 200 次），`TimeStudy.reality`(DS6) 也活不过一帧。
+   *
+   * 修法：只剩「装空槽」这一条路径（它与原版手动点击装空槽完全等价，不触发任何重置）。
+   * 满槽就跳过。RU9/16/17/18/24 的「恰好 N 个符文」形态要求由 `_driveGlyphRequirements`
+   * 先卸下再装空槽来完成，不依赖替换，因此不受影响。
+   */
   equipGlyphs() {
     try {
       if (Glyphs.activeSlotCount === 0) return 0;
@@ -279,13 +301,9 @@ export const OrekiRealityAutomation = {
             g.strength === glyph.strength && g.type === glyph.type);
           if (already) continue;
           const freeSlot = Glyphs.active.findIndex(g => g === null);
-          const target = freeSlot >= 0
-            ? freeSlot
-            : Glyphs.active.reduce((worst, g, idx) => (g && score(g) < score(Glyphs.active[worst])
-              ? idx : worst), 0);
-          const current = Glyphs.active[target];
-          if (current && score(current) >= score(glyph)) continue;
-          Glyphs.equip(glyph, target);
+          // 没有空槽 → 跳过。**不能替换**：替换 = 一次无收益的完整现实重置。
+          if (freeSlot < 0) continue;
+          Glyphs.equip(glyph, freeSlot);
           equipped++;
         }
       } finally {

@@ -65,7 +65,17 @@ export const OrekiBreakInfinityGate = {
       if (!player.auto.autobuyersOn) return false;
       if (!PlayerProgress.infinityUnlocked()) return false;
       if (NormalChallenge.isRunning || InfinityChallenge.isRunning || EternityChallenge.isRunning) return false;
-      if (Pelle.isDoomed) return false;
+      // [Oreki R40-A5] 毁灭态（佩勒）放行本闸门，但**只放行 A 段**（花真实 IP 买间隔升级）。
+      //
+      // 原因（实测，见 `_tools/_r40/R40A4-佩勒诊断.md` §7/§8）：
+      //   进毁灭态那一帧 `Autobuyer.reset()` 会把 interval 打回 `baseInterval`（150000），
+      //   因为此时 `keepAutobuyers` 里程碑（2 次永恒）与 Pelle 升级都还不成立
+      //   （`autobuyers/autobuyer.js:185-189` + `reality.js:643` 清了永恒次数）。
+      //   而 `breakInfinity()` 第一行就要求 `hasMaxedInterval`（`game.js:85`），
+      //   所以「间隔买不回 100 ⇒ 永远破不了无限 ⇒ 反物质夹在 1.8e308」。
+      //   A 段走的是游戏自身的 `upgradeInterval(false)`（真实扣 IP），
+      //   和玩家在自动购买器页手点 15 次完全等价，不是补贴。
+      //   B 段（一次性补足 32767 IP）**仍然只在非毁灭态发放**，见 `tryOpen()`。
       if (Autobuyer.bigCrunch.hasMaxedInterval) return false;
       return true;
     } catch (e) {
@@ -82,8 +92,14 @@ export const OrekiBreakInfinityGate = {
       if (!this.active()) return false;
 
       // B) 一次性阶段奖励：把 IP 补足到「拉满间隔的全部成本」
+      //
+      // [Oreki R40-A5] 毁灭态**不发放**这段补贴。
+      // 原版给佩勒安排的开 Break 通路是 `reality.js:749-752`（末日/现实重置时自动置
+      // `player.break = true`，前提是 `keepAutobuyers` 已买 + 间隔已满），
+      // 不是「发钱买通关」。在毁灭态补 IP 等于我们替玩家付账，会破坏「真实通关」口径。
+      // 所以毁灭态只放行 A 段（真实扣 IP 的间隔升级），见 `active()` 上方的注释。
       let granted = false;
-      if (!this.grantedThisSession) {
+      if (!this.grantedThisSession && !Pelle.isDoomed) {
         const need = Decimal.subtract(new Decimal(BREAK_INTERVAL_TOTAL_COST), Currency.infinityPoints.value);
         if (need.gt(0)) {
           Currency.infinityPoints.add(need);

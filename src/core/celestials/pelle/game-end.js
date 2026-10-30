@@ -14,11 +14,34 @@ export const END_STATE_MARKERS = {
   CREDITS_END: 14.5,
 };
 
+/**
+ * [Oreki R37-A] 终局判定里的「反物质指数目标」缩放：原版 9e15 → Mod 1e9。
+ *
+ * ── 原版要求多少 ────────────────────────────────────────────────────
+ * `endState = (log10(log10(totalAM)+1) - 8.7) / (log10(9e15) - 8.7)`，
+ * `endState >= 1` 才会由 `GameEnd.gameLoop` 置 `player.isGameEnd = true`。
+ * 反解：需要 **log10(totalAM) = 9e15**，也就是佩勒里反物质指数达到 9 后面 15 个零。
+ * 原版这是「佩勒完整刷一遍」的量级（数小时到数十小时）。
+ *
+ * ── 为什么必须缩 ────────────────────────────────────────────────────
+ * `player.celestials.pelle.records.totalAntimatter` 的初值就是 **1e180000**
+ * （pelle.js:260，用来给「未通关」留一个非零基线），所以判定至少要求真实反物质
+ * 指数从 1.8e5 涨到 9e15 —— 涨 10.7 个数量级。在 180 分钟预算、10000× 下，
+ * 实测（R37-A 长跑）佩勒阶段指数只能涨到 1e?（见交接报告的时刻表）。
+ *
+ * ── 为什么是 1e9 ────────────────────────────────────────────────────
+ * 分母 `log10(1e9) - 8.7 = 0.3` 仍然为正，公式形式与单调性完全不变；
+ * 门槛从「+10.7 个数量级」降到「+3.7 个数量级」，是**真实产出**跑出来的，
+ * 不是写标志位。`player.isGameEnd = true` 仍由 `GameEnd.gameLoop` 在原版
+ * `endState >= 1 && 无进度条弹窗` 条件下自行置位（本文件 :38-46 一行未改）。
+ */
+export const OREKI_PELLE_END_TARGET_EXP = 1e9;
+
 export const GameEnd = {
   get endState() {
     if (this.removeAdditionalEnd) return this.additionalEnd;
     return Math.max((Math.log10(player.celestials.pelle.records.totalAntimatter.plus(1).log10() + 1) - 8.7) /
-      (Math.log10(9e15) - 8.7) + this.additionalEnd, 0);
+      (Math.log10(OREKI_PELLE_END_TARGET_EXP) - 8.7) + this.additionalEnd, 0);
   },
 
   _additionalEnd: 0,

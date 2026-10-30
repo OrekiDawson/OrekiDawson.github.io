@@ -72,13 +72,19 @@ export const OrekiRealityAutomation = {
    */
   shouldReality() {
     try {
-      // [Oreki R33] V 收尾阶段压住现实：`maxDT` 每个现实清零（reality.js:696），
-      // 所以 V 的 `dilatedTime` 判据只能在同一个现实内攒出来，而自动现实每 ~28 s
-      // 就会把它清零。为真时暂停现实，等 maxDT 达标或护栏超时（见
-      // oreki-celestial-automation.js::holdRealityForV，内含两条防死锁护栏）。
+      // [Oreki R33/R35-A2] 收尾阶段压住现实：`maxDT` 每个现实清零（reality.js:696），
+      // 所以 V 的 `dilatedTime` 判据只能在同一个现实内攒出来，而自动现实每 ~25 s
+      // 就会把它清零；同理，现实还会清空 `player.eternityChalls` 与整棵时间研究树，
+      // 让「respec 换分叉 → 重建 233 → 进 EC12」这条链永远走不完。
+      //
+      // ⚠️ 这里**只读一处**：`OrekiCelestialAutomation.holdReality`。它是
+      // `holdRealityForV`（V 收尾）与 `holdRealityForDeepChallenge`（深度挑战阶段）的
+      // 「或」，两条来源各自的护栏都在 oreki-celestial-automation.js /
+      // oreki-dilation-automation.js 里，本模块不再拼任何条件 —— R34 就是因为
+      // 两处各写一套（其中一处多了 `TP > 0`）而互相锁死。
       // 用 globalThis 取而不是 import：本模块被 celestial-automation 反向依赖，
       // 直接 import 会成环；该对象在 celestial-automation 模块底部挂到 globalThis。
-      if (globalThis.OrekiCelestialAutomation?.holdRealityForV) return false;
+      if (globalThis.OrekiCelestialAutomation?.holdReality === true) return false;
       if (!this.realityReady) {
         this._readySince = 0;
         return false;

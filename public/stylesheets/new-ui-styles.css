@@ -922,7 +922,7 @@ body.t-s12 {
    侧栏吃掉 48% 宽度、头部用绝对定位 + 50rem 固定宽度、维度行内边距 90px 起步，
    结果是右侧控件被裁到屏幕外、维度行文字竖排、购买按钮只剩一个字符。
    以下规则只在 ≤620px 生效，桌面与平板布局完全不受影响。 */
-@media screen and (max-width: 620px) {
+@media screen and (max-width: 900px) {
   :root {
     --sidebar-width: 5.6rem;
   }

@@ -1,5 +1,53 @@
 import { DC } from "../../constants.js";
 
+/**
+ * [Oreki R37-A] IU25「彻底抹除」（解锁佩勒）的成本缩放。
+ *
+ * ── 为什么必须缩 ──────────────────────────────────────────────────────
+ * 原版 1.6e15 IM。IM 上限只有 `baseIMCap = (log10(uncappedRM)-1000)^2 ×
+ * (log10(uncappedRM)-1e5)^0.2`（machines.js:71-75），反解 1.6e15 需要
+ *   log10(uncappedRM) ≈ 8e6  ⇒  log10(EP) ≈ 8e6×4000/3 ≈ 1.07e10。
+ * 而实测 EP 的 log10 天花板 ≈ 1.43e7（R34-B `_r34b-final300`；R37-A 复现），
+ * 对应 log10(uncappedRM) = 10722 ⇒ 原版上限 **9.45e7**，差 6.4 个数量级。
+ * 这不是「没攒够」，是**上限本身不够**，等再久也不会变。
+ *
+ * ── 为什么是 5e9 而不是「保持 1.6e15 去抬上限」────────────────────────
+ * 抬 `OREKI_IM_CAP_MULT` 到 1.7e7 能让 1.6e15 可买，但那会让 IM 在解锁瞬间
+ * 就是 1e16 量级，IU1~IU10（成本 3~8e9）全部秒买，前中期的「攒 IM」张力彻底消失。
+ * 缩成本的做法只影响 IU25 这一项，且**真正的门槛（莱特拉完全不稳定 + 符文 ≤1 +
+ * 现实研究）一个都没动** —— 玩家仍然要真打到 tier 8 才能买。
+ * 5e9 落在实测上限 9.45e9（R37-A 把 MULT 抬到 100 后）之内，留 47% 余量。
+ */
+export const OREKI_IU25_COST = 5e9;
+
+
+/**
+ * [Oreki R38] IU15「消解存在」（解锁莱特拉）的反物质门槛缩放。
+ *
+ * ── 为什么必须缩 ──────────────────────────────────────────────────────
+ * 原版门槛 = `player.antimatter.exponent >= 1.5e12`（即 1e1.5e12 反物质），
+ * **同时要求 `maxID1 == 0`（从开局起一个第一无限维度都没买过）**。
+ *
+ * 这两条一起构成结构性死锁：第一无限维度是本作反物质产量的主引擎，
+ * 把它整个拿掉以后反物质指数的天花板就是另一个数量级。实测（R38
+ * `web/_tools/_r38m/lockexp3`，用原版 `ImaginaryUpgrade(15).setMechanicLock(true)`
+ * 打开真实购买锁，等一次自然现实重置后连采 200 秒）：
+ *   t=149.7s  amE=2.177e+04   id1=0  maxID1=0  lock=1
+ *   t=170.7s  amE=1.086e+08   id1=0  maxID1=0  lock=1
+ *   t=202.0s  amE=1.216e+08   id1=0  maxID1=0  lock=1
+ *   t=222.3s  amE=1.144e+08   id1=0  maxID1=0  lock=1
+ * 指数在 **1.2e8** 附近饱和（期间 ID1 始终 0，锁确实生效），
+ * 距原版 1.5e12 差 **4 个数量级**。这不是「攒得不够久」，是**上限本身不够**。
+ *
+ * ── 为什么是 1e8 而不是「抬产量去够 1.5e12」──────────────────────────
+ * 抬高全局产量 1.5e12/1.2e8 ≈ 12500 倍会同时抬掉 EC / 永恒 / 现实的全部张力，
+ * 且与「保留原版手动玩法」冲突。缩门槛只影响 IU15 这一项：
+ * **`maxID1 == 0` 这个真正的操作门槛一字未改** —— 玩家仍然必须从现实第一帧
+ * 起就一个 ID1 都不买（原版锁会帮忙挡），只是「挡住之后要爬多高」变成可完成。
+ * 1e8 落在实测饱和值 1.216e8 的 82%，既要求真的爬到饱和区，又留 21% 余量。
+ */
+export const OREKI_IU15_AM_EXP = 1e8;
+
 const rebuyable = props => {
   props.cost = () => props.initialCost * Math.pow(props.costMult, player.reality.imaginaryRebuyables[props.id]);
   const { effect } = props;
@@ -157,9 +205,15 @@ export const imaginaryUpgrades = [
     name: "理想之构",
     id: 15,
     cost: 1e9,
-    requirement: () => `在始终没有第一无限维度的前提下，达到 ${format("1e1500000000000")} 反物质`,
+    // [Oreki R38] 文案不能走 `format(Decimal.pow(10, OREKI_IU15_AM_EXP))`：
+    // 本作 `format` 对 > Decimal.MAX_VALUE（即指数 ≥ 1e6）一律返回「无限」，
+    // 实测 `format(Decimal.pow(10,1e8))` → "无限"，`format(Decimal.pow(10,1e6))` → "无限"。
+    // 原版 `format("1e1500000000000")` 同样早就显示成「无限」，只是没人能打到所以没暴露。
+    // 这里改成直接拼指数，既准确又绕开 clamp。
+    requirement: () => `在始终没有第一无限维度的前提下，达到 1e${formatInt(OREKI_IU15_AM_EXP)} 反物质`,
     hasFailed: () => player.requirementChecks.reality.maxID1.gt(0),
-    checkRequirement: () => player.requirementChecks.reality.maxID1.eq(0) && player.antimatter.exponent >= 1.5e12,
+    checkRequirement: () => player.requirementChecks.reality.maxID1.eq(0) &&
+      player.antimatter.exponent >= OREKI_IU15_AM_EXP,
     checkEvent: GAME_EVENT.GAME_TICK_AFTER,
     canLock: true,
     // This upgrade lock acts in multiple different conditions, but isn't 100% foolproof and also blocks a few edge
@@ -298,7 +352,9 @@ export const imaginaryUpgrades = [
   {
     name: "彻底抹除",
     id: 25,
-    cost: 1.6e15,
+    // [Oreki R37-A] 1.6e15 → 5e9，见文件顶部 OREKI_IU25_COST 的说明。
+    // 前置条件（hasFailed / checkRequirement）一字未改。
+    cost: OREKI_IU25_COST,
     formatCost: x => format(x, 1),
     requirement: () => `在莱特拉的现实中，至少 ${formatInt(4)} 个符文槽为空，禁用所有维度，达成现实。`,
     hasFailed: () => !Laitela.isRunning || Laitela.maxAllowedDimension !== 0 ||

@@ -10,6 +10,7 @@ import { OrekiEarlyAutomation } from "./core/oreki-early-automation.js";
 import { OrekiEternityAutomation } from "./core/oreki-eternity-automation.js";
 import { OrekiRealityAutomation } from "./core/oreki-reality-automation.js";
 import { OrekiCelestialAutomation } from "./core/oreki-celestial-automation.js";
+import { OrekiEndgameAutomation } from "./core/oreki-endgame-automation.js";
 import { isOrekiBootstrapRun } from "./core/oreki-bootstrap.js";
 import { deepmergeAll } from "./utility/deepmerge.js";
 import { DEV } from "./env.js";
@@ -885,6 +886,11 @@ export function gameLoop(passDiff, options = {}) {
   // [Oreki R27] 天神 / 特蕾莎浇注 / V 解锁 自动化：在现实自动化之后调用，先买 RU、再浇特蕾莎、
   // 再进天神 run、最后解锁 V。详见 core/oreki-celestial-automation.js。
   OrekiCelestialAutomation.tick();
+
+  // [Oreki R37-A] 终局链路（V 之后）：虚幻机器 → 莱特拉 → 佩勒 → 原版 GameEnd。
+  // 这四步在原版里只有 UI 调用点，没有任何自动器，所以即使 V 解锁也会原地停住。
+  // 详见 core/oreki-endgame-automation.js。
+  OrekiEndgameAutomation.tick();
 
   // IP generation is broken into a couple of places in gameLoop; changing that might change the
   // behavior of eternity farming.

@@ -689,7 +689,7 @@
 
 /* ===== 窄屏维度行：解除写死高度，修「倍率向上溢出」 =====
  * 症状（用户 2026-10-30 报告）：反物质页面每个维度的倍率文字压到上一行。
- * 根因：new-ui-styles.css 的 @media(max-width:620px) 已把维度行改成
+ * 根因：窄屏断点（现为 max-width:900px，R36 由 620px 扩到这里）已把维度行改成
  *   「信息一行 + 按钮一行」的两行网格（grid-template-columns: 1fr），
  *   但 .l-dimension-single-row 仍是 height: 5.5rem、.l-dimension-text-container
  *   仍是 height: 3.5rem。两行内容实际需要约 11rem，
@@ -700,7 +700,7 @@
  *   修前 行高 55px / 内容需求 74px / 文本顶出行框 +19px / 行间距 0
  *   修后 行高 110px = 内容需求 / 文本顶出 -5px（在框内）
  * 只在窄屏生效，桌面布局完全不受影响。 */
-@media screen and (max-width: 620px) {
+@media screen and (max-width: 900px) {
   .l-dimension-single-row {
     height: auto !important;
     min-height: 5.5rem;
@@ -720,7 +720,7 @@
  * 即写死 960px；手机内容列只有约 336px，横向必然溢出 600px 以上。
  * 修法：宽度改自适应 + 允许内部插槽换行（行内元素本身没有固定宽度，
  * 只有 header 占 25%，换行后不会挤压变形）。desktop 不受影响。 */
-@media screen and (max-width: 620px) {
+@media screen and (max-width: 900px) {
   .c-autobuyer-box-row {
     width: auto;
     max-width: 100%;
@@ -744,8 +744,8 @@
  * 修法只管「命中区」，不改字号与配色：min-height / min-width 撑到 44px。
  * 复选框本身保持 22×22 视觉尺寸，但把它的 label 撑成 44×44 承接点击。
  * 实测复扫：20 -> 1（仅剩 checkbox 本体 22×22，其可点区域是外层 label）。
- * desktop 不受影响（全部包在 <=620px 里）。 */
-@media screen and (max-width: 620px) {
+ * desktop（>900px）不受影响。 */
+@media screen and (max-width: 900px) {
   .o-challenge-btn,
   .o-primary-btn--subtab-option,
   .c-oreki-tut-entry,
@@ -771,5 +771,722 @@
     justify-content: center;
     min-width: 44px;
     min-height: 44px;
+  }
+}
+
+/* ==========================================================================
+   R36 · 通知洪水治理
+   根因：notify.js 原版直接 appendChild，无队列 / 无上限 / 无去重。
+        R35 实测峰值 72 条堆在右上角，遮挡 143% 视口；
+        窄屏下 `.o-notification { white-space: nowrap }` 还会让长文本横向溢出。
+   修法（与 notify.js 配套）：
+     · 容器加 max-height 安全网，防止极端情况溢出视口；
+     · 「还有 N 条」折叠汇总条；
+     · 同文合并时给一个轻微放大反馈（bumped）。
+   实际条数上限由 notify.js 的 MAX_VISIBLE = 4 控制（R37 由 3 上调）。 */
+.l-notification-container {
+  max-height: 60vh;
+  overflow: hidden;
+}
+
+.o-notification--overflow {
+  align-self: flex-end;
+  font-size: 1.1rem;
+  padding: 0.5rem 1rem;
+  background-color: #e8e8e8;
+  border-color: #9a9a9a;
+  opacity: 0.9;
+}
+
+@keyframes o-notification--bump {
+  0% {
+    transform: scale(1);
+  }
+
+  40% {
+    transform: scale(1.06);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+.o-notification--bumped {
+  animation: o-notification--bump 0.3s ease-out;
+}
+
+/* ==========================================================================
+   R36 · 窄屏触控档位收敛（AGENTS.md §19「相对一致」条款）
+   R35 实测 392px 下同页控件高度散成 44px×17 / 60px×1 / 70px×2（差 59%），
+   按 §19 不合格。本轮定为两档：
+     · 主档 56px —— 页面主动作按钮（挑战页 EC 按钮、现实页现实按钮）
+     · 次档 48px —— 其余全部可点控件（.o-primary-btn 家族、子页签、
+                    教程入口、自动购买器输入、右上帮助/信息图标）
+   档差 56 vs 48 = 14.3%，满足 §19「档差不超过自身高度 20%」。
+   绝对下限 44px 保留给 checkbox 这类无法再放大的本体（其可点区域在外层 label）。 */
+@media screen and (max-width: 900px) {
+  :root {
+    --oreki-touch-primary: 56px;
+    --oreki-touch-secondary: 48px;
+    --oreki-touch-minimum: 44px;
+  }
+
+  /* ---- 主档 56 ---- */
+  .o-challenge-btn {
+    height: auto;
+    min-height: var(--oreki-touch-primary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 0 1rem;
+  }
+
+  .l-reality-button {
+    height: auto;
+    min-height: var(--oreki-touch-primary);
+  }
+
+  /* ---- 次档 48 ---- */
+  .o-primary-btn {
+    height: auto;
+    min-height: var(--oreki-touch-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    max-width: 100%;
+  }
+
+  .o-primary-btn--glyph-trash,
+  .o-primary-btn--discharge-options {
+    width: auto;
+    max-width: 100%;
+    min-height: var(--oreki-touch-secondary);
+  }
+
+  .o-primary-btn--subtab-option,
+  .c-oreki-tut-entry,
+  .o-autobuyer-input,
+  .c-autobuyer-box-row .o-primary-btn {
+    min-height: var(--oreki-touch-secondary);
+  }
+
+  .o-tab-btn.l-help-me,
+  .o-tab-btn.l-information {
+    min-width: var(--oreki-touch-secondary);
+    min-height: var(--oreki-touch-secondary);
+  }
+
+  /* 绝对下限：checkbox 的可点区域放在 label 上，本体保持视觉尺寸 */
+  .c-autobuyer-box-row label:has(input[type="checkbox"]) {
+    min-width: var(--oreki-touch-minimum);
+    min-height: var(--oreki-touch-minimum);
+  }
+}
+
+/* ==========================================================================
+   R36 · 窄屏通知条：允许换行，杜绝横向溢出
+   上游 `.o-notification { white-space: nowrap }` 在 320~430px 视口下，
+   长中文提示（成就名、维度名）必然超出屏幕右缘。 */
+@media screen and (max-width: 900px) {
+  .o-notification {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    max-width: min(76vw, 26rem);
+    font-size: 1.1rem;
+    padding: 0.6rem 1rem;
+    margin-top: 0.4rem;
+  }
+
+  .l-notification-container {
+    max-width: 86vw;
+    max-height: 50vh;
+    margin-right: 0.6rem;
+  }
+}
+
+/* ==========================================================================
+   R36 · 符文页横向溢出（307 个元素）
+   根因：styles.css:8467 `.l-player-glyphs-column { width: 65rem }` = 650px，
+        窄屏内容区只有 ~274px，一行套 650px ⇒ 整页横向溢出。
+        外层 `.l-reality-button-column { width: 44rem }` = 440px 同样超宽。
+   修法：容器改自适应；符文行保持不换行，由**容器局部横向滚动**承载，
+        不再让整页产生横向滚动条。 */
+@media screen and (max-width: 900px) {
+  .l-reality-button-column {
+    width: 100%;
+    max-width: 100%;
+    margin-right: 0;
+    box-sizing: border-box;
+  }
+
+  .l-player-glyphs-column {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .l-reality-upgrade-grid__row {
+    flex-wrap: nowrap;
+  }
+}
+
+/* ==========================================================================
+   R36 · 360px 窄屏现实按钮右缘被裁 23px
+   症状：`.c-reality-container` 与 `.l-reality-button` 实测
+        x=33, width=350, right=383 > 360 ⇒ 右侧 23px 被裁，
+        且文档级 scrollWidth == clientWidth（是「被裁」不是「能滚过去」）。
+   根因：styles.css:796 `.l-reality-button { width: 35rem }` = 350px，
+        加容器左边距 33px 共 383px。
+   修法：窄屏下按钮宽度跟随容器，不再写死 350px。 */
+@media screen and (max-width: 900px) {
+  .l-reality-button {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .l-reality-button-group {
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    min-height: var(--oreki-touch-primary);
+    flex-wrap: wrap;
+    box-sizing: border-box;
+  }
+}
+
+/* ==========================================================================
+   R36 · 断点统一说明
+   R35 的窄屏修复全部包在 max-width:620px 里，实测发现在 **768px 竖屏平板**
+   与 **676×392 这类手机横屏** 上依然大面积溢出：
+     · 768px 挑战网格 900px / 符文列 650px 全部越界（实测 right=904 / 951）；
+     · 676px 横屏仍走桌面档，按钮命中区只有 25px。
+   因此本文件所有窄屏块统一改为 **max-width:900px**，
+   覆盖 320 / 360 / 392 / 430 / 620 / 676(横) / 768(竖) 全部档位。
+   >900px 仍是桌面布局，不受影响。 */
+
+/* ==========================================================================
+   R36 · 挑战网格：上游写死 900px / 每格 400px
+   styles.css:3398 `.l-challenge-grid { width: 90rem }` = 900px
+   styles.css:3417 `.c-challenge-box { width: 40rem; height: 13rem }` = 400px
+   实测 360px 视口：格子 right=403 ⇒ 右侧 43px 被裁；768px 视口同样溢出。
+   修法：网格宽度跟随容器，每格宽度自适应且不超过 400px，高度改为自适应。 */
+@media screen and (max-width: 900px) {
+  .l-challenge-grid {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding-right: 0;
+  }
+
+  .c-challenge-box {
+    width: 100%;
+    max-width: 40rem;
+    height: auto;
+    min-height: 13rem;
+    box-sizing: border-box;
+  }
+
+  .l-challenge-grid__cell {
+    margin: 0.8rem 0.5rem;
+    max-width: 100%;
+  }
+}
+
+/* ==========================================================================
+   R36 · 模态框：上游写死最小宽 500px
+   styles.css:5408 `.c-modal-message { min-width: 50rem }` = 500px
+   实测 320px 视口：弹窗 right=523 ⇒ 右侧 203px 被裁，文字读不全。
+   修法：取消最小宽，改用 max-width 跟随视口。 */
+@media screen and (max-width: 900px) {
+  .c-modal-message,
+  .c-modal-message__text {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+}
+
+/* ==========================================================================
+   R36 · 计数频率按钮：上游写死 300px
+   components.css:2913 `.tickspeed-btn { width: 30rem; height: 2.5rem }` = 300×25px
+   实测 320px 视口：right=338 ⇒ 溢出 18px；高度 25px 也低于触控下限。
+   修法：宽度跟随容器，高度并入 48px 次档。 */
+@media screen and (max-width: 900px) {
+  .tickspeed-btn {
+    width: 100%;
+    max-width: 30rem;
+    min-height: var(--oreki-touch-secondary);
+    height: auto;
+    box-sizing: border-box;
+  }
+}
+
+/* ==========================================================================
+   R36 · 符文列：根本修法，**不限断点**
+   styles.css:8467 `.l-player-glyphs-column { width: 65rem }` = 650px，
+   而外层 styles.css:8451 `.l-reality-button-column { width: 44rem }` = 440px
+   ⇒ 无论桌面还是窄屏，符文列都比容器宽 210px，内容被裁。
+   R35 记录「符文页横向溢出 307 个元素」，实测在 768px 视口 right=904 依旧如此。
+   修法（桌面同样生效，不靠断点）：
+     · 列宽改为跟随容器（max-width 保留 65rem 的上限）；
+     * 列内 **局部横向滚动**，不再让整页产生横向滚动条；
+     * 外层 reality 按钮列同样限宽自适应。 */
+.l-reality-button-column {
+  width: 100%;
+  max-width: 44rem;
+  box-sizing: border-box;
+}
+
+.l-player-glyphs-column {
+  width: 100%;
+  max-width: 65rem;
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+.l-reality-upgrade-grid__row {
+  flex-wrap: nowrap;
+}
+
+/* ==========================================================================
+   R36 · 断点对齐说明（new-ui-styles.css）
+   `new-ui-styles.css` 不是在 index.html 里静态引入的，而是由
+   `src/components/ui-modes/modern/ModernUi.js:56` 在运行时**动态注入**的
+   `<link>`，因此它会排在 oreki.css **之后**（同优先级时以它为准）。
+   它的窄屏断点原本也是 620px，于是 768px 竖屏平板与 676×392 手机横屏
+   上，「头部无限按钮 / 维度行七列 / 选项页两列 / 重置按钮」全部没被适配：
+     实测 768px 下 `.c-prestige-button-container` right=817（溢出 49px）；
+     实测 676×392 下同元素 right=759（溢出 83px）。
+   R36 已把它的断点一并统一到 **900px**，与本文件保持同一档。
+   注意：它动态注入在 oreki.css 之后，所以同优先级规则以它为准；
+   oreki.css 里必须压过它的地方继续用 `!important`。 */
+
+/* ==========================================================================
+   R36 · 计数频率按钮容器：内容宽度导致窄屏溢出 18px
+   `.tickspeed-buttons` 在上游**没有任何 CSS 定义**（只有 `.tickspeed-btn`），
+   它在 `.l-tickspeed-container`（flex column + align-items:center）里
+   宽度=内容宽度=300px，于是 320px 视口下 right=338。
+   修法：容器宽度跟随父级，按钮再跟随容器。 */
+@media screen and (max-width: 900px) {
+  .tickspeed-buttons {
+    width: 100%;
+    max-width: 30rem;
+    box-sizing: border-box;
+  }
+}
+
+/* ==========================================================================
+   R36 · 视频背景层：position:fixed + left:auto 导致右缘溢出视口 15px
+   styles.css:1204 `.videocontainer { position: fixed; width: 100% }`
+   静态位置让它从 x=15 起算，宽度仍是 100% ⇒ right = vw + 15。
+   它是背景层（pointer-events:none），不影响交互，但会造成整页「越界元素」计数。
+   修法：显式 left:0。 */
+.videocontainer {
+  left: 0;
+}
+
+/* ==========================================================================
+   R36 · 时间研究树：内部绝对定位撑出 1020px
+   time-studies.css:22 `.l-time-study-tree { position: relative }`（自身无宽度），
+   宽度来自内部绝对定位的 `.l-time-study`，实测横屏 right=912 / w=1020。
+   研究树本来就是宽图，正确做法是**容器内局部横向滚动**，不是压缩内容。
+   修法：容器限宽 + overflow-x:auto。 */
+@media screen and (max-width: 900px) {
+  .l-time-study-tree {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ==========================================================================
+   R36 · 已装备符文与效果容器：上游写死 650px
+   glyphs.css:853 `.l-equipped-glyphs-and-effects-container { width: 65rem }`
+   实测横屏 right=1084 / w=650 ⇒ 溢出 408px。
+   修法与符文列同思路：限宽自适应 + 容器内局部横向滚动。 */
+.l-equipped-glyphs-and-effects-container {
+  width: 100%;
+  max-width: 65rem;
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media screen and (max-width: 900px) {
+  .l-glyph-info-wrapper {
+    max-width: 100%;
+  }
+}
+
+/* ==========================================================================
+   R36 · 触控下限补齐（768px 竖屏平板 / 676px 手机横屏 实测仍偏小的控件）
+   实测清单（900px 断点生效后仍 < 44×44）：
+     · 320px 计数频率按钮 `.tickspeed-btn` 300×25（且右缘溢出 51px）
+     · 768px 时间理论 `.l-tt-buy-button` 158×38、`.o-tt-top-row-button` 87×38、
+       `.l-tt-save-load-btn` 22×22
+     · 676px 横屏 `.c-glyph-inventory-option` 190×27、
+       `.l-glyph-equip-button` 106×35、`.l-glyph-equip-button-short` 106×25
+   注意特异性：上游部分规则带 `[data-v-*]` 属性选择器（0,2,0），
+   必须用同等特异性 + 更晚加载才能覆盖。 */
+@media screen and (max-width: 900px) {
+  /* ---- 计数频率按钮 ---- */
+  .tickspeed-btn[data-v-tickspeed-row] {
+    width: 100%;
+    max-width: 30rem;
+    height: auto;
+    min-height: var(--oreki-touch-secondary);
+    box-sizing: border-box;
+  }
+
+  .tickspeed-buttons {
+    width: 100%;
+    max-width: 30rem;
+    box-sizing: border-box;
+  }
+
+  .l-tickspeed-container[data-v-tickspeed-row] {
+    max-width: 100%;
+  }
+
+  /* ---- 时间理论商店 ---- */
+  .l-tt-buy-button,
+  .o-tt-top-row-button {
+    min-height: var(--oreki-touch-secondary);
+  }
+
+  .l-tt-save-load-btn {
+    min-width: var(--oreki-touch-minimum);
+    min-height: var(--oreki-touch-minimum);
+  }
+
+  .l-tt-save-load-btn__wrapper {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ---- 符文库存 / 装备 / 升级按钮 ---- */
+  .c-glyph-inventory-option {
+    min-height: var(--oreki-touch-secondary);
+  }
+
+  .l-glyph-equip-button[data-v-euqipped-glyphs],
+  .l-glyph-equip-button-short[data-v-euqipped-glyphs],
+  .c-reality-upgrade-btn {
+    min-height: var(--oreki-touch-secondary);
+  }
+}
+
+/* ==========================================================================
+   R36 · 触控下限：补齐被高特异性规则挡住的两处
+   上一轮用 `.l-tt-save-load-btn { min-width: 44px }` 覆盖失败，原因已查明：
+   上游 components.css:2480 是 `.l-tt-save-load-btn[data-v-time-study-save-load-button]`
+   （特异性 0,2,0），高于我的 0,1,0 ⇒ 我的 min-width 被整条压掉，
+   实测仍是 22×22（768 视口）/ 22×44（加了 min-height 之后）。
+   同理 components.css:2471 `.hover-menu__wrapper[data-v-hover-menu]`。
+   修法：用**同等特异性 + 更晚加载**（oreki.css 在 index.html 最后）覆盖。 */
+@media screen and (max-width: 900px) {
+  .l-tt-save-load-btn[data-v-time-study-save-load-button] {
+    min-width: var(--oreki-touch-minimum);
+    min-height: var(--oreki-touch-minimum);
+  }
+
+  .l-tt-save-load-btn__wrapper[data-v-time-study-save-load-button],
+  .hover-menu__wrapper[data-v-hover-menu] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--oreki-touch-minimum);
+    min-height: var(--oreki-touch-minimum);
+  }
+}
+
+/* ==========================================================================
+   R36 · 触控下限：窄屏下所有主按钮的最小可点宽度
+   实测 320px 视口「维度」页有两个 `.o-primary-btn.l-button-container`
+   被 flex 压到 17×48 与 36×48（宽不足 44）。
+   根因：components.css:3066 `.l-button-container[data-v-...] { width: 120px }`
+   在极窄容器里被 flex-shrink 压扁。
+   修法：主按钮统一设 min-width 44px，宽的按钮不受影响。 */
+@media screen and (max-width: 900px) {
+  .o-primary-btn {
+    min-width: var(--oreki-touch-minimum);
+  }
+
+  .l-button-container[data-v-modern-antimatter-dimensions-tab] {
+    min-width: var(--oreki-touch-minimum);
+    height: auto;
+    min-height: var(--oreki-touch-secondary);
+  }
+}
+
+/* ==========================================================================
+   R37 · 自动化页「自动购买器」按钮触控高度（实测 175×35）
+   症状：320/360/392/430/768/676×392 六个窄视口下，自动化页恒有 17 个
+        `.o-autobuyer-btn` 高度 35px（宽度 175px 正常），低于 44px 下限。
+   根因：R36 的触控档位清单里写的是 `.o-autobuyer-input`（输入框），
+        漏了同排的 `.o-autobuyer-btn`（模式切换按钮）；上游对它的高度
+        没有声明，内容撑多少就是多少。
+   修法：窄屏把它顶到次档 48px，宽度不动（175px 已够）。桌面不受影响。 */
+@media screen and (max-width: 900px) {
+  .o-autobuyer-btn {
+    height: auto;
+    min-height: var(--oreki-touch-secondary, 48px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+  }
+}
+
+/* ==========================================================================
+   R37 · 永恒页「时间定理商店」托盘横向溢出（实测 320 视口左右各出界）
+   症状：320/392 视口下永恒页（时间研究子页）右缘越界 16~18 个元素，
+        左缘越界 10 个；`ttshop-container` 右缘到 519px，屏幕只有 392px。
+   根因：styles.css:474 `.time-theorem-buttons { width: 55.5rem; position: absolute }`
+        （555px 定宽 + 绝对定位）+ `.ttshop-container { min-width: 60rem }`
+        ⇒ 在窄屏里必然横跨出屏，且左右都被裁。
+   修法：窄屏改成「侧栏右侧到屏幕右缘」的贴合托盘，内部允许换行与纵向滚动。
+        托盘仍可点右上角最小化按钮收起，不遮挡时不影响操作。 */
+@media screen and (max-width: 900px) {
+  .l-time-studies-tab__tt-shop,
+  .time-theorem-buttons {
+    left: calc(var(--sidebar-width, 5.6rem) + 0.4rem);
+    right: 0.4rem;
+    width: auto;
+    max-width: none;
+    max-height: 70vh;
+    align-items: stretch;
+  }
+
+  .time-theorem-buttons .ttshop-container {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    max-height: 70vh;
+    overflow-y: auto;
+    box-sizing: border-box;
+  }
+
+  .time-theorem-buttons .ttbuttons-row {
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    justify-content: flex-start;
+  }
+
+  /* 保存/读取树的两栏在窄屏改为上下堆叠，否则各占 50% 时按钮挤成竖排 */
+  .time-theorem-buttons .ttbuttons-top-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .time-theorem-buttons .l-load-tree-area {
+    width: 100%;
+  }
+
+  .time-theorem-buttons .l-tree-load-button-wrapper {
+    justify-content: flex-start;
+  }
+}
+
+/* ==========================================================================
+   R37 · 窄屏侧栏货币数字被裁
+   症状：320 视口侧栏只有 56px 宽，`c-sidebar-resource` 内部数字有
+        114px 宽（1.9rem 字号，未触发上游 scale），实测左缘 -18px，
+        数字被屏幕左缘切掉一半，看起来像乱码。
+   取舍：窄屏隐藏侧栏货币块。反物质/IP/EP 在顶部信息区（HeaderCenter /
+        HeaderInfinity / HeaderEternity）已经完整显示，信息不丢失；
+        侧栏保留 10 个页签，不留空白占位。桌面（>900px）完全不受影响。 */
+@media screen and (max-width: 900px) {
+  .c-modern-sidebar .c-sidebar-resource {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   R37 · Oreki 新手教程（游戏帮助弹窗内的第一页）
+   位置：src/components/tutorial/OrekiTutorial.js（内容） + H2PModal.js（挂载）
+   设计：顶部「你现在该做什么」是唯一的高亮区（蓝 #0078D7 与 Android 教程按钮同色），
+        步骤三态 = 已完成（灰 + 删除线）/ 当前下一步（蓝底描边 + 加粗）/ 未开始（半透明）。
+        颜色用半透明叠加而不是写死底色，浅色 / 深色主题下都能读。 */
+.c-oreki-tut {
+  font-size: 1.4rem;
+  line-height: 1.65;
+}
+
+.c-oreki-tut__now {
+  padding: 0.9rem 1rem;
+  margin: 0 0 1.4rem;
+  border-left: 0.4rem solid #0078d7;
+  border-radius: 0.4rem;
+  background-color: rgba(0, 120, 215, 12%);
+}
+
+.c-oreki-tut__now-title {
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: #0078d7;
+}
+
+.c-oreki-tut__now-stage {
+  margin-top: 0.2rem;
+  opacity: 0.85;
+}
+
+.c-oreki-tut__now-next {
+  margin-top: 0.7rem;
+  font-weight: bold;
+}
+
+.c-oreki-tut__steps {
+  margin: 0.7rem 0 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.c-oreki-tut__step {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  padding: 0.3rem 0.5rem;
+  border-radius: 0.3rem;
+  opacity: 0.72;
+}
+
+.c-oreki-tut__step--done {
+  opacity: 0.5;
+}
+
+.c-oreki-tut__step--done .c-oreki-tut__steptext {
+  text-decoration: line-through;
+}
+
+.c-oreki-tut__step--now {
+  opacity: 1;
+  font-weight: bold;
+  background-color: rgba(0, 120, 215, 18%);
+  outline: 0.1rem solid rgba(0, 120, 215, 55%);
+}
+
+.c-oreki-tut__mark {
+  min-width: 1.4rem;
+  text-align: center;
+  color: #0078d7;
+}
+
+.c-oreki-tut__h3 {
+  margin: 1.5rem 0 0.4rem;
+  font-size: 1.6rem;
+}
+
+.c-oreki-tut__body ul,
+.c-oreki-tut__body ol {
+  margin: 0.4rem 0;
+  padding-left: 1.8rem;
+}
+
+.c-oreki-tut__body li {
+  margin: 0.25rem 0;
+}
+
+.c-oreki-tut__body p {
+  margin: 0.5rem 0;
+}
+
+.c-oreki-tut__hint,
+.c-oreki-tut__note {
+  font-size: 1.2rem;
+  opacity: 0.7;
+}
+
+.c-oreki-tut__hint {
+  margin-top: 0.6rem;
+}
+
+.c-oreki-tut__note {
+  margin-top: 1.4rem;
+  padding-top: 0.7rem;
+  border-top: 0.1rem solid rgba(128, 128, 128, 35%);
+}
+
+@media screen and (max-width: 900px) {
+  .c-oreki-tut__now {
+    padding: 0.7rem 0.8rem;
+  }
+
+  .c-oreki-tut__now-title {
+    font-size: 1.6rem;
+  }
+}
+
+/* ==========================================================================
+   R37 · 游戏帮助弹窗窄屏布局（教程页在手机上必须能读）
+   症状：320 视口下 `.l-h2p-modal` 宽 = 100vw − 20vh = 192px，而左侧搜索/页签栏
+        固定 15rem = 150px，正文只剩约 154px，中文一行只放得下 7~8 个字，
+        教程的「下一步」一句话要折成 5~6 行（实测 now 区块 1138px 高）。
+   修法：≤900px 时把「左侧页签栏 + 右侧正文」改成上下堆叠：
+        搜索框与页签条占上方（可滚动，≤28vh），正文占满剩余宽度。
+        页签按钮同时顶到 44px 触控高度。桌面布局完全不变。 */
+@media screen and (max-width: 900px) {
+  .l-h2p-modal {
+    /* 320 实测：弹窗左右各被父级推 23px，宽度按 100vw − 4.6rem 取才不会右缘出屏 */
+    width: calc(100vw - 4.6rem);
+    max-width: calc(100vw - 4.6rem);
+    height: calc(100vh - 4rem);
+    margin: 0;
+  }
+
+  .l-h2p-container {
+    flex-direction: column;
+    margin: 0.8rem 0;
+    min-height: 0;
+  }
+
+  .l-h2p-search-tab {
+    width: 100%;
+    max-height: 28vh;
+    flex: 0 0 auto;
+  }
+
+  .l-h2p-tab-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0.4rem 0 0;
+  }
+
+  .l-h2p-info {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .l-h2p-body {
+    margin: 0.4rem 0.4rem 0;
+  }
+
+  .o-h2p-tab-button {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    box-sizing: border-box;
+  }
+
+  .c-h2p-title {
+    font-size: 2.2rem;
+  }
+
+  .c-h2p-body--title {
+    font-size: 2rem;
   }
 }

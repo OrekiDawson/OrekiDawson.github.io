@@ -38,6 +38,9 @@
 // · 不碰 `gainedInfinityPoints`、不改 `div`、不改 `totalIPMult`、不改 `Player.canEternity`；
 // · 不写任何新存档字段。
 
+// [Oreki R38-A] IU15 冲刺状态机必须**被 import 才会执行**（纯 globalThis 引用不会加载模块）
+import { OrekiIu15Sprint } from "./oreki-iu15-sprint.js";
+
 /** 每帧最多买几个无限升级（单次购买，不是 buyMax） */
 export const UPGRADES_PER_TICK = 1;
 
@@ -105,8 +108,92 @@ export const OrekiEarlyAutomation = {
    */
   tick() {
     if (!this.active) return { ids: 0, upgrades: false };
+    // 【R38-A】IU15 冲刺状态机（新模块 oreki-iu15-sprint.js）。
+    // 为什么放在最前面：它必须在**任何 ID 购买之前**把 8 层无限维度的 buyMax/buySingle
+    // 换成 no-op。晚一帧都不行 —— ID2~ID8 会 produceDimensions 到 ID1
+    // （infinity-dimension.js:377-379），只要有一层被买过，maxID1 立刻 > 0，IU15 永久失败。
+    try {
+      OrekiIu15Sprint.tick();
+    } catch (e) { /* 状态机异常不影响其它自动化 */ }
+    // 【R38-A】把 R36/R37 的旧「冲刺判定」降级为只读委托：
+    // 真正的封锁/冻结/购买全部由 OrekiIu15Sprint 负责，这里只决定「还要不要买 ID」。
+    const sprint = this.isIu15SprintActive();
+    if (sprint) {
+      const upgrades = this.buyInfinityUpgrades();
+      return { ids: 0, upgrades, iu15Sprint: true };
+    }
     const ids = this.buyInfinityDimensions();
     const upgrades = this.buyInfinityUpgrades();
     return { ids, upgrades };
   },
+
+  /**
+   * 【R36 · IU15 冲刺模式】是否应当暂停购买无限维度。
+   *
+   * ── 死锁链（全部已核实行号）────────────────────────────────────────
+   * 1. `InfinityDimensions.buyMax()`（src/core/dimensions/infinity-dimension.js:398-410）
+   *    会 `unlockedDimensions.forEach(d => d.buyMax(false))` ⇒ **会买 ID1**。
+   * 2. `src/core/dimensions/infinity-dimension.js:385`
+   *    `player.requirementChecks.reality.maxID1 = maxID1.clampMin(InfinityDimension(1).amount)`
+   *    ⇒ 只要买过 ID1，**maxID1 > 0**。
+   * 3. IU15「理想之构」（src/core/secret-formula/reality/imaginary-upgrades.js:161-162）
+   *    `hasFailed: () => player.requirementChecks.reality.maxID1.gt(0)`
+   *    `checkRequirement: () => maxID1.eq(0) && player.antimatter.exponent >= 1.5e12`
+   * 4. `src/core/imaginary-upgrades.js:72` `get isPossible() { return !hasFailed(); }`
+   * 5. `src/core/secret-formula/celestials/navigation.js:1430`
+   *    `if (player.requirementChecks.reality.maxID1.neq(0)) return 0.5;`
+   *    ⇒ 莱特拉进度被砍到 **50%**，永远开不了。
+   *
+   * ── 为什么可以按现实分阶段处理 ─────────────────────────────────────
+   * `player.requirementChecks.reality.maxID1` **每个现实会重置**：
+   * `src/core/player.js:1005-1020` 的 `Player.resetRequirements("reality")`
+   * 把整个 `requirementChecks.reality` 换成新对象，`maxID1: DC.D0`。
+   * ⇒ 只要**某一个现实内**从头到尾不买 ID1，IU15 就有机会解锁。
+   *
+   * ── 触发条件（必须严格，宁可晚触发也不能误触发）────────────────────
+   * 只有当以下全部满足才进入冲刺模式：
+   *  · 虚幻机器已解锁（`MachineHandler.isIMUnlocked`）—— 否则 IU15 根本不在候选列表里；
+   *  · IU15 还没买到（`!ImaginaryUpgrade(15).isAvailableForPurchase`）；
+   *  · **本现实尚未买过 ID1**（`maxID1.eq(0)`）—— 一旦为真就说明这个现实已经废了，
+   *    此时再停买 ID 也没用（还得多等一个现实），不如照常推进；
+   *  · 反物质指数已接近门槛（`antimatter.exponent >= 1.5e12 * 0.01`）——
+   *    太早冲刺没有意义（要停买 ID 很久才攒得到反物质）。
+   *
+   * 反物质怎么来？**现实机器（RM）**：
+   * `src/core/dimensions/antimatter-dimension.js:48`
+   * `multiplier = multiplier.times(Currency.realityMachines.value.powEffectOf(AlchemyResource.force))`
+   * ⇒ RM 数量直接乘进反物质维度产出。这正是原版为「不买 ID1 也能堆反物质」准备的路线。
+   * RM 上限 `MachineHandler.baseRMCap = DC.E1000`（src/core/machines.js:11），
+   * 而 V 的 realityMachines 门槛只要 1e60 ⇒ 量级绰绰有余。
+   *
+   * ── 纪律 ─────────────────────────────────────────────────────────
+   * · 只**暂停买 ID**，不写 `maxID1`、不伪造反物质、不改任何存档字段；
+   * · 冲刺期间仍然买无限升级（IP 倍率对反物质与无限次数都有用）；
+   * · 一旦 IU15 真的解锁（`isAvailableForPurchase` 变 true），冲刺自动结束，
+   *   下一帧恢复买 ID（此时 `maxID1` 已经被 IU15 记录在案，不再影响解锁）。
+   */
+  /**
+   * 【R38-A】是否应当暂停购买无限维度。**只读委托**，真正的状态机在
+   * `src/core/oreki-iu15-sprint.js`（OrekiIu15Sprint）。
+   *
+   * 历史：R36/R37 在这里自己写了一套触发条件，但两版都从未触发过 ——
+   * 关键是「只挡 ID1」在物理上无效：ID2~ID8 会 produceDimensions 到 ID1
+   * （infinity-dimension.js:377-379），必须把 8 层全部锁死；
+   * 且反物质会被大坍缩/永恒清零，必须同时冻结二者（见新模块顶部注释）。
+   */
+  isIu15SprintActive() {
+    try {
+      return OrekiIu15Sprint.active === true;
+    } catch (e) {
+      return false;
+    }
+  },
 };
+
+// [Oreki R37-A] 与其它 oreki 模块一致：挂到 globalThis，供 `holdReality` 读取冲刺状态
+// （避免 celestial-automation ↔ early-automation 直接 import 成环）。
+try {
+  globalThis.OrekiEarlyAutomation = OrekiEarlyAutomation;
+} catch (e) {
+  // 非浏览器环境忽略
+}

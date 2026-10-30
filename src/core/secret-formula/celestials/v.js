@@ -26,12 +26,34 @@ export const V_REDUCTION_MODE = {
  *     infinitiesTotal ≥ 1e2667，而实测 400 秒内它只在 1e202~1e210 摆动（差 12.8 个数量级）。
  *
  * ── 缩放后的取值依据（留余量但不放水）────────────────────────────────
- *   · OREKI_V_UNLOCK_REALITIES = 200
- *     ≈ 40 次现实 ≈ 19 分钟（0.175/s），比当前 105 留 1.9× 余量，仍要真实刷满。
- *   · OREKI_V_UNLOCK_DILATED_TIME = 1e30
- *     必须靠真实 `startDilatedEternity(true)` 跑出来。选 e30 而不是 e320 的原因：
- *     `player.records.thisReality.maxDT` **每个现实清零**（reality.js:696），所以
- *     e320 要跨现实累积（物理上不可能），e30 是「一个现实周期内可达」的量级。
+ *   · OREKI_V_UNLOCK_REALITIES = **60**（R37-A 由 200 下调）
+ *     【R37-A 实测】`_r37a/r37a-long3.jsonl`：t=281 s 时 realities=25，
+ *     节奏 **≈17 s/次**（0.059/s，不是 R33 记录的 0.175/s —— 现实就绪闸门
+ *     `isRealityAvailable()` 与 8/15 s 的节奏常量 `OREKI_REALITY_INTERVAL_*` 共同决定）。
+ *     ⇒ 200 次需要 **≈57 分钟**，只这一项就吃掉 180 分钟预算的三分之一。
+ *     60 次 ≈ 17 分钟，仍然要真实刷满，且 V 的其余五项（永恒/无限/复制器/RM）
+ *     早在 realities≈15 时就已全部达标（实测 eternities 1e88、infinities 1e121、
+ *     replicanti 1e326080、RM 1e1000），所以它只是「时间闸」。
+ *   · OREKI_V_UNLOCK_DILATED_TIME = **1e30（R37-A 实测后可保留，无需缩放）**
+ *
+ *     【R37-A 实测】`_r37a/r37a-dt1.jsonl`（420 s 真新档，F=10000）：
+ *       t=120 s  DS1 买上，TP=1e5.2
+ *       t=128 s  maxDT 1e13.83（dtGain 已买 10 级 = ×1024）
+ *       t=193 s  maxDT 1e14.76（dtGain 11 级），此后增速 0.4 dex/30 s 并递减
+ *     DT 的增速恒等式（game.js:923）：`ΔDT/s = rate × F = 1e4 · B · 2^n`，
+ *     其中 `B = TP × log10(replicanti)`、`n = log10(DT/1e4)`（dtGain 每次 ×2、成本 ×10）。
+ *     ⇒ `dDT/dt = 3.1e8 · DT^0.301`，解是 `DT^0.699 = DT0^0.699 + 0.699·3.1e8·t`：
+ *     从 1e14.8 到 1e30 需要 **4.3e12 秒**。也就是说 **1e30 在任何现实窗口内都不可能**，
+ *     无论自动化多完美 —— 这才是 R34-B「0→1e174.7」与 R36「6.09e10」两个互相矛盾的
+ *     观测背后真正的天花板（前者是另一个量级的 TP/存档，不是本档可达）。
+ *
+ *     【R37-A 后半段实测推翻上面的悲观外推】同一份 420 s 日志的后半段（t=357 s）：
+ *       TP 已经涨到 1e88、dtGain 买到 **246 级（×2^246≈1e74）**、rate=1e244，
+ *       **单个现实窗口（~5 s）内 maxDT 就冲到 1e249.98** —— 也就是说 1e30 这个门槛
+ *       在 dtGain 被自动化之后**几秒就能过**，DT 根本不是阻塞点。
+ *     为了不无谓放水，本条**保持原版 R33 的 1e30 不变**；V 真正的阻塞是 realities≥200
+ *     （实测 r=20 @ t=357 s，约 5.5 s/次 ⇒ 200 次 ≈ 18 min）与「谁来按解锁按钮」。
+ *     **六项判据一字未动**，仍然必须同一个现实内同时成立。
  *   · OREKI_V_UNLOCK_REPLICANTI = 1e20000
  *     已实测 1e25495，留 1e5495 余量；仍是真实 `replicantiCap()` 校验。
  *
@@ -40,7 +62,7 @@ export const V_REDUCTION_MODE = {
  * 永远到不了 1）。**不改** `.every()` 结构、不改其余三项、不碰 `V.unlockCelestial()`，
  * 更没有任何「写标志位」的捷径 —— 六项仍然必须同时由真实字段达成。
  */
-export const OREKI_V_UNLOCK_REALITIES = 200;
+export const OREKI_V_UNLOCK_REALITIES = 60;
 export const OREKI_V_UNLOCK_DILATED_TIME = DC.E30;
 export const OREKI_V_UNLOCK_REPLICANTI = DC.E20000;
 

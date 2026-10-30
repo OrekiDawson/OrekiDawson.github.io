@@ -3,6 +3,25 @@ import { Quotes } from "../quotes.js";
 
 import { DarkMatterDimensions } from "./dark-matter-dimension.js";
 
+/**
+ * [Oreki R38] 莱特拉熵产量分母（原版硬编码 `1e11`，全仓仅此一处、无 UI 引用）。
+ *
+ * 原版：`entropyGainPerSecond = clamp((log10(AM) / 1e11)^2, 0, 100) / 200`
+ * 上限 0.5/s ⇒ 填满一次熵**至少** 2 秒；而 `game.js` 规定只有
+ * `Time.thisRealityRealTime.totalSeconds < 30` 的那次完成才会 `difficultyTier++`。
+ * 要把「完全不稳定」（tier 8）刷出来必须 **连续 8 次**都在 30 秒内完成。
+ *
+ * 实测（R38）：当前版本反物质指数天花板 ≈ 8.8e9，代入原式得
+ *   (8.8e9 / 1e11)^2 / 200 ≈ 3.87e-5 /s  ⇒  填满一次需 ≈ 25,800 秒（7.2 小时）
+ * 8 次 ≈ 57 小时，且每次都要重新跑一整个莱特拉现实 —— 结构上不可完成。
+ *
+ * 改成 5e8 后：指数 8.8e9 ⇒ (17.6)^2/200 = 1.55，被 clamp 到 100 ⇒ 0.5/s（满速）
+ * ⇒ 每次填满 2 秒，8 次约 16~25 秒，稳稳落在 30 秒窗口内。
+ * 低进度侧不被破坏：指数 1e9 时速率仍只有 0.02/s（50 秒填满，慢于窗口），
+ * 指数 1e6 时 2e-8/s 基本为零 —— 梯度保留，只是把「不可能」拉成「可完成」。
+ */
+export const OREKI_LAITELA_ENTROPY_DIVISOR = 5e8;
+
 export const Laitela = {
   displayName: "莱特拉",
   get celestial() {
@@ -53,7 +72,7 @@ export const Laitela = {
   },
   // Note that entropy goes from 0 to 1, with 1 being completion
   get entropyGainPerSecond() {
-    return Math.clamp(Math.pow(Currency.antimatter.value.add(1).log10() / 1e11, 2), 0, 100) / 200;
+    return Math.clamp(Math.pow(Currency.antimatter.value.add(1).log10() / OREKI_LAITELA_ENTROPY_DIVISOR, 2), 0, 100) / 200;
   },
   get darkMatterMultGain() {
     return Decimal.pow(Currency.darkMatter.value.dividedBy(this.annihilationDMRequirement)

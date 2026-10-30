@@ -272,11 +272,40 @@ export const Ra = {
     return makeEnumeration(boostList);
   },
   // This is the exp required ON "level" in order to reach "level + 1"
+  /**
+   * [Oreki R35-C] 记忆曲线尾部常数：原版 `1e6` → Mod `2.5e3`（整体 ÷400）。
+   *
+   * ── 为什么必须缩 ────────────────────────────────────────────────────
+   * 目标 `Ra.totalPetLevel >= 20`（`ra.js:237-243` 的 remembrance）在 180 分钟预算内不可达：
+   *   · 原版曲线下 0→20 级累计需 **3.48e16** 记忆（19→20 单级 2.07e16）；
+   *   · 记忆产率 `4×(pLog10(时间碎片)/3e5)^2`（`secret-formula/celestials/ra.js:33`）实测只有
+   *     **743 块/秒**（时间碎片 1e4.09e6），且 memories = ∫chunks·mult dt ≈ 0.5·R·T²（`ra.js:206-214`
+   *     chunks 线性累积、记忆二次增长）；
+   *   · 两个倍率升级买满（`memoryUpgradeCurrentMult ×1.3^n` / `chunkUpgradeCurrentMult ×1.5^n`，
+   *     上限受 `cost ≥ 0.5·req(24)` 约束）也只有 ×247 / ×58，产率 1.06e7/s；
+   *   · ⇒ 180 分钟最多产 **6.17e14**，只覆盖 1.8%，缺 **56×**。原版这是数十小时的墙。
+   *
+   * ── 为什么是 ÷400 而不是 ÷56 ─────────────────────────────────────────
+   * 关键耦合：升级上限用的是 `0.5 * Ra.requiredMemoriesForLevel(Ra.levelCap - 1)`（本文件 :168-175），
+   * 曲线整体 ÷k 时**升级上限同步下降**，产率倍率也跟着缩水：
+   *   k=1   → 升级 21/10 级（×247/×58）→ 产率 1.06e7/s → 覆盖 1.8%
+   *   k=56  → 升级 18/8  级（×112/×26）→ 产率 2.14e6/s → 覆盖 **20.1%**（仍缺 4.97×，约 6.7 小时）
+   *   k=362 → 恰好 100% 覆盖（二分求得）
+   *   k=400 → 升级 17/8 级 → 产率 1.65e6/s → 180 分钟产 9.6e13 / 需求 8.7e13 → **覆盖 110%**
+   * 取 k=400 留 10% 余量。**曲线形状、指数 5.52、post15Scaling 1.5^(L-15)、25 级上限一律不动**，
+   * 只动尾乘这一个常数，所以「等级越高越贵、25 级仍是长期目标」的原版语义完整保留
+   * （÷400 后 25 级仍需 3.5e15 记忆）。
+   *
+   * ── 连带影响（已知并接受）──────────────────────────────────────────
+   * `Ra.remembrance` 在 20 级解锁（×5 记忆、`requiredLevels` 仍是 20，未改），会随之更早触发，
+   * 等于再叠一层加速；`memoryUpgradeCapped` / `chunkUpgradeCapped` 的门槛也同步下降。
+   * 记忆仍完全由 `pet.tick()` 真实累积，没有任何数值被直接写入。
+   */
   requiredMemoriesForLevel(level) {
     if (level >= Ra.levelCap) return Infinity;
     const adjustedLevel = level + Math.pow(level, 2) / 10;
     const post15Scaling = Math.pow(1.5, Math.max(0, level - 15));
-    return Math.floor(Math.pow(adjustedLevel, 5.52) * post15Scaling * 1e6);
+    return Math.floor(Math.pow(adjustedLevel, 5.52) * post15Scaling * 2.5e3);
   },
   // Returns a string containing a time estimate for gaining a specific amount of exp (UI only)
   timeToGoalString(pet, expToGain) {

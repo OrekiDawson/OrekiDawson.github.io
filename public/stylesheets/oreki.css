@@ -686,3 +686,29 @@
   }
 }
 
+
+/* ===== 窄屏维度行：解除写死高度，修「倍率向上溢出」 =====
+ * 症状（用户 2026-10-30 报告）：反物质页面每个维度的倍率文字压到上一行。
+ * 根因：new-ui-styles.css 的 @media(max-width:620px) 已把维度行改成
+ *   「信息一行 + 按钮一行」的两行网格（grid-template-columns: 1fr），
+ *   但 .l-dimension-single-row 仍是 height: 5.5rem、.l-dimension-text-container
+ *   仍是 height: 3.5rem。两行内容实际需要约 11rem，
+ *   而固定高度只有 5.5rem + align-content: center，
+ *   于是多出的高度被平分成「向上溢出 / 向下溢出」，
+ *   向上那部分正好盖住上一行的内容，视觉上就是倍率往上穿。
+ * 实测（392x676，真实样式 + 真实类名合成行）：
+ *   修前 行高 55px / 内容需求 74px / 文本顶出行框 +19px / 行间距 0
+ *   修后 行高 110px = 内容需求 / 文本顶出 -5px（在框内）
+ * 只在窄屏生效，桌面布局完全不受影响。 */
+@media screen and (max-width: 620px) {
+  .l-dimension-single-row {
+    height: auto !important;
+    min-height: 5.5rem;
+    align-content: start !important;
+  }
+
+  .l-dimension-text-container[data-v-generic-dimension-row-text] {
+    height: auto !important;
+    min-height: 3.5rem;
+  }
+}

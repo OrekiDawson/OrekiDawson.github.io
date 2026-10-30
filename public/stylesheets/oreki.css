@@ -712,3 +712,27 @@
     min-height: 3.5rem;
   }
 }
+
+/* ===== 窄屏自动购买器行：解除 96rem 固定宽度，修「横向溢出」 =====
+ * 症状（用户 2026-10-30 报告「前期自动购买器溢出」= 横向）：自动化页每一行
+ * 自动购买器都向右超出屏幕，必须左右拖动才能看到右侧开关。
+ * 根因：styles.css:4392 `.c-autobuyer-box-row { width: 96rem }` —— 本作 rem=10px，
+ * 即写死 960px；手机内容列只有约 336px，横向必然溢出 600px 以上。
+ * 修法：宽度改自适应 + 允许内部插槽换行（行内元素本身没有固定宽度，
+ * 只有 header 占 25%，换行后不会挤压变形）。desktop 不受影响。 */
+@media screen and (max-width: 620px) {
+  .c-autobuyer-box-row {
+    width: auto;
+    max-width: 100%;
+    box-sizing: border-box;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    row-gap: 0.6rem;
+    margin: 0.5rem 0;
+    padding: 1rem;
+  }
+
+  .c-autobuyer-box-row > .l-autobuyer-box__header {
+    width: 100%;
+  }
+}

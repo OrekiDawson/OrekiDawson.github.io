@@ -736,3 +736,40 @@
     width: 100%;
   }
 }
+
+/* ===== 窄屏触控尺寸：可点元素命中区不小于 44×44（AGENTS.md §19） =====
+ * 症状（用户 2026-10-30 报告「选项内有些控件偏小」）：392px 视口实测 67 个可点元素里
+ * 有 20 个低于 44×44，最夸张的是挑战按钮 150×30、子页签选项 146×25、
+ * 复选 checkbox 16×16、右上帮助图标 20×20。
+ * 修法只管「命中区」，不改字号与配色：min-height / min-width 撑到 44px。
+ * 复选框本身保持 22×22 视觉尺寸，但把它的 label 撑成 44×44 承接点击。
+ * 实测复扫：20 -> 1（仅剩 checkbox 本体 22×22，其可点区域是外层 label）。
+ * desktop 不受影响（全部包在 <=620px 里）。 */
+@media screen and (max-width: 620px) {
+  .o-challenge-btn,
+  .o-primary-btn--subtab-option,
+  .c-oreki-tut-entry,
+  .o-autobuyer-input,
+  .c-autobuyer-box-row .o-primary-btn {
+    min-height: 44px;
+  }
+
+  .o-tab-btn.l-help-me,
+  .o-tab-btn.l-information {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .c-autobuyer-box-row input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+  }
+
+  .c-autobuyer-box-row label:has(input[type="checkbox"]) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

@@ -42,7 +42,6 @@
 import { PlayerProgress } from "./player-progress.js";
 import { OrekiEternityAutomation } from "./oreki-eternity-automation.js";
 import { OREKI_V_UNLOCK_REALITIES, OREKI_V_UNLOCK_DILATED_TIME } from "./secret-formula/celestials/v.js";
-import { OREKI_IU25_COST } from "./secret-formula/reality/imaginary-upgrades.js";
 
 /**
  * 深度挑战的推进顺序（每关打满 5 次才切下一关）。
@@ -62,6 +61,16 @@ const DEEP_EC_IDS = [8, 9, 10, 11, 12];
 const DEEP_TT_STUDY_IDS = [231, 232, 233, 234];
 /** 压现实总时长上限（真实毫秒） */
 const HOLD_MAX_MS = 240000;
+/**
+ * [Oreki R50 五修] 深层 EC 链（EC8~EC12）单次压现实的上限：480 s。
+ *
+ * 原 240 s 对「EC8→9→10→11→12 各打满 5 次」常常不够：单关要买研究、被互斥分叉挡住要 respec、
+ * 再进关打 5 次，5 关串起来容易越过 240 s；一超时就放手，而现实立刻清空 `eternityChalls`，
+ * 已经打下的进度全部作废（`r50-fresh4` t=1350 s：ecs 只在 5~8 之间来回）。
+ * 这里只放宽「总时长」这一条，`HOLD_STALL_MS`（90 s 无新完成即放手）不变——
+ * 真卡住照样会放手，不会把现实永久压死。
+ */
+const DEEP_EC_HOLD_MAX_MS = 480000;
 /** EC 完成总数停滞多久就放手（真实毫秒） */
 const HOLD_STALL_MS = 90000;
 /** 放手后的冷却（真实毫秒），避免刚放手又立刻压回去 */
@@ -214,8 +223,20 @@ export const OrekiDilationAutomation = {
       // 而 EC1~EC7 没满说明通用路径还在有效推进，没必要抢它的窗口。
       // 防无限压死：`HOLD_MAX_MS`（240 s 总时长）、`HOLD_STALL_MS`（90 s 无完成即放手）、
       // `HOLD_COOLDOWN_MS`（10 s 冷却）三条护栏都在下面原样生效。
-      const ec7Done = EternityChallenge(7).isFullyCompleted;
-      if (!EternityChallenge(11).isFullyCompleted && !(ec7Done && atGate)) {
+      // ── [Oreki R50 五修] 过了 V 门槛就不再要求「EC7 已满」才肯压现实 ──────────
+      //
+      // 原判据 `!(ec7Done && atGate)` 要求「本现实里 EC1~EC7 全部 5/5」才允许压住现实，
+      // 但现实每 8~15 s 就把 `player.eternityChalls` 整批清空（reality.js:651），
+      // 于是每个现实开头 `ec7Done` 必为 false → 立刻 `_release("shallow")` →
+      // `_driveEcChain()` 一帧都进不去 → EC8~EC12 永远打不满。
+      // 实测三份真实新档（`r50-fresh2` 163 次释放、`r50-fresh4` 62 次释放）都是这个循环；
+      // `r50-fresh1` 只在偶然的一轮里凑够 EC7 才侥幸走通（V 在 2044 s）。
+      //
+      // 门槛前（realities < 60）仍然只走老路径：那时压现实会把 V 的第一项判据按死。
+      // 过门槛后 `realities` 已远超 60，压现实不再伤 V 的任何一项，此时**EC 深度才是唯一瓶颈**，
+      // 所以只要深层 EC 未满就压住，让 `_driveEcChain()` 真正把这 5 关打完。
+      // 防压死仍由 `HOLD_STALL_MS`（90 s 无新完成即放手）与 `HOLD_MAX_MS` 系列兜底。
+      if (!EternityChallenge(11).isFullyCompleted && !atGate) {
         return this._release("shallow");
       }
       // 门槛前的压现实（只有「EC11 已满」这条老路径才可能走到这里）仍受累计预算约束。
@@ -236,10 +257,42 @@ export const OrekiDilationAutomation = {
       // 「DS6 在位 且 IM 够」同一帧成立 ⇒ 70 秒里 `ds6` 一次都没再为真，IU25 永远差临门一脚。
       // 所以 IM 达标时改为继续压住现实，让 DS6 留在位，由 endgame 模块起 run 并买 IU25；
       // IU25 一买上 `hold` 会在最上面按 `iu25-bought` 释放，不会永久压死现实。
-      if (PlayerProgress.dilationUnlocked() && TimeStudy.reality.isBought) {
-        const imReady = Number(Currency.imaginaryMachines.value) >= OREKI_IU25_COST;
-        if (!imReady) return this._release("dil-chain-done", HOLD_COOLDOWN_MS);
-        return true;
+      // ── [Oreki R50 三修] 放手的前提是「膨胀真的跑起来过」，不是「DS1/DS6 在手上」──
+      //
+      // 原判据：DS1 与 DS6 同时在手且 IM < IU25 成本 → 立刻放手。
+      // 实测（`r50-fresh2`，2840 s 真实新档）：t=90 s 买到 DS1、t=110 s 就被现实清空，
+      // 此后 2700 s 里 `maxDT` 恒 0，形成「打 EC 链 → 拿到 DS1/DS6 → 立刻放手 →
+      // 现实清空 dilation.studies → 重打」的活锁：`releases` 走到 163、
+      // `_phase` 在 idle/deep-ec 之间反复、EC11 永远打不满。
+      // 这不是「慢」而是**链式死锁**：
+      //   maxDT=0 ⇒ V 的 `dilatedTime` 项恒 0 ⇒ V 永不解锁
+      //   ⇒ `OrekiIu15Sprint.canArm` 恒 false（它要求 `vAchievementUnlock`）
+      //   ⇒ IU15 永不买 ⇒ 莱特拉永久锁 ⇒ IU25/佩勒/终局全部不可达；
+      // 同时缺膨胀乘数 ⇒ `maxEP` 只到 1e3872681 ⇒ `log10(uncappedRM)=2907`
+      //   ⇒ `baseIMCap=1.09e9`，而 `player.reality.iMCap` 只升不降、冻结在 2.7159e9
+      //   ⇒ IM 天花板 2.72e9 < IU25 成本 5e9，钱也永远不够。
+      //
+      // 新判据：**只有 `achieved`（`maxDT ≥ OREKI_V_UNLOCK_DILATED_TIME`）之后**才允许
+      // 放手去产出 RM→IM。未达标就继续压住，让 `tickDilation()` 真正启动膨胀。
+      // 同时不再要求 DS6：V 的 `dilatedTime` 判据只读 `records.thisReality.maxDT`，
+      // 实测 `r50-fresh1` 全程没买过 DS6（`ds6` 从未为 true）却照样解锁了 V。
+      // 未 achieved 时**不 return**，落回下面的 `HOLD_MAX_MS` / `HOLD_STALL_MS` 护栏，
+      // 不会把现实永久压死。
+      if (PlayerProgress.dilationUnlocked()) {
+        // ── [Oreki R50 七修] 「IM 够 + 莱特拉已解锁」也不许无限压住 ────────────
+        //
+        // 六修在这里 `return true`，实测（`r50-fresh5`）确实把 V/IU15/莱特拉一路打到位
+        // （t=445 s 进莱特拉阶段，比 r50-fresh1 的 2044 s 快 4.6 倍），但随即卡死：
+        // `im=5.25e9 ≥ IU25 成本`、`ds6=true`、`tier=4`、`laiRun=false`，
+        // `realities` 从 t≈730 s 起冻在 80 到 1225 s **一动不动**（500 秒）。
+        // 原因是 IU25 的判据是「在莱特拉的现实中……达成现实」——它**需要一次现实**
+        // 才能真正结算，而压住现实恰好把这件事挡死；`driveLaitela` 又没能在窗口内
+        // 把 tier 推到 8 并起 run。于是「为了留住 DS6 而压住」变成「压住导致永远买不到」。
+        //
+        // 结论：压现实最多只能是一个**有界窗口**（下方 `HOLD_GRACE_MS` 的 20 s），
+        // 用它让同帧的 V / IU25 检查看到 maxDT 与 DS6，之后必须放手让现实跑起来。
+        // 所以这里不再 `return true`，一律落到宽限分支。
+        if (!this.achieved) this._progressAtMs = now;
       }
 
       // ── [Oreki R40-A2] 曾经想在这里加「DS6 已到手就放手」，**实测否决，不要再加** ──
@@ -287,7 +340,9 @@ export const OrekiDilationAutomation = {
       }
       this._achieveAtMs = 0;
 
-      const holdMax = this._holdIsEarly ? EARLY_HOLD_MAX_MS : HOLD_MAX_MS;
+      const holdMax = this._holdIsEarly
+        ? EARLY_HOLD_MAX_MS
+        : (this.ecDepthNeeded && atGate ? DEEP_EC_HOLD_MAX_MS : HOLD_MAX_MS);
       if (now - this._holdSinceMs > holdMax) {
         return this._release("timeout", HOLD_COOLDOWN_MS);
       }

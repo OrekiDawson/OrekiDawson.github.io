@@ -151,6 +151,10 @@ export default {
     });
   },
   beforeDestroy() {
+    if (this.tutModalBox) {
+      this.tutModalBox.classList.remove("c-modal--oreki-tut");
+      this.tutModalBox = null;
+    }
     // 被更高优先级弹窗顶掉时组件会销毁再重建；记下位置，回来接着读。
     //
     // 判据用「自己是否还在 ui.view.modal.queue 里」而不是只看 CLOSE_MODAL 事件：
@@ -168,6 +172,11 @@ export default {
     if (!remember) TutorialReadingPosition.scrollTop = 0;
   },
   mounted() {
+    // [R47-E1] 给弹层外壳打标记：有的浏览器 100vh 含工具栏，长正文会把弹层顶出
+    // 可视区，关闭按钮被裁到屏幕外。这个类只用来限定教程弹层的高度与安全区，
+    // 不影响其它弹窗（.c-modal 的通用规则一行未改）。
+    this.tutModalBox = this.$el?.closest?.(".c-modal") ?? null;
+    if (this.tutModalBox) this.tutModalBox.classList.add("c-modal--oreki-tut");
     // 续读时回到上次那一行；正常打开从章首开始
     this.resetScroll(this.resumeScroll);
     // 窄屏（≤900px）目录是横向滚动条，打开时可能停在 scrollLeft=0，

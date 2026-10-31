@@ -40,6 +40,9 @@ import { Autobuyer } from "./autobuyers/autobuyers.js";
 import { bigCrunchResetRequest } from "./big-crunch.js";
 import { Laitela } from "./celestials/laitela/laitela.js";
 import { OREKI_IU25_COST } from "./secret-formula/reality/imaginary-upgrades.js";
+// [R47-A] _laiDiag.imCap 要读真实 IM 上限（getter 在 machines.js:83），
+// 之前写成裸标识符会被自身的 try/catch 吞成 null，等于诊断字段永久失效。
+import { MachineHandler } from "./machines.js";
 
 /** 进莱特拉 run 时本现实真实时间的上限（毫秒）。见上方 ② 的 30 s 判定。 */
 const LAT_RUN_ENTER_MAX_REAL_MS = 15000;
@@ -445,32 +448,37 @@ export const OrekiEndgameAutomation = {
           console.warn(`[R45-LAI] difficultyTier=${tier} 已越过 8：`
             + `maxAllowedDimension=${Laitela.maxAllowedDimension}，IU25 的「=== 0」不再成立，需人工处理`);
         }
-        // [Oreki R40] EC 链已全部 5/5（= DS6 已可买 / 即将买到）时提前压现实。
-        // 理由见文件上方 IU25_HOLD_MAX_MS 的实测证据：等 DS6 到账再判断必然输掉竞态。
-        const ecChainDone = (() => {
-          try {
-            return globalThis.OrekiEternityAutomation?.nextUnfinishedEcId?.() === 0;
-          } catch (e) {
-            return false;
-          }
-        })();
-        if (!ds6 && !ecChainDone) {
-          // 真正没有 DS6、EC 也还没打完：run 必须让开，否则 EP 涨不动、研究买不回来
-          if (Laitela.isRunning) clearCelestialRuns();
+        // ── [Oreki R47-A] 这里原来是「EC 链打完后压现实 90 s 等 DS6 / IM 到账」──
+        //
+        // 那条策略是**自己掐死自己**：IU25 要的 IM 只能由现实产出的 RM 转成
+        // （`machines.js:31-45 gainedRealityMachines` 只在现实重置时结算，
+        //   `machines.js:103-106 gainedImaginaryMachines` 只按时间从 cap 逼近），
+        // 而压住现实 = 不再产生 RM = IM 不再增长。压满 `IU25_HOLD_MAX_MS` 后放手一次，
+        // 下一次现实又把 `TimeStudy.reality` 清掉（reality.js:673）⇒ 永远差一条前置。
+        //
+        // 现在的口径：**只有「DS6 在位 且 IM 够 且 符文 ≤1」的那一帧才起 run**，
+        // 其余帧一律不压现实、不占 run，让现实照常循环（那才是 IM 的唯一来源）。
+        // 这一段同时把四个闸门的实时值记进 `_laiDiag`，供面板 / 验收探针直接读，
+        // 不再需要靠「acted:false」猜。
+        this._laiDiag = {
+          tier,
+          maxDim: Laitela.maxAllowedDimension,
+          ds6,
+          im,
+          imCap: (() => { try { return Number(MachineHandler.currentIMCap); } catch (e) { return null; } })(),
+          iu25Cost: OREKI_IU25_COST,
+          ent,
+          running: Laitela.isRunning,
+          glyphs: Glyphs.activeWithoutCompanion.length,
+          realSec: realMs / 1000,
+          amE,
+          at: now
+        };
+        const ready = ds6 && im >= OREKI_IU25_COST;
+        if (!ready) {
+          this._laiHold = false;
           this._iu25HoldSince = 0;
-          return;
-        }
-        // 有界准备期：每个「现实轮次」只开一次计时，不能每帧延长
-        if (!this._iu25HoldSince) this._iu25HoldSince = now;
-        const holdExpired = now - this._iu25HoldSince > IU25_HOLD_MAX_MS;
-        if (!holdExpired) this._laiHold = true;
-        if (!ds6 || im < OREKI_IU25_COST) {
-          // 还在等 DS6 到账 / 等 IM 攒够：保持压制（未超时）让 DS6 不被现实冲掉
-          if (holdExpired) {
-            this._iu25HoldSince = 0;
-            if (Laitela.isRunning) clearCelestialRuns();
-            this._laiHold = false;
-          }
+          if (Laitela.isRunning) clearCelestialRuns();
           return;
         }
         // 「至少 4 个符文槽为空」：先卸符文。卸不干净时补一刀「删除全部未保护符文」

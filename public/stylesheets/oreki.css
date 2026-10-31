@@ -546,7 +546,7 @@
   margin-bottom: 1rem;
   padding: 0.8rem 1rem;
   background: var(--color-base);
-  border: 0.1rem solid var(--color-good);
+  border: 0.1rem solid var(--oreki-tut-ok, #7cc6ff);
   border-radius: var(--var-border-radius, 0.5rem);
 }
 
@@ -583,7 +583,7 @@
 }
 
 .c-oreki-tut__stage-row--entered {
-  border-left-color: var(--color-good);
+  border-left-color: var(--oreki-tut-ok, #7cc6ff);
 }
 
 .c-oreki-tut__stage-row--available {
@@ -612,7 +612,7 @@
 }
 
 .c-oreki-tut__stage-status--entered {
-  color: var(--color-good);
+  color: var(--oreki-tut-ok, #7cc6ff);
 }
 
 .c-oreki-tut__stage-status--available {
@@ -650,7 +650,7 @@
   min-height: 3.6rem;
   padding: 0 1.2rem;
   font-size: 1.15rem;
-  border: 0.1rem solid var(--color-good);
+  border: 0.1rem solid var(--oreki-tut-ok, #7cc6ff);
   background: var(--color-base);
   color: var(--color-text);
   border-radius: var(--var-border-radius, 0.5rem);
@@ -723,26 +723,106 @@
   }
 }
 
-/* ===== 窄屏自动购买器行：解除 96rem 固定宽度，修「横向溢出」 =====
- * 症状（用户 2026-10-30 报告「前期自动购买器溢出」= 横向）：自动化页每一行
- * 自动购买器都向右超出屏幕，必须左右拖动才能看到右侧开关。
- * 根因：styles.css:4392 `.c-autobuyer-box-row { width: 96rem }` —— 本作 rem=10px，
- * 即写死 960px；手机内容列只有约 336px，横向必然溢出 600px 以上。
- * 修法：宽度改自适应 + 允许内部插槽换行（行内元素本身没有固定宽度，
- * 只有 header 占 25%，换行后不会挤压变形）。desktop 不受影响。 */
+/* ==========================================================================
+   R48 · 自动购买器行：固定宽度收敛（宽度无关，桌面/手机/桌面模式共用一套）
+   症状：Android 手机所有浏览器（Chrome / Edge，含 Edge「桌面版网站」）自动化页
+        界面错位、控件重叠、按钮跑出屏幕。
+   根因（真机 411px 实测 + 样式溯源）：
+     · styles.css:4392 `.c-autobuyer-box-row { width: 96rem }` → 本作 rem=10px，
+       写死 960px；桌面模式布局视口约 980px，扣掉左侧页签栏后内容列只有约
+       870px，960 > 870，行必定横向溢出 → 右侧控件被裁掉＝「按钮跑出屏幕」。
+     · styles.css:4470 `.l-autobuyer-singlet-group { width: 97rem }`（970px）同理，
+       且行是它的子元素，即使行本身 max-width:100% 也会被撑到 970。
+     · styles.css:4526 `.l-autobuyer-box__title { width: 20rem }`（200px）与
+       :4530 `.l-autobuyer-box__autobuyers { width: 80rem }`（800px）合计 1000px，
+       在手机上把标签压成窄列、右侧购买器组溢出。
+   修法：一律改为 `min(设计宽, 100%)`。视口够宽时取设计值 → 桌面观感与上游
+        完全一致；视口不够时自动收敛到容器宽度 → 任何视口都不溢出。
+        不用媒体查询，因为媒体查询判的是视口宽，桌面模式会把视口报成 980px，
+        恰好绕过 900px 断点，这正是「Edge 桌面模式单独出问题」的由来。 */
+.c-autobuyer-box-row {
+  width: min(96rem, 100%);
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.l-autobuyer-singlet-group {
+  width: min(97rem, 100%);
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.l-autobuyer-box__title {
+  width: min(20rem, 100%);
+  box-sizing: border-box;
+}
+
+.l-autobuyer-box__autobuyers {
+  width: min(80rem, 100%);
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* 按钮本身写死 17.5rem(175px)，窄槽里必然溢出；给一个不超过容器的上限。
+   桌面槽宽 240px > 175px，此规则不改变桌面尺寸。 */
+.o-autobuyer-btn {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* ===== 窄屏自动购买器行：槽位重排，修「标签挤列 / 控件互相压住」 =====
+ * 根因：styles.css:4518-4523 四个槽位写死 `width: 25%`。行内容宽 ≈391px 时
+ * 每槽只有 ≈97px，而槽里的 `.o-autobuyer-btn` 是 175px、行内还有输入框，
+ * 子元素必然越出槽右边界 78px —— 相邻槽紧挨着，于是「×1→×2 批量购买」
+ * 被右侧「购买最大数量」压住、间隔标签浮到输入框上方。
+ * 修法：窄屏下让每个含按钮的槽独占一整行（子元素有 391px 可用，175×2 也放得下），
+ * 复选框槽保持行内自适应。仅窄屏生效，桌面仍是一行四槽。 */
 @media screen and (max-width: 900px) {
   .c-autobuyer-box-row {
-    width: auto;
-    max-width: 100%;
-    box-sizing: border-box;
     flex-wrap: wrap;
     justify-content: flex-start;
+    align-content: flex-start;
     row-gap: 0.6rem;
     margin: 0.5rem 0;
     padding: 1rem;
   }
 
+  /* 整行宽的槽：标题、间隔、模式切换、可选项 */
+  .c-autobuyer-box-row > .l-autobuyer-box__header,
+  .c-autobuyer-box-row > .c-autobuyer-box-row__intervalSlot,
+  .c-autobuyer-box-row > .c-autobuyer-box-row__toggleSlot,
+  .c-autobuyer-box-row > .c-autobuyer-box-row__optionSlot {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* 复选框槽不需要固定宽度，按内容走 */
+  .c-autobuyer-box-row > .c-autobuyer-box-row__checkboxSlot {
+    width: auto;
+    max-width: 100%;
+  }
+
+  /* 标题右侧给「启用」开关留出位置，避免长标题钻到开关下面 */
   .c-autobuyer-box-row > .l-autobuyer-box__header {
+    padding-right: 3.4rem;
+  }
+
+  /* 间隔槽里通常并排两个 175px 按钮：允许换行+均分，永不越界 */
+  .c-autobuyer-box-row__intervalSlot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+  }
+
+  .c-autobuyer-box-row__intervalSlot > .o-autobuyer-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* 模式切换按钮独占整行时铺满，避免右侧留出断裂的空档 */
+  .c-autobuyer-box-row__toggleSlot > .o-autobuyer-btn {
     width: 100%;
   }
 }
@@ -2080,3 +2160,7 @@
     max-width: 100%;
   }
 }
+
+
+/* [R47-C1] 教程禁绿：本文件里 c-oreki-tut 段的 --color-good 已换成这个蓝色强调色 */
+.c-oreki-tut { --oreki-tut-ok: #7cc6ff; }

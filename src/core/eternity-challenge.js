@@ -331,25 +331,28 @@ export const EternityChallenges = {
         player.reality.lastAutoEC = Math.clampMax(player.reality.lastAutoEC, this.interval);
         return;
       }
-      if (Ra.unlocks.instantECAndRealityUpgradeAutobuyers.canBeApplied) {
-        let next = this.nextChallenge;
-        while (next !== undefined) {
-          while (!next.isFullyCompleted) {
-            next.addCompletion(true);
-          }
-          next = this.nextChallenge;
-          if (ImaginaryUpgrade(15).isLockingMechanics && next?.id === 7 && shouldPreventEC7) break;
+
+      // R48 语义修正：这里绝不再「凭空补完成次数」。
+      // 原实现（含 Ra 的即时 EC 分支）会在玩家根本没开始挑战的情况下
+      // 直接 addCompletion()，等于「未开始就自动完成」。
+      // 现在自动化的唯一动作是 start() 下一个未完成的 EC，
+      // 而「开始 → 完成」由 OrekiInstantChallenge（进入即完成）在下一帧
+      // 按正常结算路径处理，因此这里的语义是「自动开始」，不是「自动完成」。
+      if (EternityChallenge.isRunning) return;
+      const nextChallenge = this.nextChallenge;
+      if (nextChallenge === undefined) return;
+
+      // 解锁「即时 EC」后不再按间隔节流，直接开始；否则维持原版间隔积攒节奏。
+      if (!Ra.unlocks.instantECAndRealityUpgradeAutobuyers.canBeApplied) {
+        const interval = this.interval;
+        if (!(player.reality.lastAutoEC - interval > 0)) {
+          player.reality.lastAutoEC %= interval;
+          return;
         }
-        return;
-      }
-      const interval = this.interval;
-      let next = this.nextChallenge;
-      while (player.reality.lastAutoEC - interval > 0 && next !== undefined) {
         player.reality.lastAutoEC -= interval;
-        next.addCompletion(true);
-        next = this.nextChallenge;
+        player.reality.lastAutoEC %= interval;
       }
-      player.reality.lastAutoEC %= interval;
+      nextChallenge.start(true);
     },
 
     get nextChallenge() {

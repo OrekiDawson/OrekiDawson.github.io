@@ -13,6 +13,73 @@
 export const TUTORIAL_STYLE_ID = "oreki-tutorial-injected-style";
 
 const CSS = `
+/* [R47-C1] Web 教程禁绿。
+ * 原先「已达成 / 当前」一律用 --color-good（#5ac467 一族都是绿色），
+ * 教程里出现绿色被明确禁止，所以改成本地的蓝色强调色（与 Android 教程
+ * 的 #0078D7 体系同族、深色底上对比度 7:1 以上）。红/紫两色不在禁止范围，保持原样。
+ * 用 var(--oreki-tut-ok, #7cc6ff) 带兜底：即使这条规则没被注入，也不会退化成继承色。
+ */
+.c-oreki-tut { --oreki-tut-ok: #7cc6ff; }
+
+/* [R48-W2] 教程弹层「全面去绿」，按视觉观感判定，不靠 HEX 分类免责。
+ *
+ * R47 只把 --color-good 换成了蓝色，但教程里用量最大的绿系其实是 --color-reality
+ * （默认主题 #0ba00e、若干主题 #4caf50 一族），以及主按钮描边用的 --color-good-dark
+ * —— 真机上看到的绿色关闭按钮、绿色小标题、绿色当前状态点全部来自这三个 token。
+ * 逐个类去改会漏（教程有 20+ 个类引用它们），所以在弹层作用域内把绿系 token 整体
+ * 重定向到蓝紫系：一个声明覆盖全部引用点，也不可能漏掉 hover/active/主题继承。
+ * 作用域严格限定在「含 .c-oreki-tut 的弹层」，游戏主体与 Android 版不受影响。
+ */
+.c-modal:has(.c-oreki-tut) {
+  --color-reality: #4c9aff;
+  --color-good: #4c9aff;
+  --color-good-dark: #2f6fd0;
+  /* 红(--color-bad)与紫不在禁止范围，保持原样，避免丢失「危险/锁定」的语义对比 */
+}
+
+/* [R48-W1] 真机 Edge「关闭按钮向上溢出」——真实成因链，不是安全区没写对。
+ *
+ * 1) index.html 的 viewport 是 width=device-width, initial-scale=1，没有 viewport-fit=cover，
+ *    所以 Android 上 env(safe-area-inset-*) 恒为 0：R47 那套「扣 safe-area」在真机上等于没写。
+ * 2) 真正的病根是 .l-modal 用 top:50% + translate(-50%,-50%) 做垂直居中。
+ *    教程弹层比视口高时（手机竖屏长正文必然如此），居中会把弹层上半截推到视口上方，
+ *    贴顶绝对定位的关闭按钮就被一起推出屏幕 —— 与 safe-area 是否为零无关。
+ *
+ * 修法：教程这一个弹层的包裹层改成 inset:0 + flex 居中，自身高度用 dvh 钉在可见视口内，
+ * 弹层 max-height:100% 不许超出。居中不再产生负向溢出，关闭按钮必然落在视口内。
+ * 顶部/底部再叠 max(0.6rem, env(...)) 保底：将来给 index.html 补上 viewport-fit=cover
+ * 时自动吃到真实安全区，没补时也有 0.6rem 兜底，两种情况下都不会贴死边缘。
+ * 只作用于含 .c-oreki-tut 的 .l-modal / .c-modal，全局 .l-modal、.c-modal 一行未改。
+ */
+.l-modal:has(.c-oreki-tut) {
+  inset: 0;
+  top: 0;
+  left: 0;
+  width: auto;
+  height: 100vh;
+  height: 100dvh;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: none;
+  padding: max(0.6rem, env(safe-area-inset-top, 0px)) 0.6rem max(0.6rem, env(safe-area-inset-bottom, 0px));
+}
+
+.c-modal:has(.c-oreki-tut) {
+  box-sizing: border-box;
+  max-width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* 弹层内部若自身带滚动盒（.c-oreki-tut__scroll），外层再滚一次会出现双滚动条，
+ * 这里把外层交给内层：内层有明确高度时外层不再需要滚动。 */
+.c-modal:has(.c-oreki-tut) .c-oreki-tut__scroll { overscroll-behavior: contain; }
+
 .c-oreki-tut__scroll { overflow-x: hidden; }
 
 /* ── 底栏被裁穿（320/360 实测，命中测试确认）──────────────────────────────
@@ -59,9 +126,9 @@ const CSS = `
   padding: 0 0.4rem;
   font-size: 1rem;
   line-height: 1.5;
-  color: var(--color-good);
+  color: var(--oreki-tut-ok, #7cc6ff);
   white-space: nowrap;
-  border: 0.1rem solid var(--color-good);
+  border: 0.1rem solid var(--oreki-tut-ok, #7cc6ff);
   border-radius: 0.3rem;
 }
 .c-oreki-tut__table {
@@ -134,7 +201,7 @@ const CSS = `
   padding: 0.5rem 0.8rem;
   font-size: 1.2rem;
   line-height: 1.55;
-  border: 0.1rem solid var(--color-good);
+  border: 0.1rem solid var(--oreki-tut-ok, #7cc6ff);
   border-radius: 0.4rem;
 }
 .c-oreki-tut__draft {
@@ -149,7 +216,7 @@ const CSS = `
   height: 0.8rem;
   border-radius: 50%;
 }
-.c-oreki-tut__dot--entered { background: var(--color-good); }
+.c-oreki-tut__dot--entered { background: var(--oreki-tut-ok, #7cc6ff); }
 .c-oreki-tut__dot--available { background: var(--color-reality); }
 .c-oreki-tut__dot--locked { border: 0.1rem solid rgb(255 255 255 / 35%); }
 .c-oreki-tut__details { margin: 0 0 0.6rem; }
@@ -190,7 +257,7 @@ const CSS = `
   cursor: pointer;
   color: var(--color-reality);
 }
-.c-oreki-tut__summary--current { color: var(--color-good); }
+.c-oreki-tut__summary--current { color: var(--oreki-tut-ok, #7cc6ff); }
 
 /* ── 窄屏（≤900px，断点与 oreki.css 的教程降级保持一致）下的导航条与触屏目标 ──
  *

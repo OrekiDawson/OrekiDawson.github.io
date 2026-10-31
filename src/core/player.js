@@ -521,7 +521,12 @@ window.player = {
     moveGlyphsOnProtection: false,
     perkPoints: 0,
     unlockedEC: 0,
-    autoEC: true,
+    // 新档默认不自动开启永恒挑战。
+    // 语义（Oreki R49 明确定义）：autoEC 只负责「自动启动下一个未完成的 EC」，
+    // 绝不是「挑战没开始就补完成次数」的通道。默认关掉是为了尊重手动玩法——
+    // 玩家没主动点开关，游戏就不该替他决定何时进入永恒挑战。
+    // 已有存档从档案读回自己的值，不受此处影响，不会被强制重置。
+    autoEC: false,
     lastAutoEC: 0,
     partEternitied: DC.D0,
     autoAchieve: true,

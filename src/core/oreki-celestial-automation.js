@@ -327,7 +327,13 @@ export const OrekiCelestialAutomation = {
       // [Oreki R34] 只读门禁计数：用于定位「DS1 已解锁、TP=0」却仍然不播种的原因。
       // 只自增、不参与任何判定（除 `ecBypass` 的日志意义外）。
       const gates = this._gates;
-      if (VUnlocks.vAchievementUnlock.isUnlocked) { gates.vUnlocked++; return false; }
+      // [Oreki R50] 原来这里是 `if (VUnlocks.vAchievementUnlock.isUnlocked) return false`。
+      // 那是第二个死锁：V 解锁后本函数整体停摆，但 IU25 的 `checkRequirement`
+      // （imaginary-upgrades.js:362-363）要求 `TimeStudy.reality.isBought`（DS6），
+      // DS6 在膨胀树里 ⇒ 仍需要 DS1 ⇒ 仍需把 TP 播起来、把 maxDT 顶上去。
+      // 实测（R50 `r50-save1`，V 解锁 3 分钟后）：`ds1=false / ds6=false / tp=0 / maxDT=0`。
+      // 停机条件改判 `ImaginaryUpgrade(25).isBought`（整条终局链的真正终点）。
+      if (VUnlocks.vAchievementUnlock.isUnlocked && ImaginaryUpgrade(25).isBought) { gates.vUnlocked++; return false; }
       const active = player.dilation.active === true;
       if (!active && !PlayerProgress.dilationUnlocked()) { gates.notUnlocked++; return false; }
 

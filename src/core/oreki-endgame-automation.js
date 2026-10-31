@@ -359,6 +359,35 @@ export const OrekiEndgameAutomation = {
     // `Currency.imaginaryMachines.value.lte is not a function`，异常被外层 catch 吞掉，
     // 结果整条 IU 购买链**一次都没执行过**（IU15 是冲刺模块自己买的，掩盖了这个 bug）。
     if (!(Number(Currency.imaginaryMachines.value) > 0)) return;
+
+    // ── [Oreki R50] 先抬 IM 上限，否则 IU25 **物理上买不起** ──────────────────
+    //
+    // 事实链：
+    //   · `currentIMCap = player.reality.iMCap × ImaginaryUpgrade(13).effectOrDefault(1)`
+    //     （machines.js:87）；
+    //   · IM 只会从下方逼近 cap（`gainedImaginaryMachines`，machines.js:103-106），
+    //     所以 `cap < IU25 成本` 时 `Number(IM) >= OREKI_IU25_COST` **永远不成立**；
+    //   · `ImaginaryUpgrade(13).effect = 1 + totalRebuyables/20 + totalSinglePurchase/2`
+    //     （secret-formula/reality/imaginary-upgrades.js:187），即可重复 IU（1~10）
+    //     与已买的一次性 IU 一起把上限乘上去。
+    //
+    // 实测（R50 `r50-save1`，03:0x）：`im` 连续 2 分钟平在 **1.98e9** 一动不动，
+    // `iu25ConditionsReady()` 恒 false —— 不是条件没满足，是上限本身低于成本。
+    // 抬上限用的是原版 `purchase()`，不写任何字段、不改成本。
+    // 护栏：cap 一旦到 IU25 成本的 1.5 倍就停手，把 IM 留给 IU25 本体。
+    try {
+      const cap = Number(MachineHandler.currentIMCap);
+      if (cap < OREKI_IU25_COST * 1.5) {
+        for (const id of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+          try { ImaginaryUpgrade(id).purchase(); } catch (e) { /* 该可重复项暂不可买 */ }
+        }
+        try {
+          const u13 = ImaginaryUpgrade(13);
+          if (u13 && u13.isBought !== true) u13.purchase();
+        } catch (e) { /* IU13 需要「无名氏的现实中」条件，不满足就下一帧再试 */ }
+      }
+    } catch (e) { /* 上限读取失败不影响后续 IU15/IU25 */ }
+
     for (const id of [15, 25]) {
       try {
         const up = ImaginaryUpgrade(id);

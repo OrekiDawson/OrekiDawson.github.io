@@ -4,14 +4,25 @@ import { DC } from "./constants.js";
  * [Oreki R35-C] 虚幻机器上限的统一缩放系数（见下方 baseIMCap 的说明）。
  * 原版 = 1（不缩放）。
  *
- * [Oreki R37-A] 10.6 → 100。实测 log10(uncappedRM) 稳定在 10722（EP log10 天花板 1.43e7），
- * 原版曲线给出的上限只有 9.45e7；10.6 倍刚好只够 IU15(1e9)，余量 0.19%（R36 记录），
- * 任何一点倍率扰动都会失手。100 倍把上限抬到 **≈9.45e9**：
- *   · IU15 1e9（莱特拉入口）→ 只需攒到上限的 10.6%，约 11 s；
- *   · IU25 5e9（佩勒入口，OREKI_IU25_COST 已同步缩放）→ 约 65 s；
- *   · IU20 3e12 / IU22~24 6e14 仍然远在上限之外，终局链以外的内容不被打开。
+ * [Oreki R50] 100 → **300**。R37-A 的 100 是按「log10(uncappedRM) 稳定在 10722」
+ * 推算的（⇒ 上限 ≈9.45e9），但 R50 真实新档实测那个前提不成立：
+ *   · `r50-save1`（V 已解锁、EC 全 12 关 5/5、IU15 已买）：
+ *     `MachineHandler.currentIMCap = 3.16e9` 且**已平台化**（连续 30 s 不动），
+ *     `im` 同样停在 3.16e9；
+ *   · 反推 `log10(uncappedRM) ≈ 6621`，而不是 10722
+ *     （`baseIMCap = (x-1000)^2 × max(x-1e5,1)^0.2 × MULT`，machines.js:79-83）。
+ *   ⇒ 上限 3.16e9 < IU25 成本 5e9，「IM ≥ 5e9」物理上永不成立；
+ *     而唯一能把上限乘上去的 IU13 要求「在无名氏的现实中」
+ *     （imaginary-upgrades.js:180-189），本档符文等级 13 拿不到那张门票
+ *     （celestials/enslaved.js:11-22 要 1e40 年 + 5000 级符文 + 100% 稀有度符文），
+ *     自动化按 R33 的结论**不进无名氏现实**（进去会把现实循环自锁）。
+ *   ⇒ 只能抬常数位移。300 把上限抬到 ≈9.5e9：
+ *     · IU15 1e9 → 只需 10.5%；
+ *     · IU25 5e9 → 需 53%，留 90% 余量，仍是一段真实的「攒 IM」；
+ *     · IU20 3e12 / IU22~24 6e14 依然远在上限之外，终局链以外的内容不被打开。
+ * 曲线形状、指数、`updateIMCap()` 的真实刷新条件一律未动。
  */
-export const OREKI_IM_CAP_MULT = 100;
+export const OREKI_IM_CAP_MULT = 300;
 
 export const MachineHandler = {
   get baseRMCap() { return DC.E1000; },

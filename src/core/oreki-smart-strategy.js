@@ -33,6 +33,11 @@
 // 四个有坑的叶子在表里单独写了注释，别当成一行直读。
 
 import spec from "./oreki-smart-strategy.gen.js";
+// [Oreki R42] 多路线择优的模型源（filter / 权重 / 切换阈值 / 界面查询方法）。
+// 这份 JSON 从 R40 起就在仓库里，但**从来没有代码读它**（`rg -n "route-model" src/`
+// 只有 `scripts/gen_spec_module.mjs:31` 的登记表一条）—— 模型写了，解释器没写。
+// 本文件补的就是这个解释器，见下方「路线择优层」。
+import routeModel from "./oreki-route-model.gen.js";
 
 /**
  * 叶子 → 取值函数。全部是读取，全部幂等。
@@ -265,6 +270,515 @@ function withFreshHold(decision, now) {
   };
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// 路线择优层（Oreki R42）
+//
+// ── 为什么需要它：上面那套是查表，不是择优 ─────────────────────────────
+// `detectStage()` 只按 precedence 取最大者（本文件 :241-247），
+// `evaluate()` 随后 `findById(spec.strategies, stage.strategy)` 取一条策略、
+// 把它的 `priority` 数组**原样**放进决策对象（:296、:336）。
+// 全链路没有比较、没有评分、没有「还有别的走法」这个概念 ——
+// 顺序只有在 spec 作者恰好写对时才对。spec 自己也承认这点：
+// `route-model.json` 的 `note` 写着「多路线择优的唯一模型源」，
+// 但那份文件在 R42 之前是**纯数据、无人读**。
+//
+// ── 六件事（逐条对应验收要求）────────────────────────────────────────
+//   ① prereqOk     前置是否满足 → `route-model.filter` 的结构化落地（见 `filterRoute`）
+//   ② resourceCost 资源成本     → 绑定动词的**单货币**成本 log10 → 买完要重赚多久
+//   ③ unlocks      能解锁什么   → 该路线是否把「推进阶段目标」的动词排到前面
+//   ④ etaRealSec   预计剩余现实秒 → 真实阈值 ÷ 实测 log 速率（见 `estimateGoalEta`）
+//   ⑤ risk         死路/软锁    → high/medium/none 三级，全部由结构推出来
+//   ⑥ ops          执行复杂度   → 绑定动词数
+//
+// ── 「预计剩余现实秒」的口径（这是本段唯一会编数字的地方，所以写死规矩）──
+// 只用两样**真实数据**：
+//   · 当前余额与真实阈值（`Player.infinityGoal` / `Player.eternityGoal` 等游戏自身 getter）；
+//   · 该资源的 log10 增长速度（最近 N 个 1 s 采样的最小二乘斜率，单位 log10/真实秒）。
+// 缺任一项 ⇒ `etaRealSec = null`，界面上必须显示「无法估算」。
+// **绝不用 `route-model.calibration.baseline` 那张分段表当 ETA** ——
+// 那是 R40 两条 run 的历史先验（456 s「等 V」那条已经被 R41 的修复作废），
+// 拿它当绝对秒数会直接输出错数。它在本层只作为「历史参照」出现在 `prior` 字段里，
+// 且明确标 `confidence: "prior"`，不参与排序。
+//
+// ── 三条不许越的红线 ────────────────────────────────────────────────
+// 1. **手动优先权**：本层不读也不写 `manualHolds`；`decision.manualHold` 的语义一字未改，
+//    执行层照旧在 hold 窗口里一个动作都不发。
+// 2. **购买权边界**：本层只**重排**当前 `strategy.priority` 里**已经存在**的动词。
+//    `orderForBinding()` 里有一条硬约束：绑定里出现、但 priority 里没有的动词一律丢弃。
+//    也就是说它不可能让任何层多买一样原本不被允许的东西。
+// 3. **研究购买节流**：本层不调用任何购买方法（本文件至今不出现 purchase）。
+//    `buyTimeStudy` / `buyDilationStudy` 仍是 `delegated`，30 帧节流不受影响。
+// ═══════════════════════════════════════════════════════════════════════
+
+/** 速率采样节流：ETA 需要真实速率，1 s 一次（与 spec.conventions.evaluationPeriod 对齐）。 */
+const ROUTE_SAMPLE_MS = 1000;
+/** 速率窗口：最近这么多个 1 s 采样做最小二乘。12 个 ≈ 12 s 的窗口。 */
+const ROUTE_RATE_WINDOW = 12;
+/** 少于这么多采样就**不承认**速率（⇒ ETA = null），不拿两三个点外推。 */
+const ROUTE_RATE_MIN_SAMPLES = 3;
+/** ETA 差距在此比例内视为「相近」，改用风险/操作数决胜（route-model.evaluation.tieBreak）。 */
+const ROUTE_TIE_BAND = 0.05;
+/** 切换滞回：新路线必须便宜这么多才允许切（route-model.stability.minImprovementRatio）。 */
+const ROUTE_SWITCH_MARGIN = (() => {
+  const v = Number(routeModel?.stability?.minImprovementRatio);
+  return Number.isFinite(v) && v > 0 ? v : 0.15;
+})();
+/** 两次切换之间的最小间隔（route-model.stability.cooldownSeconds）。 */
+const ROUTE_SWITCH_COOLDOWN_MS = (() => {
+  const v = Number(routeModel?.stability?.cooldownSeconds);
+  return Number.isFinite(v) && v > 0 ? v * 1000 : 300000;
+})();
+
+/**
+ * 路线层用到的资源。全部是**读取**，全部可能抛（未解锁时 getter 不存在）。
+ * 新增资源必须先在这里登记，`estimateGoalEta` / `verbPenalty` 只认这里的键。
+ */
+const ROUTE_RESOURCES = {
+  antimatter: { title: "反物质", read: () => player.antimatter },
+  infinityPoints: { title: "无限点", read: () => Currency.infinityPoints.value },
+  eternityPoints: { title: "永恒点", read: () => Currency.eternityPoints.value },
+  timeTheorems: { title: "时间之理", read: () => Currency.timeTheorems.value },
+  realityMachines: { title: "现实机器", read: () => Currency.realityMachines.value },
+};
+
+/**
+ * 阶段目标 → 「哪个资源到多少」。
+ *
+ * ⚠ 只登记**游戏自己给出阈值**的阶段。
+ * `reality` / `celestials` / `doomed` 的目标不是「某资源到某数」（Teresa 要成就 147、
+ * doomed 要 `endState >= 1` 且判据读的是佩勒的 records 峰值），没有单一阈值可读，
+ * 所以**不登记** ⇒ 这几个阶段的 ETA 恒为 null ⇒ 路线层退化为「只比风险与操作数」。
+ * 这是刻意的：编一个阈值比不给数更糟（route-model.calibration.confidence.unknown 原文）。
+ *
+ * `completeness`：
+ *   · `full`    —— 该阈值就是目标的充要条件（解锁永恒只看 `Player.eternityGoal`）。
+ *   · `partial` —— 只是目标的**一个必要条件**。解锁现实还要求 `maxEP.exponent >= 4000`
+ *                  与 `TimeDimension(8).isBought`（两者都由永恒模块推进）；
+ *                  这里不把那两个数写死，所以绝对秒数只能当**下界**用。
+ *                  但**排序**不受影响：同一阶段内所有候选路线共享同一个目标项，
+ *                  它一定在比较里被消掉，差的只有各自的资源惩罚项。
+ */
+const ROUTE_GOAL_PROGRESS = {
+  early: { res: "antimatter", completeness: "full", threshold: () => Player.infinityGoal, done: () => PlayerProgress.infinityUnlocked() === true },
+  preInfinity: { res: "antimatter", completeness: "full", threshold: () => Player.infinityGoal, done: () => PlayerProgress.infinityUnlocked() === true },
+  infinity: { res: "infinityPoints", completeness: "full", threshold: () => Player.eternityGoal, done: () => PlayerProgress.eternityUnlocked() === true },
+  // 解锁现实 = 买下膨胀研究 6（`TimeStudy.reality`，dilation-time-study.js:113）
+  eternity: { res: "timeTheorems", completeness: "partial", threshold: () => TimeStudy.reality.cost, done: () => PlayerProgress.realityUnlocked() === true },
+  timeStudy: { res: "timeTheorems", completeness: "partial", threshold: () => TimeStudy.reality.cost, done: () => PlayerProgress.realityUnlocked() === true },
+};
+
+/**
+ * 动词 → **单一货币**成本。只登记「一种货币 + 一个数字」都读得到的动词。
+ * 读不到的一律不登记：成本未知 ⇒ 惩罚记 0（不惩罚，也不虚构）。
+ * 例：`buyDimBoost` / `buyGalaxy` 的成本是 `requirement` 判定式而不是价格，故不登记。
+ */
+const ROUTE_VERB_COST = {
+  buyDimension: () => ({ res: "antimatter", cost: AntimatterDimension(1).cost }),
+  buyTickspeed: () => ({ res: "antimatter", cost: Tickspeed.cost }),
+  buyInfinityDimension: () => ({ res: "infinityPoints", cost: InfinityDimension(1).cost }),
+};
+
+/** 每个资源一条采样序列：`{ t, l }`，`l` = log10(余额)。采样节流见 `ROUTE_SAMPLE_MS`。 */
+const rateSamples = new Map();
+/** 上次采样时刻（毫秒）。 */
+let lastRateSampleAt = 0;
+
+/** 当前路线状态。`id = null` 表示「没有可选路线，按 spec 原序」。 */
+const routeState = {
+  id: null,
+  since: 0,
+  eta: null,
+  switches: 0,
+  lastSwitch: null,
+  reason: null,
+};
+
+function safeRead(fn) {
+  try { return fn(); } catch (e) { return null; }
+}
+
+/** 任意 Decimal / Number → log10。读不到、为 0、NaN 一律 null（不猜）。 */
+function log10Of(v) {
+  if (v === null || v === undefined) return null;
+  try {
+    if (typeof v === "number") return v > 0 && Number.isFinite(v) ? Math.log10(v) : null;
+    if (typeof v.log10 === "function") {
+      const l = v.log10();
+      const n = typeof l === "number" ? l : (l && typeof l.toNumber === "function" ? l.toNumber() : Number(l));
+      return Number.isFinite(n) ? n : null;
+    }
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? Math.log10(n) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** 采一次样（全部资源），1 s 最多一次。失败静默：没有采样 ⇒ 没有速率 ⇒ ETA = null。 */
+function sampleRates(now) {
+  if (now - lastRateSampleAt < ROUTE_SAMPLE_MS) return;
+  lastRateSampleAt = now;
+  for (const [key, def] of Object.entries(ROUTE_RESOURCES)) {
+    const l = log10Of(safeRead(def.read));
+    if (l === null) continue;
+    let arr = rateSamples.get(key);
+    if (!arr) { arr = []; rateSamples.set(key, arr); }
+    arr.push({ t: now, l });
+    while (arr.length > ROUTE_RATE_WINDOW) arr.shift();
+  }
+}
+
+/** 最小二乘斜率：log10 / 真实秒。样本不够或斜率非正 ⇒ null。 */
+function rateOf(resKey) {
+  const arr = rateSamples.get(resKey);
+  if (!arr || arr.length < ROUTE_RATE_MIN_SAMPLES) return null;
+  const n = arr.length;
+  let st = 0, sl = 0;
+  for (const p of arr) { st += p.t; sl += p.l; }
+  const mt = st / n, ml = sl / n;
+  let num = 0, den = 0;
+  for (const p of arr) {
+    const dt = (p.t - mt) / 1000; // 换算成秒
+    num += dt * (p.l - ml);
+    den += dt * dt;
+  }
+  if (!(den > 0)) return null;
+  const rate = num / den;
+  return Number.isFinite(rate) && rate > 0 ? rate : null;
+}
+
+/**
+ * 阶段目标还差多少真实秒。
+ * @returns {{eta: number|null, reason: string, res: string|null, balanceL: number|null, thresholdL: number|null}}
+ */
+function estimateGoalEta(stageId) {
+  const goal = ROUTE_GOAL_PROGRESS[stageId];
+  if (!goal) return { eta: null, reason: "goal-threshold-unreadable", res: null, balanceL: null, thresholdL: null, completeness: null };
+  const def = ROUTE_RESOURCES[goal.res];
+  if (!def) return { eta: null, reason: "resource-unknown", res: goal.res, balanceL: null, thresholdL: null, completeness: goal.completeness ?? null };
+  const balanceL = log10Of(safeRead(def.read));
+  const thresholdL = log10Of(safeRead(goal.threshold));
+  const completeness = goal.completeness ?? "partial";
+  if (balanceL === null || thresholdL === null) {
+    return { eta: null, reason: "balance-or-threshold-unreadable", res: goal.res, balanceL, thresholdL, completeness };
+  }
+  if (thresholdL <= balanceL) {
+    // 自证一次：`partial` 的目标下，阈值达成 ≠ 目标达成。
+    // 实测踩到过：`r42-route-peek-b` 在 t=6.2 s 报出 `eta=0s（threshold-reached）`，
+    // 而当时现实根本没解锁 —— 说明 `TimeStudy.reality.cost` 单独拿来当阈值不够。
+    // 这种情况**不许报 0**（0 会被读成「已经好了」），一律报 null 并写清原因。
+    const done = typeof goal.done === "function" ? safeRead(goal.done) : null;
+    if (completeness === "partial" && done !== true) {
+      return {
+        eta: null, reason: "threshold-met-but-goal-not-done",
+        res: goal.res, balanceL, thresholdL, completeness,
+      };
+    }
+    return { eta: 0, reason: "threshold-reached", res: goal.res, balanceL, thresholdL, completeness };
+  }
+  const rate = rateOf(goal.res);
+  if (rate === null) {
+    return { eta: null, reason: "rate-unknown", res: goal.res, balanceL, thresholdL, completeness };
+  }
+  return { eta: (thresholdL - balanceL) / rate, reason: "measured", res: goal.res, balanceL, thresholdL, completeness };
+}
+
+/**
+ * 把某动词排在「推进目标的动词」之前，会让目标晚到多久（真实秒）。
+ *
+ * 两段都从真实余额与真实成本算：
+ *   · 买得起（cost ≤ balance）：重赚回这笔钱的时间 = −log10(1 − cost/balance) / rate；
+ *   · 买不起：先攒到买得起 = (log10(cost) − log10(balance)) / rate。
+ * 成本或速率读不到 ⇒ 记 0（不惩罚、不虚构），并在 `known=false` 里标出来。
+ */
+function verbPenalty(verbId) {
+  const reader = ROUTE_VERB_COST[verbId];
+  if (!reader) return { penalty: 0, known: false, why: "no-single-currency-cost" };
+  const info = safeRead(reader);
+  if (!info) return { penalty: 0, known: false, why: "cost-unreadable" };
+  const def = ROUTE_RESOURCES[info.res];
+  if (!def) return { penalty: 0, known: false, why: "resource-unknown" };
+  const balanceL = log10Of(safeRead(def.read));
+  const costL = log10Of(info.cost);
+  if (balanceL === null || costL === null) return { penalty: 0, known: false, why: "unreadable" };
+  const rate = rateOf(info.res);
+  if (rate === null) return { penalty: 0, known: false, why: "rate-unknown" };
+  if (costL <= balanceL) {
+    const frac = Math.pow(10, costL - balanceL); // cost / balance ∈ (0, 1]
+    if (!(frac > 0) || frac >= 1) return { penalty: 0, known: true, why: "negligible" };
+    return { penalty: Math.max(0, -Math.log10(1 - frac) / rate), known: true, why: "recover-after-spend" };
+  }
+  return { penalty: (costL - balanceL) / rate, known: true, why: "time-to-afford" };
+}
+
+/** 取某条路线的动词绑定。没绑定 ⇒ null（⇒ 该路线不可执行）。 */
+function bindingOf(routeId) {
+  return (spec.routeBindings ?? []).find(b => b?.route === routeId) ?? null;
+}
+
+/**
+ * 绑定的动词顺序 ∩ 当前 strategy.priority。
+ * **硬约束**：绑定里出现、但 priority 里没有的动词一律丢弃 ——
+ * 本层永远不能引入一个阶段模块原本不被允许的购买动作。
+ *
+ * **只在原位换位**：绑定涉及的动词按绑定顺序**填回它们原本占的那几个位置**，
+ * 不参与绑定的动词一格都不动。
+ * 为什么不用「绑定动词提到最前、其余追加到后面」：那样会把 `runReality` 提到
+ * `buyRealityMachine` 前面（实测 `r42-route-peek-a`：reality 阶段的 priority 变成
+ * `equipBestGlyph,buyRealityUpgrade,runReality,buyRealityMachine`）——
+ * 虽然 `buyRealityMachine` 是 unsupported（执行层本来就不动手）、行为上等价，
+ * 但这是**没有评分依据的扰动**。原位换位把扰动限制在绑定涉及的那几个槽位上，
+ * 未参与绑定的槽位保持原样，`reorderDistance` 也就只反映真实差异。
+ *
+ * 返回 null 表示「这条绑定在当前策略下没有可执行动词」。
+ */
+function orderForBinding(binding, priority) {
+  if (!binding || !Array.isArray(binding.verbs)) return null;
+  const allowed = new Set(priority);
+  const bound = [];
+  for (const verbId of binding.verbs) {
+    if (allowed.has(verbId) && !bound.includes(verbId)) bound.push(verbId);
+  }
+  if (!bound.length) return null;
+  const boundSet = new Set(bound);
+  const order = priority.slice();
+  // 绑定动词原本占的槽位（升序），按绑定顺序逐个填回
+  const slots = [];
+  for (let i = 0; i < order.length; i++) if (boundSet.has(order[i])) slots.push(i);
+  for (let k = 0; k < slots.length; k++) order[slots[k]] = bound[k];
+  return { order, head: bound, slots };
+}
+
+/**
+ * 一条路线的六个量。任何一项读不到就如实标出来，不补默认值。
+ * @param {object} route route-model.routes[] 里的一条
+ * @param {string[]} priority 当前策略的优先级（未重排）
+ * @param {{eta:number|null}} goalEta 阶段目标距离
+ */
+function scoreRoute(route, priority, goalEta) {
+  const binding = bindingOf(route.id);
+  const ordered = orderForBinding(binding, priority);
+
+  // ① 前置：结构化的「有没有可执行动作」。没有 ⇒ 直接淘汰（对应 filter.missingFeature）。
+  const prereqOk = ordered !== null;
+
+  // ⑤ 风险：全部由结构推出来，不读文案。
+  const resetVerbs = new Set(["eternity", "runReality", "armageddonOnceMoreToSetBreak"]);
+  const head = ordered?.head ?? [];
+  const hasResetHead = head.some(v => resetVerbs.has(v));
+  const risk = !prereqOk
+    ? { level: "high", reasons: ["missingFeature：该路线没有已登记的动词绑定，执行层无从下手"] }
+    : hasResetHead
+      ? { level: "medium", reasons: ["首步就是重置类动作，重置成本不可回收"] }
+      : { level: "none", reasons: [] };
+
+  // ② 资源成本：排在「推进目标」之前、需要花钱的动词，各自的重赚时间之和。
+  //    这里不区分哪个动词才是目标推进项 —— 一律计入代价，谁排前面代价就到谁为止。
+  let penaltySec = 0;
+  const penaltyDetail = [];
+  let unknownPenaltyCount = 0;
+  for (const verbId of head) {
+    const p = verbPenalty(verbId);
+    if (!p.known) unknownPenaltyCount++;
+    else if (p.penalty > 0) penaltyDetail.push({ verb: verbId, sec: Math.round(p.penalty * 10) / 10, why: p.why });
+    penaltySec += p.penalty;
+  }
+
+  // ④ 预计剩余现实秒：目标距离 + 前面这些动作的重赚时间。
+  //    目标距离读不到就是 null —— 排序随即退化为「风险 → 操作数」。
+  const etaRealSec = goalEta.eta === null ? null : goalEta.eta + penaltySec;
+
+  // ⑥ 执行复杂度
+  const ops = head.length;
+
+  // ③ 解锁：这条路线是否把「会推进阶段目标」的动词排在最前。
+  //    绑定里的 `advances` 由 spec 显式给出（数据），不由本文件猜。
+  const unlocks = Array.isArray(binding?.advances) ? binding.advances.slice() : [];
+
+  return {
+    id: route.id,
+    title: route.title ?? route.id,
+    prereqOk,
+    resourceCostSec: Math.round(penaltySec * 10) / 10,
+    resourceCostUnknownVerbs: unknownPenaltyCount,
+    resourceCostDetail: penaltyDetail,
+    unlocks,
+    etaRealSec: etaRealSec === null ? null : Math.round(etaRealSec * 10) / 10,
+    etaReason: goalEta.reason,
+    risk,
+    ops,
+    // 与 spec 原序的差异位数。只作为**最后一级**决胜键：
+    // route-model.stability 原话是「一个老是改主意的系统比一个笨系统更难用」，
+    // 所以分数完全并列时留在原序，不为了「显得在择优」而制造无意义的重排。
+    reorderDistance: ordered ? ordered.order.filter((v, i) => v !== priority[i]).length : 0,
+    order: ordered?.order ?? null,
+    why: route.why ?? "",
+  };
+}
+
+const RISK_RANK = { none: 0, medium: 1, high: 2 };
+
+/**
+ * 排序：主键 = ETA（只在两边都有数时）；差距 < 5% 或有一边无解 ⇒ 风险 → 操作数 → 模型顺序。
+ * 全部是纯比较，无随机、无时间依赖（时间由调用方传进来）。
+ */
+function compareScores(a, b) {
+  if (a.prereqOk !== b.prereqOk) return a.prereqOk ? -1 : 1;
+  if (a.etaRealSec !== null && b.etaRealSec !== null) {
+    const lo = Math.max(1e-9, Math.min(a.etaRealSec, b.etaRealSec));
+    const diff = Math.abs(a.etaRealSec - b.etaRealSec) / lo;
+    if (diff > ROUTE_TIE_BAND) return a.etaRealSec - b.etaRealSec;
+  }
+  const ra = RISK_RANK[a.risk.level] ?? 9;
+  const rb = RISK_RANK[b.risk.level] ?? 9;
+  if (ra !== rb) return ra - rb;
+  if (a.ops !== b.ops) return a.ops - b.ops;
+  // 最后一级：与 spec 原序差异更小的优先（稳定优先于极限）。
+  if (a.reorderDistance !== b.reorderDistance) return a.reorderDistance - b.reorderDistance;
+  return 0; // 仍并列 ⇒ 保持 routeModel.routes 的原顺序（Array.sort 稳定）
+}
+
+/**
+ * 选路线 + 滞回。
+ *
+ * 切换条件（三条，缺一不可，全部来自 route-model.stability）：
+ *   · 新路线必须「可执行」（prereqOk）；
+ *   · 两边 ETA 都有数时：`best.eta < current.eta × (1 − 15%)`；
+ *   · 距上次切换 ≥ 300 s。
+ *
+ * 唯一的例外是「当前路线失效」：它的 prereqOk 变 false（绑定在当前策略下没有可执行动词），
+ * 这时立刻换，不等冷却 —— 因为不换等于没有任何顺序可用。
+ */
+function selectRoute(scores, now) {
+  const viable = scores.filter(s => s.prereqOk);
+  if (!viable.length) {
+    routeState.id = null;
+    routeState.eta = null;
+    routeState.reason = "no-executable-route";
+    return null;
+  }
+  const ranked = viable.slice().sort((a, b) => compareScores(a, b));
+  const best = ranked[0];
+  const current = routeState.id ? (scores.find(s => s.id === routeState.id) ?? null) : null;
+
+  if (!current) {
+    routeState.id = best.id;
+    routeState.since = now;
+    routeState.eta = best.etaRealSec;
+    routeState.reason = "init";
+    return { changed: false, kind: "init", from: null, to: best.id, reason: "首次选定" };
+  }
+  if (!current.prereqOk) {
+    routeState.id = best.id;
+    routeState.since = now;
+    routeState.eta = best.etaRealSec;
+    routeState.switches++;
+    routeState.reason = "current-unviable";
+    routeState.lastSwitch = { at: now, from: current.id, to: best.id, reason: "当前路线失效" };
+    return { changed: true, kind: "unviable", from: current.id, to: best.id, reason: "当前路线失效" };
+  }
+  if (best.id === current.id) {
+    routeState.eta = current.etaRealSec;
+    routeState.reason = "keep";
+    return { changed: false, kind: "keep", from: current.id, to: current.id, reason: "当前路线仍最优" };
+  }
+
+  // 两边都得有 ETA 才谈「便宜 15%」；否则不换（fail closed，宁可不动）。
+  const bothKnown = best.etaRealSec !== null && current.etaRealSec !== null;
+  const gain = bothKnown ? (current.etaRealSec - best.etaRealSec) / Math.max(1e-9, current.etaRealSec) : 0;
+  const cooled = now - routeState.since >= ROUTE_SWITCH_COOLDOWN_MS;
+
+  if (bothKnown && gain >= ROUTE_SWITCH_MARGIN && cooled) {
+    routeState.id = best.id;
+    routeState.since = now;
+    routeState.eta = best.etaRealSec;
+    routeState.switches++;
+    routeState.reason = `切换：预计省 ${Math.round(gain * 100)}%`;
+    routeState.lastSwitch = {
+      at: now, from: current.id, to: best.id,
+      reason: `预计剩余 ${Math.round(current.etaRealSec)}s → ${Math.round(best.etaRealSec)}s`,
+    };
+    return { changed: true, kind: "faster", from: current.id, to: best.id, toEta: best.etaRealSec, reason: routeState.reason };
+  }
+  routeState.eta = current.etaRealSec;
+  routeState.reason = !bothKnown
+    ? "hold：预计耗时无法估算，不换"
+    : (!cooled ? "hold：切换冷却中" : `hold：优势 ${Math.round(gain * 100)}% < ${Math.round(ROUTE_SWITCH_MARGIN * 100)}%`);
+  return { changed: false, kind: "hold", from: current.id, to: best.id, reason: routeState.reason };
+}
+
+/**
+ * 路线层主入口。**只读 + 只重排**，不碰任何购买权、不碰 manualHolds。
+ * @returns {object|null} 决策对象里的 `route` 段
+ */
+function planRoute(stage, strategy, now) {
+  const priority = Array.isArray(strategy.priority) ? strategy.priority.slice() : [];
+  const routes = (routeModel?.routes ?? []).filter(r =>
+    Array.isArray(r?.stageScope) && r.stageScope.includes(stage.id));
+  if (!routes.length) {
+    routeState.id = null;
+    routeState.eta = null; // 阶段换了就必须清掉上一个阶段的 ETA，否则界面会显示过期数字
+    routeState.reason = "no-route-for-stage";
+    return {
+      stageId: stage.id,
+      current: null,
+      chosen: null,
+      etaRealSec: null,
+      confidence: "unknown",
+      priority: priority,
+      candidates: [],
+      note: "该阶段在 route-model.routes 里没有候选路线；按 spec 原序执行",
+    };
+  }
+
+  sampleRates(now);
+  const goalEta = estimateGoalEta(stage.id);
+  const scores = routes.map(r => scoreRoute(r, priority, goalEta));
+  const decision = selectRoute(scores, now);
+  const chosen = scores.find(s => s.id === routeState.id) ?? null;
+  const order = chosen?.order ?? priority;
+
+  return {
+    stageId: stage.id,
+    current: routeState.id,
+    chosen: chosen ? chosen.id : null,
+    chosenTitle: chosen ? chosen.title : null,
+    switched: decision.changed,
+    switchKind: decision.kind,
+    switchReason: decision.reason,
+    etaRealSec: chosen ? chosen.etaRealSec : null,
+    // confidence 的口径：
+    //   measured    —— 阈值是目标充要条件，且速率实测到了；
+    //   lower-bound —— 阈值只是必要条件之一（见 ROUTE_GOAL_PROGRESS.completeness），
+    //                  绝对秒数只能当下界，但**排序**仍然有效（目标项在同类比较里被消掉）；
+    //   unknown     —— 没有数，界面必须显示「无法估算」。
+    confidence: !chosen || chosen.etaRealSec === null
+      ? "unknown"
+      : (goalEta.completeness === "full" ? "measured" : "lower-bound"),
+    goalCompleteness: goalEta.completeness ?? null,
+    etaReason: goalEta.reason,
+    goalRes: goalEta.res,
+    goalBalanceL: goalEta.balanceL === null ? null : Math.round(goalEta.balanceL * 100) / 100,
+    goalThresholdL: goalEta.thresholdL === null ? null : Math.round(goalEta.thresholdL * 100) / 100,
+    switches: routeState.switches,
+    lastSwitch: routeState.lastSwitch,
+    // 排序后的候选（含被淘汰的），供面板与探针核对
+    candidates: scores
+      .slice()
+      .sort((a, b) => compareScores(a, b))
+      .map(s => ({
+        id: s.id, title: s.title, prereqOk: s.prereqOk,
+        etaRealSec: s.etaRealSec, etaReason: s.etaReason,
+        resourceCostSec: s.resourceCostSec, resourceCostUnknownVerbs: s.resourceCostUnknownVerbs,
+        risk: s.risk.level, ops: s.ops, unlocks: s.unlocks, reorderDistance: s.reorderDistance,
+      })),
+    priority: order,
+    specPriority: priority,
+    // 历史先验（不参与排序，只作参照；见本段头注释「口径」）
+    prior: Array.isArray(routeModel?.calibration?.baseline) ? routeModel.calibration.baseline : [],
+  };
+}
+
 /**
  * 求值，返回决策对象。**只读**。
  * @param {boolean} force 忽略 1 s 节流（状态变化时用）
@@ -321,6 +835,18 @@ export function evaluate(force = false) {
     }
     const holdUntil = manualHolds.get(stage.goal) ?? 0;
 
+    // ── 路线择优（Oreki R42）────────────────────────────────────────────
+    // 失败必须**只让路线层失效**，不能让整个决策降级：
+    // 路线层是增强项，spec 原序是保底项。所以这里单独 try/catch，出错就退回原序。
+    let route = null;
+    let priority = Array.isArray(strategy.priority) ? strategy.priority.slice() : [];
+    try {
+      route = planRoute(stage, strategy, now);
+      if (route && Array.isArray(route.priority) && route.priority.length) priority = route.priority;
+    } catch (e) {
+      route = { error: String((e && e.message) || e), priority, confidence: "unknown" };
+    }
+
     const decision = {
       ok: true,
       at: now,
@@ -333,9 +859,13 @@ export function evaluate(force = false) {
       strategy: {
         id: strategy.id,
         title: strategy.title,
-        priority: Array.isArray(strategy.priority) ? strategy.priority.slice() : [],
+        // 重排后的顺序（= 绑定 ∩ spec.priority，集合不变，只换次序）
+        priority,
+        // 原序一并留着：面板/探针要能回答「有没有被重排、重排成什么」
+        specPriority: Array.isArray(strategy.priority) ? strategy.priority.slice() : [],
         guards: Array.isArray(strategy.guards) ? strategy.guards.slice() : [],
       },
+      route,
       blockers: blockers.map(b => ({ id: b.id, title: b.title, advice: b.advice, source: b.source })),
       manualHold: holdUntil > now ? { goalId: stage.goal, untilMs: holdUntil } : null,
       degraded: false,
@@ -384,6 +914,10 @@ export function debugState() {
     // 单测与探针必须用这份名单跟 spec 做集合比对，一个字符不同就要红。
     leafIds: Object.keys(LEAVES).slice().sort(),
     declaredLeafIds: (spec?.conditionGrammar?.leaves ?? []).slice().sort(),
+    // 面板要显示「无（已检查 N 项）」—— N 必须取自 spec，不能写死：
+    // spec 加一条 blocker，面板的「已检查」计数要跟着变，否则这句话立刻变成假话。
+    blockersDeclared: (spec?.blockers ?? []).length,
+    advisoriesDeclared: (spec?.advisories ?? []).length,
     lastEvalAgoMs: lastEvalAt ? Date.now() - lastEvalAt : null,
     degradedCount,
     lastError,
@@ -391,11 +925,120 @@ export function debugState() {
     lastKnownGood: lastKnownGood
       ? { stage: lastKnownGood.stage?.id ?? null, strategy: lastKnownGood.strategy?.id ?? null, at: lastKnownGood.at }
       : null,
+    // ── 路线层（Oreki R42）────────────────────────────────────────────
+    routeModelId: routeModel?.specId ?? null,
+    routeCount: (routeModel?.routes ?? []).length,
+    routeBindings: (spec?.routeBindings ?? []).map(b => b?.route ?? null).filter(Boolean),
+    route: routeState.id,
+    routeSinceMs: routeState.since ? Date.now() - routeState.since : null,
+    routeSwitches: routeState.switches,
+    routeLastSwitch: routeState.lastSwitch,
+    routeReason: routeState.reason,
+    routeEta: routeState.eta === null ? null : Math.round(routeState.eta * 10) / 10,
+    routeSymbols: {
+      switchMargin: ROUTE_SWITCH_MARGIN,
+      switchCooldownMs: ROUTE_SWITCH_COOLDOWN_MS,
+      tieBand: ROUTE_TIE_BAND,
+      rateWindow: ROUTE_RATE_WINDOW,
+      rateMinSamples: ROUTE_RATE_MIN_SAMPLES,
+    },
+    // 采样序列长度：为 0 说明「连样本都没采到」，ETA 必然 null，不是模型算不出来
+    rateSampleCounts: Object.fromEntries([...rateSamples.entries()].map(([k, v]) => [k, v.length])),
   };
 }
 
+// ── route-model.interface 要求的 8 个查询方法（供界面层，界面不参与决策）──────
+// 语义与返回值类型逐条对齐 `oreki-route-model.json` 的 `interface.methods`。
+// 全部只读；任何一项读不到就返回 null，不编默认值。
+
+/** 当前选定路线 id。 */
+export function getCurrentRouteId() {
+  return routeState.id;
+}
+
+/** 当前选定路线标题。 */
+export function getCurrentRouteTitle() {
+  const r = (routeModel?.routes ?? []).find(x => x?.id === routeState.id);
+  return r?.title ?? null;
+}
+
+/** 其他候选路线（含被淘汰原因）。 */
+export function getAlternativeRoutes() {
+  const route = lastKnownGood?.route;
+  if (!route || !Array.isArray(route.candidates)) return [];
+  return route.candidates
+    .filter(c => c.id !== routeState.id)
+    .map(c => `${c.title}（${c.prereqOk ? `预计 ${c.etaRealSec === null ? "无法估算" : `${c.etaRealSec}s`}` : "淘汰：无已登记动词"}）`);
+}
+
+/** 为什么选它。 */
+export function getSelectionReason() {
+  return routeState.reason;
+}
+
+/** 预计剩余现实秒数。null = 无法估算（界面必须显示「无法估算」）。 */
+export function getEstimatedRemainingSeconds() {
+  return routeState.eta === null ? null : Math.round(routeState.eta * 10) / 10;
+}
+
+/** 当前执行步骤（重排后的第一个动词）。 */
+export function getCurrentStep() {
+  const p = lastKnownGood?.strategy?.priority;
+  return Array.isArray(p) && p.length ? p[0] : null;
+}
+
+/** 上一次切换路线的原因。 */
+export function getLastSwitchReason() {
+  return routeState.lastSwitch ? routeState.lastSwitch.reason : null;
+}
+
+/** 当前阻塞条件（沿用 spec.blockers 的 id 列表）。 */
+export function getBlockers() {
+  return (lastKnownGood?.blockers ?? []).map(b => b.id);
+}
+
+/**
+ * 自测入口（**只给 `web/_tools/_r40/r42-route-selftest.mjs` 用**）。
+ *
+ * 为什么要把内部函数暴露出来：滞回、并列决胜、速率回归这几条都是纯函数，
+ * 但它们的输入（真实速率样本、切换冷却）没法靠改游戏全局变量构造出来 ——
+ * 不开这个口子就只能「跑一遍 12 分钟看有没有变慢」，那不是单元测试。
+ * 这里只暴露**只读引用**，外加一个 `reset()`（清空采样与路线状态），
+ * 生产路径上没有任何地方调用它。
+ */
+export const _internals = {
+  compareScores,
+  selectRoute,
+  orderForBinding,
+  estimateGoalEta,
+  scoreRoute,
+  rateOf,
+  log10Of,
+  verbPenalty,
+  reset() {
+    rateSamples.clear();
+    lastRateSampleAt = 0;
+    routeState.id = null;
+    routeState.since = 0;
+    routeState.eta = null;
+    routeState.switches = 0;
+    routeState.lastSwitch = null;
+    routeState.reason = null;
+  },
+  symbols: {
+    ROUTE_SWITCH_MARGIN,
+    ROUTE_SWITCH_COOLDOWN_MS,
+    ROUTE_TIE_BAND,
+    ROUTE_RATE_WINDOW,
+    ROUTE_RATE_MIN_SAMPLES,
+  },
+};
+
 export const OrekiSmartStrategy = {
-  evaluate, noteManualAction, clearManualHolds, debugState, evaluateCondition
+  evaluate, noteManualAction, clearManualHolds, debugState, evaluateCondition,
+  // 路线层（Oreki R42）
+  getCurrentRouteId, getCurrentRouteTitle, getAlternativeRoutes, getSelectionReason,
+  getEstimatedRemainingSeconds, getCurrentStep, getLastSwitchReason, getBlockers,
 };
 
 // 与其它 oreki 模块一致：挂到 globalThis，便于探针/面板读取（本模块不持有任何购买权）

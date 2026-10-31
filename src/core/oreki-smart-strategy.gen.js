@@ -466,6 +466,79 @@ const data = {
     "scope": "同一目标（goal id）",
     "note": "玩家手动执行了某目标对应的动作后，该目标 60 秒内不受自动策略驱动；其他目标照常。目的是「我点了就别跟我抢」"
   },
+  "routeBindings": [
+    {
+      "route": "eternity-tt-first",
+      "verbs": [
+        "buyTimeTheorem",
+        "buyTimeStudy",
+        "eternity"
+      ],
+      "advances": [
+        "buyTimeStudy"
+      ],
+      "note": "spec 原序。研究树是解锁现实的唯一通路，节流在 oreki-eternity-automation.js 内部，本绑定不改节流。"
+    },
+    {
+      "route": "eternity-ec-first",
+      "verbs": [
+        "eternity",
+        "buyTimeTheorem",
+        "buyTimeStudy"
+      ],
+      "advances": [
+        "eternity"
+      ],
+      "note": "先重置拿 EC 永久增益。只有预计耗时能证明它更快时才允许切（15% 阈值）。"
+    },
+    {
+      "route": "reality-glyph-first",
+      "verbs": [
+        "equipBestGlyph",
+        "buyRealityUpgrade",
+        "runReality"
+      ],
+      "advances": [
+        "runReality"
+      ],
+      "note": "spec 原序（runReality 本来就在最后）。"
+    },
+    {
+      "route": "reality-machine-first",
+      "verbs": [
+        "buyRealityUpgrade",
+        "equipBestGlyph",
+        "runReality"
+      ],
+      "advances": [
+        "runReality"
+      ],
+      "note": "先把现实机器攒出的升级买掉，再装符文。"
+    },
+    {
+      "route": "celestial-nav-order",
+      "verbs": [
+        "celestialSpecificOrder",
+        "spendUnlockResource",
+        "advanceCelestialNav"
+      ],
+      "advances": [],
+      "note": "三个动词全部 delegated，本绑定不产生任何代劳，只用于路线层识别「当前走法等于导航顺序」。"
+    },
+    {
+      "route": "pelle-shard-loop",
+      "verbs": [
+        "armageddonLoopForShards",
+        "buyPelleKeepAutobuyers",
+        "maxBigCrunchIntervalWithRealIP",
+        "armageddonOnceMoreToSetBreak",
+        "growAntimatterTo1e1000"
+      ],
+      "advances": [],
+      "note": "五个动词全部 delegated：相位机由 OrekiEndgameAutomation.driveDoomed() 独占，本绑定只描述顺序。"
+    }
+  ],
+  "routeBindingsNote": "【Oreki R42】路线层的动词绑定。route-model.json 只描述「怎么评、怎么选」，本段描述「每条路线该怎么买」—— 与 route-model.layering 的分层约定一致。硬约束：绑定里的动词必须已经出现在对应 strategy.priority 里，否则解释器直接丢弃；本段永远不能引入新的购买权。没有绑定、或绑定在当前策略下无有效动词的路线，会被 filter.missingFeature 淘汰并在面板写原因（当前：celestial-parallel-v 与 pelle-grow-only 两条）。",
   "advisories": [
     {
       "id": "challengeRewardMissing",

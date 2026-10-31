@@ -18,8 +18,10 @@
 //  C. 两层并行，各买各的
 //
 //  为什么选 B：
-//  · 现有 6 个阶段模块是**实测能通关的**（R40-A5：783.1 s 真实新档、10000×，
-//    `isGameEnd` 由 false 翻 true 一次，见 `_tools/_r40/R40A5-佩勒破无限.md`）。
+//  · 现有 6 个阶段模块是**实测能通关的**（`_tools/_r40/r40s1-full.jsonl`：708.1 s，
+//    `totAML 958.248 → 1032.015`、`gameEnd` 首真在 t=708.1；
+//    另一次同链路跑是 783.1 s，原始数据 `r40a5-arm2.jsonl`。两次数都留着，别只引一个。
+//    `isGameEnd` 每次都只由 false 翻 true 一次，见 `_tools/_r40/R40A5-佩勒破无限.md`），
 //    选 A 等于把刚验证过的购买逻辑整体下线，用一份新代码替换 —— 风险与收益完全不成比例。
 //  · 选 C 会让两层在同一帧抢同一笔资源（典型：IP 既买 ID 又买 IU），冲突不可观测。
 //  · 选 B 时「谁动的手」永远是确定的：模块先判，模块不动执行层才补一手，
@@ -131,7 +133,7 @@ const VERBS = {
   spendUnlockResource: { policy: "delegated", label: "花解锁资源", why: "同上" },
   advanceCelestialNav: { policy: "delegated", label: "推进天神导航", why: "同上" },
 
-  // ── 佩勒终局（归 OrekiEndgameAutomation，实测 783.1 s 通关的那套相位机）──
+  // ── 佩勒终局（归 OrekiEndgameAutomation，实测 708.1 s / 783.1 s 两次通关的那套相位机）──
   armageddonLoopForShards: { policy: "delegated", label: "末日循环攒碎片", why: "OrekiEndgameAutomation.driveDoomed 相位机独占" },
   buyPelleKeepAutobuyers: { policy: "delegated", label: "买 keepAutobuyers", why: "同上" },
   maxBigCrunchIntervalWithRealIP: { policy: "delegated", label: "拉满大坍缩间隔", why: "同上" },
@@ -156,6 +158,15 @@ const STATE = {
   noopUntil: Object.create(null),
   actionCount: 0,
   attemptCount: 0,
+  /**
+   * 「同帧不抢」的运行时证据（team-lead 验收要求，不是装饰）：
+   * · `takeovers`：执行层真正接管并调用方法的次数
+   * · `takeoverWhileModuleActed`：接管时**同一帧该 source 的摘要却非空**的次数 ⇒ 这就是抢了
+   * 判据来源就是 `game.js` 每帧传进来的 `observed`，不额外假设。
+   */
+  takeovers: 0,
+  takeoverWhileModuleActed: 0,
+  lastConflict: null,
   lastSwitch: null,                // { at, from, to, kind }
   lastDecision: null,
   manualClickAt: 0,
@@ -344,6 +355,15 @@ function tick(observed) {
   }
 
   const outcome = invoke(pick.verbId, pick.spec);
+  STATE.takeovers++;
+  // 「同帧不抢」的实测判据：接管这一刻，这一帧该 source 的摘要必须为空。
+  // 结构上它不可能非空（摘要非空 ⇒ observe 已把 idle 清零 ⇒ sourceReady 不成立），
+  // 但这里**真的查一遍**并把违例计数记下来 —— 结构推理出错时，这个数会变成非 0。
+  const sameFrame = observed?.[pick.spec.source];
+  if (sameFrame !== undefined && didAct(sameFrame)) {
+    STATE.takeoverWhileModuleActed++;
+    STATE.lastConflict = { at: Date.now(), verb: pick.verbId, source: pick.spec.source, summary: summarize(sameFrame) };
+  }
   // actionCount 只算**真的买到了**；空转尝试记在 attemptCount。两者分开，
   // 否则面板上的「执行次数」会把每 250 ms 一次的空调用也算成动作，看着像在干活其实没有。
   if (outcome.acted) STATE.actionCount++;
@@ -406,6 +426,9 @@ function debugState() {
     ),
     actionCount: STATE.actionCount,
     attemptCount: STATE.attemptCount,
+    takeovers: STATE.takeovers,
+    takeoverWhileModuleActed: STATE.takeoverWhileModuleActed,
+    lastConflict: STATE.lastConflict,
     threshold: IDLE_FRAMES_BEFORE_ACT,
     registered: [...REGISTRY.keys()],
   };

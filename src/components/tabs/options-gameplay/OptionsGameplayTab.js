@@ -4,6 +4,7 @@ import PrimaryToggleButton from "../../PrimaryToggleButton.js";
 import SliderComponent from "../../SliderComponent.js";
 import { GameSpeed } from "../../../core/speed-config.js";
 import { OrekiSmartExecutor } from "../../../core/oreki-smart-executor.js";
+import { OrekiSmartStrategy } from "../../../core/oreki-smart-strategy.js";
 
 export default {
   name: "OptionsGameplayTab",
@@ -147,8 +148,12 @@ export default {
       let hold = "";
       let note = "";
       let s = null;
+      let declaredBlockers = null;
       try {
         s = OrekiSmartExecutor.debugState();
+        // 「无」与「坏」在 UI 上必须可区分：玩家看到「无」分不清是「检查过没有阻塞」
+        // 还是「这个功能没做」。所以空态写成「无（已检查 N 项）」，N 取自 spec 的 blocker 条数。
+        declaredBlockers = OrekiSmartStrategy.debugState().blockersDeclared ?? null;
       } catch (e) {
         s = null;
       }
@@ -174,7 +179,9 @@ export default {
       const nextText = s.next
         ? `${s.next.label}${s.next.policy === "owned" ? "" : `（${s.next.policy === "delegated" ? "归阶段模块" : s.next.policy === "unsupported" ? "原版无此入口" : "未登记"}）`}`
         : "—";
-      const blockerText = s.blockers.length ? s.blockers.map(b => b.title).join("；") : "无";
+      const blockerText = s.blockers.length
+        ? s.blockers.map(b => b.title).join("；")
+        : (declaredBlockers === null ? "无（已检查项数无法读取）" : `无（已检查 ${declaredBlockers} 项）`);
       const switchText = s.lastSwitch
         ? `${s.lastSwitch.from ? `${s.lastSwitch.from} → ` : ""}${s.lastSwitch.to}（${fmtAgo(s.lastSwitch.at)}）`
         : "—";

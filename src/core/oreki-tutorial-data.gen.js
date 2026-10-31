@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 export default {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-30",
+  "updatedAt": "2026-10-31",
   "note": "本文件是 Web 与 Android 两端游戏内教程的唯一内容源。Web 通过 src/core/oreki-tutorial.js 直接 import 渲染；Android 侧由 scripts/oreki_tutorial_gen.py 在构建期读取并生成 TutorialContent.smali。禁止在 smali 或任何渲染组件里另写一份正文。字段定义见 docs/TUTORIAL_SCHEMA.md 与工作区 AGENTS.md §24.3（十个字段一一对应）。",
   "chapters": [
     {
@@ -36,7 +36,7 @@ export default {
         }
       ],
       "buyOrder": [],
-      "automation": "本 MOD 的自动购买器总开关默认开启（player.auto.autobuyersOn 初值 true）。开局阶段维度、计数频率、维度提升、星系、大坍缩五个购买器在首次无限后即可用，不需要做挑战解锁。",
+      "automation": "本 MOD 的自动购买器总开关默认开启（player.auto.autobuyersOn 初值 true）。开局阶段维度、计数频率、维度提升、星系、大坍缩五个购买器在首次无限后即可用，不需要做挑战解锁。这个开关在界面上怎么确认：等总反物质攒到 1e40，打开顶部的「自动化」页签，进「自动购买器」子页签，最上面那颗按钮写着「暂停自动购买器」就说明自动购买器总开关是开的；写着「恢复自动购买器」就是被关过。在那之前页签还没出现，你看不到也不用看——新档的开关一定是开的。",
       "challenges": null,
       "numbers": [
         {
@@ -149,7 +149,7 @@ export default {
         "计数频率：剩余反物质够就买",
         "反物质维度：必须按第 1 → 第 8 升序补，低维度没有数量时高维度不进入可购买状态"
       ],
-      "automation": "本章不需要任何手动操作。每帧固定顺序为：买计数频率 → 能买就买维度提升 → 能买就买反物质星系 → 第 1~8 维度升序买最大（src/game.js:274-311 的 tryOrekiEarlyRoutine）。它只看一个开关：player.auto.autobuyersOn，默认开（src/core/player.js:63）。注意「自动化 / Automation」页签本身要等总反物质 ≥ 1e40 才出现（src/core/secret-formula/tabs.js:179），所以在开局这一分钟里你看不到那个开关，而它此时一定是开着的。这段自动化走的是原版购买函数（buyMaxDimension / buyMaxTickSpeed / requestDimensionBoost / requestGalaxyReset），不绕过成本、不写存档字段。速度倍率只放大产量，不放大购买次数（自动器每帧只动一次），所以本章的耗时由「每帧买一次」这个节拍决定，去调倍率不会带来数量级的差别。",
+      "automation": "本章不需要任何手动操作。每帧固定顺序为：买计数频率 → 能买就买维度提升 → 能买就买反物质星系 → 第 1~8 维度升序买最大（src/game.js:274-311 的 tryOrekiEarlyRoutine）。它只看一个开关：player.auto.autobuyersOn，默认开（src/core/player.js:63）。注意「自动化 / Automation」页签本身要等总反物质 ≥ 1e40 才出现（src/core/secret-formula/tabs.js:179），所以在开局这一分钟里你看不到那个开关，而它此时一定是开着的。这段自动化走的是原版购买函数（buyMaxDimension / buyMaxTickSpeed / requestDimensionBoost / requestGalaxyReset），不绕过成本、不写存档字段。速度倍率只放大产量，不放大购买次数（自动器每帧只动一次），所以本章的耗时由「每帧买一次」这个节拍决定，去调倍率不会带来数量级的差别。页签出现之后想确认：顶部「自动化」→「自动购买器」，最上面那颗按钮写着「暂停自动购买器」就是开着；一旦你点了它，按钮变成「恢复自动购买器」，本章这套例程也就跟着停了。",
       "challenges": null,
       "numbers": [
         {
@@ -292,7 +292,7 @@ export default {
         "计数频率：反物质有富余就买",
         "反物质维度：第 1 → 第 8 升序补"
       ],
-      "automation": "本章除了「维度献祭」那一下，其余全部自动：维度提升、反物质星系、8 个维度、计数频率都由 tryOrekiEarlyRoutine 每帧处理（src/game.js:274-311）。献祭在无限挑战 2 完成之前没有自动器，必须手动点（src/core/autobuyers/sacrifice-autobuyer.js:11-14，第 6 章会拿到这个自动器）。另外 AD4 让首次永恒之前的维度提升与星系重置不清反物质（src/core/dimboost.js:207-214、src/core/oreki-keep-antimatter.js），所以连续重置不会把反物质打回 0，这也是自动器能一路往上推的原因。",
+      "automation": "本章除了「维度献祭」那一下，其余全部自动：维度提升、反物质星系、8 个维度、计数频率都由 tryOrekiEarlyRoutine 每帧处理（src/game.js:274-311）。献祭在无限挑战 2 完成之前没有自动器，必须手动点（src/core/autobuyers/sacrifice-autobuyer.js:11-14，第 6 章会拿到这个自动器）。另外 AD4 让首次永恒之前的维度提升与星系重置不清反物质（src/core/dimboost.js:207-214、src/core/oreki-keep-antimatter.js），所以连续重置不会把反物质打回 0，这也是自动器能一路往上推的原因。本章的自动部分同样挂在自动购买器总开关上：顶部「自动化」→「自动购买器」，最上面那颗按钮写着「暂停自动购买器」，才说明它是开着的。",
       "challenges": null,
       "numbers": [
         {
@@ -425,7 +425,7 @@ export default {
         }
       ],
       "buyOrder": [],
-      "automation": "本章不需要手动操作，第一次大坍缩由 tryOrekiEarlyRoutine 在「还没打破无限 + Player.canCrunch 为真」时自动调用 bigCrunchResetRequest(true)（src/game.js:308-310）。前提只有一个：player.auto.autobuyersOn 为真（默认开）。原版路径下大坍缩自动器的默认间隔是 150000 毫秒，而且 thisInfinityRealTime 按真实时间算，所以开局要干等 150 秒；本 MOD 的这条自动化绕开的正是这段等待，不是绕开坍缩条件。",
+      "automation": "本章不需要手动操作，第一次大坍缩由 tryOrekiEarlyRoutine 在「还没打破无限 + Player.canCrunch 为真」时自动调用 bigCrunchResetRequest(true)（src/game.js:308-310）。前提只有一个：player.auto.autobuyersOn 为真（默认开）。原版路径下大坍缩自动器的默认间隔是 150000 毫秒，而且 thisInfinityRealTime 按真实时间算，所以开局要干等 150 秒；本 MOD 的这条自动化绕开的正是这段等待，不是绕开坍缩条件。想确认这个开关：顶部「自动化」→「自动购买器」子页签，最上面那颗按钮写着「暂停自动购买器」就是开着；若是「恢复自动购买器」，坍缩又会变回你要盯着的事。",
       "challenges": null,
       "numbers": [
         {
@@ -547,7 +547,7 @@ export default {
         "1000 IP：仅离线时自动生成 IP（要先解锁成就 41）",
         "全程自动购买，上面只是「它会按什么顺序花你的 IP」的说明，不需要你排序"
       ],
-      "automation": "本章不需要手动买任何升级：AD6 每帧替你买 1 个无限升级（src/core/oreki-early-automation.js:29、src/game.js:861-866），「无限点数 ×2」那一条也在这个范围内。间隔升级与打破无限由 AD5 / AD5b 接管：IP 补到 32767、逐级买满间隔、然后调用 breakInfinity()（src/core/oreki-break-infinity-gate.js:64-118、src/game.js:196-220）。两者都只看 player.auto.autobuyersOn（默认开）。挑战是本章唯一值得你手动点的东西，因为「进入即完成」的奖励白拿（src/core/oreki-instant-challenges.js:7-15）。",
+      "automation": "本章不需要手动买任何升级：AD6 每帧替你买 1 个无限升级（src/core/oreki-early-automation.js:29、src/game.js:861-866），「无限点数 ×2」那一条也在这个范围内。间隔升级与打破无限由 AD5 / AD5b 接管：IP 补到 32767、逐级买满间隔、然后调用 breakInfinity()（src/core/oreki-break-infinity-gate.js:64-118、src/game.js:196-220）。两者都只看 player.auto.autobuyersOn（默认开）。挑战是本章唯一值得你手动点的东西，因为「进入即完成」的奖励白拿（src/core/oreki-instant-challenges.js:7-15）。确认位置：顶部「自动化」→「自动购买器」，最上面那颗按钮写着「暂停自动购买器」即总开关开着；本章这些自动购买全部以它为前置。",
       "challenges": "普通挑战 1~9：直接点进去，下一帧自动完成。它们的奖励本身是「各维度自动购买器的间隔升级权限」——本 MOD 已经把购买器提前给你了，所以这里拿的是升级权限和成就。普通挑战 10~12 要 16 次无限才解锁，解锁后再各点一次（原版奖励是自动维度提升 / 自动星系 / 自动大坍缩，本 MOD 同样已提前给，点它们主要为了成就）。全部都是「进入即完成」：点进去后别马上退出，给它一帧时间结算。",
       "numbers": [
         {
@@ -687,18 +687,30 @@ export default {
     {
       "id": "ch05",
       "title": "第 5 章　打破无限",
-      "subtitle": "3e4 ~ 5e11 IP",
+      "subtitle": "150000 → 100 毫秒，32767 无限点数",
       "stageKey": "infinity",
       "draft": false,
-      "stageGoal": "让「打破无限」这一步真的发生（player.break 变真），使反物质可以超过 1.7976931348623157e308；随后 12 个打破无限升级（9 个一次性 + 3 个可重复）会被自动买下。",
-      "entry": "大坍缩自动购买器的间隔已到 100 毫秒（这是 Break 的硬前置，不是 Break 的奖励）。",
+      "stageGoal": "先把大坍缩自动器的间隔从 150000 毫秒降到 100 毫秒（15 级、累计 32767 无限点数），再让「打破无限」真的发生（player.break 变真）。成功后反物质可以超过 1.7976931348623157e308，12 个打破无限升级（9 个一次性 + 3 个可重复）会被逐条买走。",
+      "entry": "你已经完成过第一次无限（无限次数 ≥ 1），并且不在任何挑战里。这时大坍缩自动器的间隔还没拉满——它就是本章第一件要解决的事：breakInfinity() 第一行就是「间隔没拉满就直接 return」（src/game.js:95），所以是先有间隔、后有打破。间隔从 150000 毫秒起，每买一级 ×0.6、成本 ×2（src/core/autobuyers/autobuyer.js:169-177），第 15 级落到 100 毫秒，价格依次 1、2、4、…、16384，累计 32767 无限点数。",
       "steps": [
         {
-          "text": "「打破无限」由程序替你按：间隔拉满、总开关开着、且不在任何挑战里时，Break 闸门会直接调用 breakInfinity()。按钮本身是开关（player.break = !player.break），所以它只会被按一次。",
+          "text": "打开底栏「自动化 / Automation」→ 自动购买器，确认页面顶部的自动购买器总开关是开着的。本 MOD 的间隔自动购买和自动打破都受这个开关控制（player.auto.autobuyersOn）。",
+          "auto": false
+        },
+        {
+          "text": "在同一个页面找到「大坍缩 / Big Crunch」那一格的按钮。还显示「时间间隔减少 40%」加一行「价格：N 无限点数」= 还没拉满；这个按钮整块消失 = 已经到 100 毫秒。",
+          "auto": false
+        },
+        {
+          "text": "把这个按钮点 15 次，价格每次翻倍（1 → 2 → 4 → … → 16384），总共花 32767 无限点数。原版没有任何自动购买器会升这一项，只能手点；本 MOD 会在无限点数够的时候按同一价格连续替你买完，你只要看这个按钮是不是已经消失。",
           "auto": true
         },
         {
-          "text": "判据一：「无限 / Infinity → 打破无限 / Break Infinity」页顶部的按钮文字变成「已打破无限」，并且变成不可再点。",
+          "text": "间隔到 100 毫秒后，去底栏「无限 / Infinity」→「打破无限 / Break Infinity」页，点页面顶部的按钮。本 MOD 在间隔拉满、总开关开着、且不在任何挑战里时会自动替你按一次（src/game.js:217-225）；如果按钮文字还是没变，自己点一下。",
+          "auto": false
+        },
+        {
+          "text": "判据一：顶部按钮文字变成「已打破无限」。注意它是开关（player.break = !player.break，src/game.js:102），变成「已打破无限」之后就不要再点，再点会退回未打破。",
           "auto": false
         },
         {
@@ -706,42 +718,70 @@ export default {
           "auto": false
         },
         {
-          "text": "打破无限的一瞬间，所有自动购买器的间隔会被免费拉满（不花 IP）。此后你不用再为任何购买器的间隔掏钱。",
+          "text": "打破的一瞬间，所有自动购买器的间隔会被免费拉满（src/game.js:97-99），此后你不用再为任何购买器的间隔掏无限点数。",
           "auto": true
         },
         {
-          "text": "12 个打破无限升级由 AU6 每帧自动买：价格从 1e4 IP 到 1e15 IP，含 3 个可重复的（计数频率成本增速 1e6 起 8 级、反物质维度成本增速 1e7 起 7 级、IP 自动生成 1e7 起 10 级）。",
+          "text": "12 个打破无限升级由本 MOD 每帧自动买（src/core/oreki-autobuy-break-infinity.js:22-32）：价格从 1e4 到 1e15 无限点数，含 3 个可重复的（计数频率成本增速 1e6 起 8 级、反物质维度成本增速 1e7 起 7 级、无限点数自动生成 1e7 起 10 级）。",
           "auto": true
-        },
-        {
-          "text": "如果按钮一直是灰的，按这个顺序查：① 按 A 键看提示是不是「自动购买器已恢复」（关着就先打开）；② 看大坍缩自动器的间隔是不是 100 毫秒；③ 看自己是不是还在某个挑战里——挑战中 breakInfinity() 会直接返回。",
-          "auto": false
         }
       ],
       "buyOrder": [
-        "1e4 IP｜基于总反物质的维度加成（一次性）",
-        "5e4 IP｜基于当前反物质的维度加成（一次性）",
-        "5e11 IP｜星系增强 50%（一次性）",
-        "1e5 IP｜基于无限次数的维度加成（一次性）",
-        "1e6 IP｜基于成就数的维度加成（一次性）",
-        "1e7 IP｜基于最慢普通挑战时间的维度加成（一次性）",
-        "2e7 IP｜被动生成无限次数（一次性）",
-        "5e9 IP｜自动购买最大维度提升（一次性）",
-        "1e15 IP｜自动购买器速度加倍（一次性）",
-        "以上全部自动购买，顺序由「当前买得起哪一条」决定，不需要你排序"
+        "最先买：大坍缩间隔升级 1 → 2 → 4 → … → 16384 无限点数，15 级共 32767。这是通往「打破无限」的唯一路径，优先级高于所有无限升级——钱先留给它。",
+        "间隔没拉满之前，一条无限升级都不要买：多一次坍缩没意义，多一级间隔才是进度。",
+        "1e4 无限点数｜基于产生的总反物质，给予反物质维度倍数加成（一次性）",
+        "5e4 无限点数｜基于当前反物质，给予反物质维度倍数加成（一次性）",
+        "5e11 无限点数｜星系增强 50%（一次性）",
+        "1e5 无限点数｜基于无限次数，给予反物质维度倍数加成（一次性）",
+        "1e6 无限点数｜基于已完成的成就数，给予反物质维度倍数加成（一次性）",
+        "1e7 无限点数｜基于最慢的普通挑战时间，给予反物质维度倍数加成（一次性）",
+        "2e7 无限点数｜被动生成无限次数（一次性）",
+        "5e9 无限点数｜自动购买最大维度提升（一次性）",
+        "1e15 无限点数｜自动购买器速度加倍（一次性）",
+        "以上 12 条全部自动购买，顺序由「当前买得起哪一条」决定，不需要你排序。"
       ],
-      "automation": "整章不需要手动操作。按按钮的是 AD5b（src/game.js:203-220 的 tryOpenBreakInfinityGate 第二段），买 12 个升级的是 AU6（src/core/oreki-autobuy-break-infinity.js:39-55）。两者都受 player.auto.autobuyersOn 控制（默认开），并且在任何挑战里都不生效。注意 breakInfinity() 内部会先把所有自动购买器的间隔免费拉满再翻转 player.break（src/game.js:84-96），这是原版行为，不是本 MOD 加的。",
-      "challenges": null,
+      "automation": "整章不需要手动操作，前提是自动购买器总开关开着。间隔升级走的是真实购买路径、照价扣无限点数，余额够一级就买一级，15 级买完为止；把 12 个打破无限升级逐条买下的是自动购买模块。这两件事都受 player.auto.autobuyersOn 控制（默认开），并且在任何挑战里都不生效。另外 breakInfinity() 内部会先把所有自动购买器的间隔免费拉满再翻转 player.break（src/game.js:97-99），这是原版行为，不是本 MOD 加的。",
+      "challenges": "「打破无限」本身不需要先完成任何挑战，但有两条与挑战相关的硬约束。① 任何挑战进行中 breakInfinity() 会直接返回（src/game.js:96），本 MOD 的闸门在挑战里同样不工作（普通挑战、无限挑战、永恒挑战都算，src/core/oreki-break-infinity-gate.js:67），所以要打破就先把挑战停掉。② 想自己手点间隔升级按钮的话，原版要求先完成普通挑战 12，否则那一行只显示「完成挑战以升级自动购买间隔」（src/core/autobuyers/big-crunch-autobuyer.js:30-32、src/components/tabs/autobuyers/AutobuyerIntervalButton.js:39-52）；本 MOD 的自动购买走的是照价扣无限点数的同一入口，不受这条界面门槛限制。",
       "numbers": [
+        {
+          "label": "大坍缩自动器初始间隔",
+          "value": "150000 毫秒",
+          "src": "src/core/player.js:81-83"
+        },
+        {
+          "label": "每级间隔变化",
+          "value": "×0.6，下限 100 毫秒",
+          "src": "src/core/autobuyers/autobuyer.js:169-177"
+        },
+        {
+          "label": "拉满需要的级数",
+          "value": "15 级（150000×0.6^14 ≈ 117.5 仍未到 100，第 15 级落到 70.5 被下限截成 100）",
+          "src": "src/core/oreki-break-infinity-gate.js:46-51"
+        },
+        {
+          "label": "单级价格序列",
+          "value": "1、2、4、…、16384 无限点数（每级 ×2）",
+          "src": "src/core/autobuyers/autobuyer.js:172"
+        },
+        {
+          "label": "拉满累计成本",
+          "value": "32767 无限点数（= 2^15 − 1）",
+          "src": "src/core/oreki-break-infinity-gate.js:51"
+        },
+        {
+          "label": "间隔拉满的判据",
+          "value": "大坍缩自动器 interval ≤ 100 毫秒",
+          "src": "src/core/autobuyers/autobuyer.js:165-167"
+        },
         {
           "label": "Break 前置条件",
           "value": "大坍缩自动器间隔 ≤ 100 毫秒",
-          "src": "src/game.js:85"
+          "src": "src/game.js:95"
         },
         {
           "label": "Break 时免费做的事",
           "value": "所有自动购买器间隔直接拉满",
-          "src": "src/game.js:87-89"
+          "src": "src/game.js:97-99"
         },
         {
           "label": "打破无限升级数量",
@@ -750,12 +790,12 @@ export default {
         },
         {
           "label": "最便宜的打破无限升级",
-          "value": "1e4 IP（基于总反物质的维度加成）",
+          "value": "1e4 无限点数（基于总反物质的维度加成）",
           "src": "src/core/secret-formula/infinity/break-infinity-upgrades.js:30-36"
         },
         {
           "label": "最贵的打破无限升级",
-          "value": "1e15 IP（自动购买器速度加倍）",
+          "value": "1e15 无限点数（自动购买器速度加倍）",
           "src": "src/core/secret-formula/infinity/break-infinity-upgrades.js:98-102"
         },
         {
@@ -764,22 +804,25 @@ export default {
           "src": "web/_tools/_r21-300.jsonl（milestone Break）"
         },
         {
-          "label": "Break 后 IP 尺度",
-          "value": "10^(log10(本纪最高反物质)/30 − 0.75) × IP 倍率",
-          "src": "src/game.js:139-141"
+          "label": "Break 后无限点数尺度",
+          "value": "10^(log10(本纪最高反物质)/30 − 0.75) × 无限点数倍率",
+          "src": "src/game.js:149-163"
         },
         {
           "label": "3 个可重复 Break 升级的等级与涨幅",
-          "value": "计数频率成本增速 8 级（每级 ×5）/ 维度成本增速 7 级（每级 ×5e3）/ IP 自动生成 10 级（每级 ×10）",
+          "value": "计数频率成本增速 8 级（每级 ×5）/ 维度成本增速 7 级（每级 ×5e3）/ 无限点数自动生成 10 级（每级 ×10）",
           "src": "src/core/secret-formula/infinity/break-infinity-upgrades.js:104-136"
         }
       ],
-      "done": "「无限 / Infinity → 打破无限 / Break Infinity」的按钮显示「已打破无限」，且反物质可以超过 1.80e308。",
+      "done": "「无限 / Infinity → 打破无限 / Break Infinity」的按钮显示「已打破无限」，反物质超过 1.80e308；同时大坍缩自动器那一行的间隔升级按钮已经消失（间隔 = 100 毫秒）。",
       "next": "进第 6 章：解锁无限维度 ID1~ID8，把无限挑战 IC1~IC8 各点一次，IP 推到 1e140 解锁复制器。",
       "traps": [
-        "「打破无限」是开关不是一次性按钮：如果它已经是「已打破无限」，再点会退回未打破状态（本 MOD 的自动化有 !player.break 守卫，但你的手没有）。看到已打破就别再点。",
-        "打破无限后反物质能超过 1e308，但单次坍缩收益仍然只有 10^(maxAM/30−0.75)；IP 要涨数量级，靠的是无限维度（第 6 章），不是多坍缩几次。",
-        "12 个升级里最贵的是 1e15 IP 那条，别盯着它看进度——它要到很后面才买得起，不影响主线。"
+        "「打破无限」是开关不是一次性按钮：如果它已经是「已打破无限」，再点会退回未打破状态（player.break = !player.break，src/game.js:102）。本 MOD 的自动化带 !player.break 守卫，但你的手没有——看到已打破就别再点。",
+        "自己手点间隔按钮点了没反应：原版要求先完成普通挑战 12，这个按钮才会出现（src/core/autobuyers/big-crunch-autobuyer.js:30-32）。本 MOD 的自动购买绕过了这条界面门槛，但你要是关掉了自动购买器总开关，就得先补普通挑战 12。",
+        "把无限点数全花在无限升级上，间隔一级都买不起：间隔总共要 32767 无限点数，没拉满之前钱只留给它，别的一律不买。",
+        "无限点数涨得太慢、半天买不起一级间隔：先买「无限 / Infinity」→「无限升级 / Infinity Upgrades」里那句「将所有来源的无限点乘以 ×2」的可重复升级。它按成本 ×2、效果 ×2 滚，是没打破之前唯一能把每次坍缩收益抬上去的通道。",
+        "打破无限后反物质能超过 1e308，但单次坍缩收益仍然只有 10^(本纪最高反物质/30−0.75)×倍率；无限点数要涨数量级靠的是无限维度（第 6 章），不是多坍缩几次。",
+        "12 个升级里最贵的是 1e15 无限点数那条，别盯着它看进度——它要到很后面才买得起，不影响主线。"
       ],
       "table": {
         "head": [
@@ -850,7 +893,7 @@ export default {
           ]
         ]
       },
-      "note": "本章通常只持续几秒：间隔拉满 → 自动按 Break → 12 个升级被逐条买走。你真正要做的只是确认按钮文字变了。本章不刷无限挑战——无限挑战随打破无限一起在本章末尾才解锁，要等第 6 章逐个亮起再点；IC1~IC8 的解锁阈值与目标见第 6 章。"
+      "note": "本章通常只持续几秒：间隔被自动买满 → 自动按 Break → 12 个升级被逐条买走。你真正要做的只是确认按钮文字变了。本章不刷无限挑战——无限挑战随打破无限一起在本章末尾才解锁，要等第 6 章逐个亮起再点；无限挑战 1~8 的解锁阈值与目标见第 6 章。"
     },
     {
       "id": "ch06",
@@ -892,7 +935,7 @@ export default {
         "ID 之外的 IP 用途（无限点数 ×2、打破无限升级）同样由程序按帧代买，不用你排序",
         "到 1e140 IP 时留出这笔钱用于解锁复制器（第 7 章）"
       ],
-      "automation": "本章有两处自动化在顶着：AD3 把单次坍缩收益兜到 1e8 并在同窗口内自动买无限维度（src/game.js:182-193、:312-328），AD3b 在 IP ≥ 1e8 后暂停自动坍缩直到本纪最高反物质到 1e1100（src/core/autobuyers/big-crunch-autobuyer.js:154-167 的 waitingForId1Peak）。无限维度的持续购买由 AD6 每帧 InfinityDimensions.buyMax() 完成（src/core/oreki-early-automation.js），走的是「无限维度 → 全部购买」同一条路径。全程受 player.auto.autobuyersOn 控制。无限挑战没有自动器：要你自己点进去，但只有「点进去」这一个动作。",
+      "automation": "本章有两处自动化在顶着：AD3 把单次坍缩收益兜到 1e8 并在同窗口内自动买无限维度（src/game.js:182-193、:312-328），AD3b 在 IP ≥ 1e8 后暂停自动坍缩直到本纪最高反物质到 1e1100（src/core/autobuyers/big-crunch-autobuyer.js:154-167 的 waitingForId1Peak）。无限维度的持续购买由 AD6 每帧 InfinityDimensions.buyMax() 完成（src/core/oreki-early-automation.js），走的是「无限维度 → 全部购买」同一条路径。全程受 player.auto.autobuyersOn 控制。无限挑战没有自动器：要你自己点进去，但只有「点进去」这一个动作。确认位置：顶部「自动化」→「自动购买器」，最上面那颗按钮写着「暂停自动购买器」才是开着；关掉它，自动买无限维度与等待 ID1 峰值的判定会一起停。",
       "challenges": "无限挑战 1~8 全部「进入即完成」，所以打法就是：解锁一个点一个，点完等一帧。奖励（各挑战页写的加成）立刻生效，其中 IC2 会给维度献祭自动器、IC1 给无限维度倍率、IC3 给计数频率相关倍率。不要在挑战里手动打，也不要手动退出。",
       "numbers": [
         {
@@ -1208,7 +1251,7 @@ export default {
         "时间研究：程序按数据库顺序买，你只要保证 TT 不被别处花掉",
         "时间维度 5~8：等对应时间研究点亮后再买，不用提前囤 EP"
       ],
-      "automation": "本章几乎全自动。AD10 每帧做三件事：调 buyMaxTimeDimension 买时间维度 1~4、调 TimeTheorems.buyMax(true) 用 EP/IP/反物质买 TT、每 30 帧扫一遍时间研究数据库逐个尝试购买（src/core/oreki-eternity-automation.js:1-32）。它走的是原版购买函数，成本与前置一条不少，也不伪造解锁标志。自动永恒仍在跑：只有当本次收益 ≥ 当前 EP 的 10 倍时才重置（src/core/oreki-eternity-automation.js:591），避免把刚买的 TT 白扔。全部受 player.auto.autobuyersOn 控制。",
+      "automation": "本章几乎全自动。AD10 每帧做三件事：调 buyMaxTimeDimension 买时间维度 1~4、调 TimeTheorems.buyMax(true) 用 EP/IP/反物质买 TT、每 30 帧扫一遍时间研究数据库逐个尝试购买（src/core/oreki-eternity-automation.js:1-32）。它走的是原版购买函数，成本与前置一条不少，也不伪造解锁标志。自动永恒仍在跑：只有当本次收益 ≥ 当前 EP 的 10 倍时才重置（src/core/oreki-eternity-automation.js:591），避免把刚买的 TT 白扔。全部受 player.auto.autobuyersOn 控制。确认位置：顶部「自动化」→「自动购买器」，最上面那颗按钮写着「暂停自动购买器」即开着；关掉后时间维度、TT 与时间研究的自动购买会立刻停，已经买到的不退。",
       "challenges": null,
       "numbers": [
         {
@@ -2321,7 +2364,7 @@ export default {
         "后三项（符文安魂曲 / 后目的地等）每档只值 2 点但条件更硬，凑不够 36 再回头做",
         "太阳神：先把宠物总等级推到 20 解锁追忆，再考虑单个宠物冲 25"
       ],
-      "automation": "薇的解锁由 `oreki-celestial-automation.js` 负责：六项条件达标后它调 `V.unlockCelestial()`。但从 R37-A 起它**故意不再自动进入薇的现实**——进去会压低全局产量，而 180 分钟通关的终局链是「IU15 → 莱特拉 → IU25 → 佩勒」，完全不依赖薇或太阳神。同理，无名氏的现实只在持有入场券（1e40 年储藏时间 + 一个 5000 级符文 + 一个 100% 稀有度符文）时才会自动进入，因为无票进入会自锁：产量被压到 EC 重打不完，现实永远无法完成，run 清不掉。",
+      "automation": "薇的解锁由 `oreki-celestial-automation.js` 负责：六项条件达标后它调 `V.unlockCelestial()`。但从 R37-A 起它**故意不再自动进入薇的现实**——进去会压低全局产量，而 180 分钟通关的终局链是「IU15 → 莱特拉 → IU25 → 佩勒」，完全不依赖薇或太阳神。同理，无名氏的现实只在持有入场券（1e40 年储藏时间 + 一个 5000 级符文 + 一个 100% 稀有度符文）时才会自动进入，因为无票进入会自锁：产量被压到 EC 重打不完，现实永远无法完成，run 清不掉。确认位置：顶部「自动化」→「自动购买器」，最上面那颗按钮写着「暂停自动购买器」才是自动购买器总开关开着；关掉它，连六项条件达标后替你解锁薇这一步也不会发生。",
       "challenges": null,
       "numbers": [
         {
@@ -2478,7 +2521,7 @@ export default {
         "奇点：暗能量到 200 就先冷凝一次，拿第一个里程碑",
         "奇点扩容：扩容一次上限 ×10，但冷凝收益 ×11，越早扩容越划算"
       ],
-      "automation": "莱特拉这一段由 `oreki-endgame-automation.js` 接管：它按原版 API 买 IU15（`ImaginaryUpgrade(15).purchase()`）、在「本现实真实时间 < 15 秒」时进 run 给熵增长留余量、飞升、以及在条件满足后买 IU25 进佩勒。`oreki-iu15-sprint.js` 专门负责「不买 ID1、把反物质指数推到 1e8」这一段。这两个模块都不写解锁位、不发货币，买不起就下一帧重试。奇点冷凝在原版里只有 UI 按钮，需要你手动点。",
+      "automation": "莱特拉这一段由 `oreki-endgame-automation.js` 接管：它按原版 API 买 IU15（`ImaginaryUpgrade(15).purchase()`）、在「本现实真实时间 < 15 秒」时进 run 给熵增长留余量、飞升、以及在条件满足后买 IU25 进佩勒。`oreki-iu15-sprint.js` 专门负责「不买 ID1、把反物质指数推到 1e8」这一段。这两个模块都不写解锁位、不发货币，买不起就下一帧重试。奇点冷凝在原版里只有 UI 按钮，需要你手动点。确认位置：顶部「自动化」→「自动购买器」，最上面那颗按钮写着「暂停自动购买器」才是自动购买器总开关开着；关掉它，IU15、飞升与 IU25 这三步都会停。",
       "challenges": null,
       "numbers": [
         {
@@ -2641,7 +2684,7 @@ export default {
         "末日：遗烬收益 ≥ 1 就按，越早攒遗烬，后面越省时间",
         "终局前：把大坍缩相关的自动重置压住，别让反物质峰值被反复清零"
       ],
-      "automation": "IU25、进入佩勒、佩勒升级与终局推进都由 `oreki-endgame-automation.js` 接管：它按原版 API 调 `ImaginaryUpgrade(25).purchase()`、`Pelle.initializeRun()`、`PelleUpgrade.all[i].purchase()`，买不起就下一帧重试，不写任何解锁位、不发货币。模块头注释明确写了「这条链在原版里全部只有 UI 调用点，自动化一概不碰」，所以没有这个模块时即使材料齐了也不会往前走。毁灭（进入佩勒）与末日（重置）仍要你自己确认，它们是不可逆操作。",
+      "automation": "IU25、进入佩勒、佩勒升级与终局推进都由 `oreki-endgame-automation.js` 接管：它按原版 API 调 `ImaginaryUpgrade(25).purchase()`、`Pelle.initializeRun()`、`PelleUpgrade.all[i].purchase()`，买不起就下一帧重试，不写任何解锁位、不发货币。模块头注释明确写了「这条链在原版里全部只有 UI 调用点，自动化一概不碰」，所以没有这个模块时即使材料齐了也不会往前走。毁灭（进入佩勒）与末日（重置）仍要你自己确认，它们是不可逆操作。确认位置：顶部「自动化」→「自动购买器」，最上面那颗按钮写着「暂停自动购买器」才是自动购买器总开关开着；关掉它，进入佩勒与佩勒升级都不会再自动推进。",
       "challenges": null,
       "numbers": [
         {
@@ -3098,7 +3141,7 @@ export default {
       "id": "apx_automation",
       "title": "附录 F　自动化总览",
       "auto": "automation",
-      "body": "本附录由各章的「自动化配置」字段自动汇总，**不单独维护**——它和各章正文永远一致。\n\n按章节顺序排列，方便你确认「这件事到底要不要我手动做」。\n\n\n\n### 第 0 章　开始之前\n\n本 MOD 的自动购买器总开关默认开启（player.auto.autobuyersOn 初值 true）。开局阶段维度、计数频率、维度提升、星系、大坍缩五个购买器在首次无限后即可用，不需要做挑战解锁。\n\n### 第 1 章　开局：10 反物质到第一次维度提升\n\n本章不需要任何手动操作。每帧固定顺序为：买计数频率 → 能买就买维度提升 → 能买就买反物质星系 → 第 1~8 维度升序买最大（src/game.js:274-311 的 tryOrekiEarlyRoutine）。它只看一个开关：player.auto.autobuyersOn，默认开（src/core/player.js:63）。注意「自动化 / Automation」页签本身要等总反物质 ≥ 1e40 才出现（src/core/secret-formula/tabs.js:179），所以在开局这一分钟里你看不到那个开关，而它此时一定是开着的。这段自动化走的是原版购买函数（buyMaxDimension / buyMaxTickSpeed / requestDimensionBoost / requestGalaxyReset），不绕过成本、不写存档字段。速度倍率只放大产量，不放大购买次数（自动器每帧只动一次），所以本章的耗时由「每帧买一次」这个节拍决定，去调倍率不会带来数量级的差别。\n\n### 第 2 章　维度献祭与第一个反物质星系\n\n本章除了「维度献祭」那一下，其余全部自动：维度提升、反物质星系、8 个维度、计数频率都由 tryOrekiEarlyRoutine 每帧处理（src/game.js:274-311）。献祭在无限挑战 2 完成之前没有自动器，必须手动点（src/core/autobuyers/sacrifice-autobuyer.js:11-14，第 6 章会拿到这个自动器）。另外 AD4 让首次永恒之前的维度提升与星系重置不清反物质（src/core/dimboost.js:207-214、src/core/oreki-keep-antimatter.js），所以连续重置不会把反物质打回 0，这也是自动器能一路往上推的原因。\n\n### 第 3 章　第一次无限\n\n本章不需要手动操作，第一次大坍缩由 tryOrekiEarlyRoutine 在「还没打破无限 + Player.canCrunch 为真」时自动调用 bigCrunchResetRequest(true)（src/game.js:308-310）。前提只有一个：player.auto.autobuyersOn 为真（默认开）。原版路径下大坍缩自动器的默认间隔是 150000 毫秒，而且 thisInfinityRealTime 按真实时间算，所以开局要干等 150 秒；本 MOD 的这条自动化绕开的正是这段等待，不是绕开坍缩条件。\n\n### 第 4 章　无限升级与普通挑战\n\n本章不需要手动买任何升级：AD6 每帧替你买 1 个无限升级（src/core/oreki-early-automation.js:29、src/game.js:861-866），「无限点数 ×2」那一条也在这个范围内。间隔升级与打破无限由 AD5 / AD5b 接管：IP 补到 32767、逐级买满间隔、然后调用 breakInfinity()（src/core/oreki-break-infinity-gate.js:64-118、src/game.js:196-220）。两者都只看 player.auto.autobuyersOn（默认开）。挑战是本章唯一值得你手动点的东西，因为「进入即完成」的奖励白拿（src/core/oreki-instant-challenges.js:7-15）。\n\n### 第 5 章　打破无限\n\n整章不需要手动操作。按按钮的是 AD5b（src/game.js:203-220 的 tryOpenBreakInfinityGate 第二段），买 12 个升级的是 AU6（src/core/oreki-autobuy-break-infinity.js:39-55）。两者都受 player.auto.autobuyersOn 控制（默认开），并且在任何挑战里都不生效。注意 breakInfinity() 内部会先把所有自动购买器的间隔免费拉满再翻转 player.break（src/game.js:84-96），这是原版行为，不是本 MOD 加的。\n\n### 第 6 章　无限维度与无限挑战补全\n\n本章有两处自动化在顶着：AD3 把单次坍缩收益兜到 1e8 并在同窗口内自动买无限维度（src/game.js:182-193、:312-328），AD3b 在 IP ≥ 1e8 后暂停自动坍缩直到本纪最高反物质到 1e1100（src/core/autobuyers/big-crunch-autobuyer.js:154-167 的 waitingForId1Peak）。无限维度的持续购买由 AD6 每帧 InfinityDimensions.buyMax() 完成（src/core/oreki-early-automation.js），走的是「无限维度 → 全部购买」同一条路径。全程受 player.auto.autobuyersOn 控制。无限挑战没有自动器：要你自己点进去，但只有「点进去」这一个动作。\n\n### 第 7 章　复制器与首次永恒\n\n本章只有「解锁复制器」和三类复制器升级需要你点。自动永恒由 AD10 负责：Player.canEternity（本纪最高 IP ≥ 1.797e308）为真、且不在 EC 入口排队时立刻永恒（src/core/oreki-eternity-automation.js:579-592），不等任何间隔。复制器升级的自动器要到永恒里程碑才有——复制器星系 3 次、概率 50 次、间隔 60 次、星系上限 80 次永恒（src/core/secret-formula/eternity/eternity-milestones.js:11-13, :123-140），所以第一次永恒前后这三项必须手点。全部自动化仍受 player.auto.autobuyersOn 总开关控制（默认开）。\n\n### 第 8 章　时间研究与永恒里程碑\n\n本章几乎全自动。AD10 每帧做三件事：调 buyMaxTimeDimension 买时间维度 1~4、调 TimeTheorems.buyMax(true) 用 EP/IP/反物质买 TT、每 30 帧扫一遍时间研究数据库逐个尝试购买（src/core/oreki-eternity-automation.js:1-32）。它走的是原版购买函数，成本与前置一条不少，也不伪造解锁标志。自动永恒仍在跑：只有当本次收益 ≥ 当前 EP 的 10 倍时才重置（src/core/oreki-eternity-automation.js:591），避免把刚买的 TT 白扔。全部受 player.auto.autobuyersOn 控制。\n\n### 第 9 章　永恒挑战（EC1~EC12）\n\n整章不需要手动操作。oreki-eternity-automation.js 的 buyEcStudiesAndStart() 负责买挑战研究、补齐前置研究、满 5 次后重洗时间研究树；oreki-dilation-automation.js 在 EC11 或 EC12 未满时压住自动现实，并按 9→10→11→12 的顺序推进，因为现实一重置就会把完成次数与时间研究树一起清空。进入挑战后由 oreki-instant-challenges.js 的 _completeEternityChallenge() 立刻补满 5 次。你唯一要留意的是：一旦关掉自动购买器总开关，或手动退出某一关，链条会停在这一关等条件。\n\n### 第 10 章　时间膨胀\n\n本阶段由两条自动化接力。AD10 继续买时间维度、TT 与普通时间研究；`OrekiCelestialAutomation.tickDilation()` 在膨胀研究 1 到手后**真实启动膨胀**并播种起始超光速粒子，同时在「本纪最高膨胀时间 < 1e30」之前压住现实按钮（src/core/oreki-dilation-automation.js:33-40，压现实的共用判定见同文件 hold）。膨胀升级本身有原版自动购买器（解锁后可在「自动化 / Automation」里开）。全部受 player.auto.autobuyersOn 总开关控制。\n\n### 第 11 章　现实与符文\n\n现实按钮由 `oreki-reality-automation.js` 接管：现实次数为 0 时调 processManualReality(false)，之后调 autoReality()，两条都走原版的带奖励结算（src/core/oreki-reality-automation.js:156-160）。它只在 isRealityAvailable() 为真时动手，不伪造 EP、不伪造时间研究；符文选择弹窗打开时暂停（:53），毁灭现实（佩勒）与天神现实中另有规则。符文由同一模块每 30 帧装卸一次去满足 RU9/24/16/17/18 的「符文形态」要求（:424-440），五条全部拿到之后才回到「装评分最高的符文」的常规策略（:443-452）。现实升级本身也是自动买的（:220-233），但自动购买只买「已解锁且买得起」的那些，不会替你解锁；全部受「自动购买器总开关」控制。\n\n### 第 12 章　复兴树、自动机与黑洞\n\n复兴树与黑洞**没有** Oreki 自动化：`src/core/oreki-*.js` 里既没有买复兴节点的代码，也没有解锁或升级黑洞的代码，这两块必须手点。自动机（脚本层）同样要你自己写，但本 Mod 的主循环已经由 `oreki-early-automation.js`、`oreki-eternity-automation.js`、`oreki-reality-automation.js`、`oreki-dilation-automation.js` 在代码层接管，不写自动机脚本也能走完 180 分钟。黑洞的强度升级在原版里自带自动购买器，间隔与持续没有。\n\n### 第 13 章　天神（一）：特蕾莎、鹿颈长、无名氏\n\n天神链由 `oreki-celestial-automation.js` 接管：它按真实 API 调 `Teresa.pourRM(diff)` 浇注（teresa.js:14）、买鹿颈长的四个碎片解锁位（内部仍走 `Currency.relicShards.purchase`）、按阶段进入各个天神的现实、以及在 V 的六项条件达标后调 `V.unlockCelestial()`。它不写任何解锁位、不发任何货币，买不起就下一帧再试。特蕾莎浇注在原版里只有 UI 的「按住」按钮，没有这个模块的话投入量会永远停在 0。全部受「自动购买器总开关」控制。\n\n### 第 14 章　天神（二）：薇、太阳神\n\n薇的解锁由 `oreki-celestial-automation.js` 负责：六项条件达标后它调 `V.unlockCelestial()`。但从 R37-A 起它**故意不再自动进入薇的现实**——进去会压低全局产量，而 180 分钟通关的终局链是「IU15 → 莱特拉 → IU25 → 佩勒」，完全不依赖薇或太阳神。同理，无名氏的现实只在持有入场券（1e40 年储藏时间 + 一个 5000 级符文 + 一个 100% 稀有度符文）时才会自动进入，因为无票进入会自锁：产量被压到 EC 重打不完，现实永远无法完成，run 清不掉。\n\n### 第 15 章　莱特拉\n\n莱特拉这一段由 `oreki-endgame-automation.js` 接管：它按原版 API 买 IU15（`ImaginaryUpgrade(15).purchase()`）、在「本现实真实时间 < 15 秒」时进 run 给熵增长留余量、飞升、以及在条件满足后买 IU25 进佩勒。`oreki-iu15-sprint.js` 专门负责「不买 ID1、把反物质指数推到 1e8」这一段。这两个模块都不写解锁位、不发货币，买不起就下一帧重试。奇点冷凝在原版里只有 UI 按钮，需要你手动点。\n\n### 第 16 章　佩勒与终局\n\nIU25、进入佩勒、佩勒升级与终局推进都由 `oreki-endgame-automation.js` 接管：它按原版 API 调 `ImaginaryUpgrade(25).purchase()`、`Pelle.initializeRun()`、`PelleUpgrade.all[i].purchase()`，买不起就下一帧重试，不写任何解锁位、不发货币。模块头注释明确写了「这条链在原版里全部只有 UI 调用点，自动化一概不碰」，所以没有这个模块时即使材料齐了也不会往前走。毁灭（进入佩勒）与末日（重置）仍要你自己确认，它们是不可逆操作。\n\n### 第 17 章　隐藏条件与成就总表\n\n隐藏成就一条都不会自动解锁。反过来，本 MOD 的自动化会主动破坏其中 3 条：26 需要一个永恒挑战连续失败 10 次，而挑战是进入即完成、不会失败；34 需要重洗一棵空的时间研究树，而自动化一直在买研究、树几乎不会空；42 需要以低于 0.001 倍的速度进入 EC12，而自动化始终全速。这 3 条必须手动做，做完再开自动购买器。"
+      "body": "本附录由各章的「自动化配置」字段自动汇总，**不单独维护**——它和各章正文永远一致。\n\n按章节顺序排列，方便你确认「这件事到底要不要我手动做」。\n\n\n\n### 第 0 章　开始之前\n\n本 MOD 的自动购买器总开关默认开启（player.auto.autobuyersOn 初值 true）。开局阶段维度、计数频率、维度提升、星系、大坍缩五个购买器在首次无限后即可用，不需要做挑战解锁。这个开关在界面上怎么确认：等总反物质攒到 1e40，打开顶部的「自动化」页签，进「自动购买器」子页签，最上面那颗按钮写着「暂停自动购买器」就说明自动购买器总开关是开的；写着「恢复自动购买器」就是被关过。在那之前页签还没出现，你看不到也不用看——新档的开关一定是开的。\n\n### 第 1 章　开局：10 反物质到第一次维度提升\n\n本章不需要任何手动操作。每帧固定顺序为：买计数频率 → 能买就买维度提升 → 能买就买反物质星系 → 第 1~8 维度升序买最大（src/game.js:274-311 的 tryOrekiEarlyRoutine）。它只看一个开关：player.auto.autobuyersOn，默认开（src/core/player.js:63）。注意「自动化 / Automation」页签本身要等总反物质 ≥ 1e40 才出现（src/core/secret-formula/tabs.js:179），所以在开局这一分钟里你看不到那个开关，而它此时一定是开着的。这段自动化走的是原版购买函数（buyMaxDimension / buyMaxTickSpeed / requestDimensionBoost / requestGalaxyReset），不绕过成本、不写存档字段。速度倍率只放大产量，不放大购买次数（自动器每帧只动一次），所以本章的耗时由「每帧买一次」这个节拍决定，去调倍率不会带来数量级的差别。页签出现之后想确认：顶部「自动化」→「自动购买器」，最上面那颗按钮写着「暂停自动购买器」就是开着；一旦你点了它，按钮变成「恢复自动购买器」，本章这套例程也就跟着停了。\n\n### 第 2 章　维度献祭与第一个反物质星系\n\n本章除了「维度献祭」那一下，其余全部自动：维度提升、反物质星系、8 个维度、计数频率都由 tryOrekiEarlyRoutine 每帧处理（src/game.js:274-311）。献祭在无限挑战 2 完成之前没有自动器，必须手动点（src/core/autobuyers/sacrifice-autobuyer.js:11-14，第 6 章会拿到这个自动器）。另外 AD4 让首次永恒之前的维度提升与星系重置不清反物质（src/core/dimboost.js:207-214、src/core/oreki-keep-antimatter.js），所以连续重置不会把反物质打回 0，这也是自动器能一路往上推的原因。本章的自动部分同样挂在自动购买器总开关上：顶部「自动化」→「自动购买器」，最上面那颗按钮写着「暂停自动购买器」，才说明它是开着的。\n\n### 第 3 章　第一次无限\n\n本章不需要手动操作，第一次大坍缩由 tryOrekiEarlyRoutine 在「还没打破无限 + Player.canCrunch 为真」时自动调用 bigCrunchResetRequest(true)（src/game.js:308-310）。前提只有一个：player.auto.autobuyersOn 为真（默认开）。原版路径下大坍缩自动器的默认间隔是 150000 毫秒，而且 thisInfinityRealTime 按真实时间算，所以开局要干等 150 秒；本 MOD 的这条自动化绕开的正是这段等待，不是绕开坍缩条件。想确认这个开关：顶部「自动化」→「自动购买器」子页签，最上面那颗按钮写着「暂停自动购买器」就是开着；若是「恢复自动购买器」，坍缩又会变回你要盯着的事。\n\n### 第 4 章　无限升级与普通挑战\n\n本章不需要手动买任何升级：AD6 每帧替你买 1 个无限升级（src/core/oreki-early-automation.js:29、src/game.js:861-866），「无限点数 ×2」那一条也在这个范围内。间隔升级与打破无限由 AD5 / AD5b 接管：IP 补到 32767、逐级买满间隔、然后调用 breakInfinity()（src/core/oreki-break-infinity-gate.js:64-118、src/game.js:196-220）。两者都只看 player.auto.autobuyersOn（默认开）。挑战是本章唯一值得你手动点的东西，因为「进入即完成」的奖励白拿（src/core/oreki-instant-challenges.js:7-15）。确认位置：顶部「自动化」→「自动购买器」，最上面那颗按钮写着「暂停自动购买器」即总开关开着；本章这些自动购买全部以它为前置。\n\n### 第 5 章　打破无限\n\n整章不需要手动操作，前提是自动购买器总开关开着。间隔升级走的是真实购买路径、照价扣无限点数，余额够一级就买一级，15 级买完为止；把 12 个打破无限升级逐条买下的是自动购买模块。这两件事都受 player.auto.autobuyersOn 控制（默认开），并且在任何挑战里都不生效。另外 breakInfinity() 内部会先把所有自动购买器的间隔免费拉满再翻转 player.break（src/game.js:97-99），这是原版行为，不是本 MOD 加的。\n\n### 第 6 章　无限维度与无限挑战补全\n\n本章有两处自动化在顶着：AD3 把单次坍缩收益兜到 1e8 并在同窗口内自动买无限维度（src/game.js:182-193、:312-328），AD3b 在 IP ≥ 1e8 后暂停自动坍缩直到本纪最高反物质到 1e1100（src/core/autobuyers/big-crunch-autobuyer.js:154-167 的 waitingForId1Peak）。无限维度的持续购买由 AD6 每帧 InfinityDimensions.buyMax() 完成（src/core/oreki-early-automation.js），走的是「无限维度 → 全部购买」同一条路径。全程受 player.auto.autobuyersOn 控制。无限挑战没有自动器：要你自己点进去，但只有「点进去」这一个动作。确认位置：顶部「自动化」→「自动购买器」，最上面那颗按钮写着「暂停自动购买器」才是开着；关掉它，自动买无限维度与等待 ID1 峰值的判定会一起停。\n\n### 第 7 章　复制器与首次永恒\n\n本章只有「解锁复制器」和三类复制器升级需要你点。自动永恒由 AD10 负责：Player.canEternity（本纪最高 IP ≥ 1.797e308）为真、且不在 EC 入口排队时立刻永恒（src/core/oreki-eternity-automation.js:579-592），不等任何间隔。复制器升级的自动器要到永恒里程碑才有——复制器星系 3 次、概率 50 次、间隔 60 次、星系上限 80 次永恒（src/core/secret-formula/eternity/eternity-milestones.js:11-13, :123-140），所以第一次永恒前后这三项必须手点。全部自动化仍受 player.auto.autobuyersOn 总开关控制（默认开）。\n\n### 第 8 章　时间研究与永恒里程碑\n\n本章几乎全自动。AD10 每帧做三件事：调 buyMaxTimeDimension 买时间维度 1~4、调 TimeTheorems.buyMax(true) 用 EP/IP/反物质买 TT、每 30 帧扫一遍时间研究数据库逐个尝试购买（src/core/oreki-eternity-automation.js:1-32）。它走的是原版购买函数，成本与前置一条不少，也不伪造解锁标志。自动永恒仍在跑：只有当本次收益 ≥ 当前 EP 的 10 倍时才重置（src/core/oreki-eternity-automation.js:591），避免把刚买的 TT 白扔。全部受 player.auto.autobuyersOn 控制。确认位置：顶部「自动化」→「自动购买器」，最上面那颗按钮写着「暂停自动购买器」即开着；关掉后时间维度、TT 与时间研究的自动购买会立刻停，已经买到的不退。\n\n### 第 9 章　永恒挑战（EC1~EC12）\n\n整章不需要手动操作。oreki-eternity-automation.js 的 buyEcStudiesAndStart() 负责买挑战研究、补齐前置研究、满 5 次后重洗时间研究树；oreki-dilation-automation.js 在 EC11 或 EC12 未满时压住自动现实，并按 9→10→11→12 的顺序推进，因为现实一重置就会把完成次数与时间研究树一起清空。进入挑战后由 oreki-instant-challenges.js 的 _completeEternityChallenge() 立刻补满 5 次。你唯一要留意的是：一旦关掉自动购买器总开关，或手动退出某一关，链条会停在这一关等条件。\n\n### 第 10 章　时间膨胀\n\n本阶段由两条自动化接力。AD10 继续买时间维度、TT 与普通时间研究；`OrekiCelestialAutomation.tickDilation()` 在膨胀研究 1 到手后**真实启动膨胀**并播种起始超光速粒子，同时在「本纪最高膨胀时间 < 1e30」之前压住现实按钮（src/core/oreki-dilation-automation.js:33-40，压现实的共用判定见同文件 hold）。膨胀升级本身有原版自动购买器（解锁后可在「自动化 / Automation」里开）。全部受 player.auto.autobuyersOn 总开关控制。\n\n### 第 11 章　现实与符文\n\n现实按钮由 `oreki-reality-automation.js` 接管：现实次数为 0 时调 processManualReality(false)，之后调 autoReality()，两条都走原版的带奖励结算（src/core/oreki-reality-automation.js:156-160）。它只在 isRealityAvailable() 为真时动手，不伪造 EP、不伪造时间研究；符文选择弹窗打开时暂停（:53），毁灭现实（佩勒）与天神现实中另有规则。符文由同一模块每 30 帧装卸一次去满足 RU9/24/16/17/18 的「符文形态」要求（:424-440），五条全部拿到之后才回到「装评分最高的符文」的常规策略（:443-452）。现实升级本身也是自动买的（:220-233），但自动购买只买「已解锁且买得起」的那些，不会替你解锁；全部受「自动购买器总开关」控制。\n\n### 第 12 章　复兴树、自动机与黑洞\n\n复兴树与黑洞**没有** Oreki 自动化：`src/core/oreki-*.js` 里既没有买复兴节点的代码，也没有解锁或升级黑洞的代码，这两块必须手点。自动机（脚本层）同样要你自己写，但本 Mod 的主循环已经由 `oreki-early-automation.js`、`oreki-eternity-automation.js`、`oreki-reality-automation.js`、`oreki-dilation-automation.js` 在代码层接管，不写自动机脚本也能走完 180 分钟。黑洞的强度升级在原版里自带自动购买器，间隔与持续没有。\n\n### 第 13 章　天神（一）：特蕾莎、鹿颈长、无名氏\n\n天神链由 `oreki-celestial-automation.js` 接管：它按真实 API 调 `Teresa.pourRM(diff)` 浇注（teresa.js:14）、买鹿颈长的四个碎片解锁位（内部仍走 `Currency.relicShards.purchase`）、按阶段进入各个天神的现实、以及在 V 的六项条件达标后调 `V.unlockCelestial()`。它不写任何解锁位、不发任何货币，买不起就下一帧再试。特蕾莎浇注在原版里只有 UI 的「按住」按钮，没有这个模块的话投入量会永远停在 0。全部受「自动购买器总开关」控制。\n\n### 第 14 章　天神（二）：薇、太阳神\n\n薇的解锁由 `oreki-celestial-automation.js` 负责：六项条件达标后它调 `V.unlockCelestial()`。但从 R37-A 起它**故意不再自动进入薇的现实**——进去会压低全局产量，而 180 分钟通关的终局链是「IU15 → 莱特拉 → IU25 → 佩勒」，完全不依赖薇或太阳神。同理，无名氏的现实只在持有入场券（1e40 年储藏时间 + 一个 5000 级符文 + 一个 100% 稀有度符文）时才会自动进入，因为无票进入会自锁：产量被压到 EC 重打不完，现实永远无法完成，run 清不掉。确认位置：顶部「自动化」→「自动购买器」，最上面那颗按钮写着「暂停自动购买器」才是自动购买器总开关开着；关掉它，连六项条件达标后替你解锁薇这一步也不会发生。\n\n### 第 15 章　莱特拉\n\n莱特拉这一段由 `oreki-endgame-automation.js` 接管：它按原版 API 买 IU15（`ImaginaryUpgrade(15).purchase()`）、在「本现实真实时间 < 15 秒」时进 run 给熵增长留余量、飞升、以及在条件满足后买 IU25 进佩勒。`oreki-iu15-sprint.js` 专门负责「不买 ID1、把反物质指数推到 1e8」这一段。这两个模块都不写解锁位、不发货币，买不起就下一帧重试。奇点冷凝在原版里只有 UI 按钮，需要你手动点。确认位置：顶部「自动化」→「自动购买器」，最上面那颗按钮写着「暂停自动购买器」才是自动购买器总开关开着；关掉它，IU15、飞升与 IU25 这三步都会停。\n\n### 第 16 章　佩勒与终局\n\nIU25、进入佩勒、佩勒升级与终局推进都由 `oreki-endgame-automation.js` 接管：它按原版 API 调 `ImaginaryUpgrade(25).purchase()`、`Pelle.initializeRun()`、`PelleUpgrade.all[i].purchase()`，买不起就下一帧重试，不写任何解锁位、不发货币。模块头注释明确写了「这条链在原版里全部只有 UI 调用点，自动化一概不碰」，所以没有这个模块时即使材料齐了也不会往前走。毁灭（进入佩勒）与末日（重置）仍要你自己确认，它们是不可逆操作。确认位置：顶部「自动化」→「自动购买器」，最上面那颗按钮写着「暂停自动购买器」才是自动购买器总开关开着；关掉它，进入佩勒与佩勒升级都不会再自动推进。\n\n### 第 17 章　隐藏条件与成就总表\n\n隐藏成就一条都不会自动解锁。反过来，本 MOD 的自动化会主动破坏其中 3 条：26 需要一个永恒挑战连续失败 10 次，而挑战是进入即完成、不会失败；34 需要重洗一棵空的时间研究树，而自动化一直在买研究、树几乎不会空；42 需要以低于 0.001 倍的速度进入 EC12，而自动化始终全速。这 3 条必须手动做，做完再开自动购买器。"
     },
     {
       "id": "apx_changes",

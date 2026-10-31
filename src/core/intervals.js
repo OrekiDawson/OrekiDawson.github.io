@@ -65,12 +65,17 @@ export const GameIntervals = (function() {
     }, 1000),
     checkForUpdates: interval(() => {
       if (isLocalEnvironment()) return;
-      fetch("version.txt")
-        .then(response => response.json())
+      // 站点把 public/ 当作子目录整块发布（index.html 里全是 ./public/...），
+      // 所以 version.txt 也必须带 public/ 前缀，否则会解析成站点根的 /version.txt（404）
+      fetch("./public/version.txt")
+        .then(response => (response.ok ? response.json() : null))
         .then(json => {
-          if (json.version > player.version) {
-            Modal.message.show(json.message, { callback: updateRefresh }, 3);
-          }
+          if (!json || !(json.version > player.version)) return;
+          Modal.message.show(json.message, { callback: updateRefresh }, 3);
+        })
+        .catch(() => {
+          // 更新检查是可选功能，失败时必须静默：否则每 60 s 往控制台丢一条
+          // unhandled rejection，污染线上 pageErrors 计数
         });
     }, 60000)
   };

@@ -1003,6 +1003,12 @@ export function debugState() {
     degradedCount,
     lastError,
     manualHolds: [...manualHolds.entries()].map(([id, until]) => ({ goalId: id, remainMs: until - Date.now() })),
+    /**
+     * [Oreki R45] 当前决策的 goal id。给「需要按 goal 判断是否让路」的调用方用
+     * （`spec.manualOverride.scope` 原文是「同一目标（goal id）」，不是全局暂停）。
+     * 没有决策时给 null，调用方必须自己决定保守与否，不许在这里编一个 id。
+     */
+    goalId: lastKnownGood?.goal?.id ?? null,
     lastKnownGood: lastKnownGood
       ? { stage: lastKnownGood.stage?.id ?? null, strategy: lastKnownGood.strategy?.id ?? null, at: lastKnownGood.at }
       : null,

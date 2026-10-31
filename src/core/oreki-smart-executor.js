@@ -87,7 +87,12 @@ const VERBS = {
   buyGalaxy: { policy: "owned", source: "routine", label: "反物质星系" },
   sacrifice: { policy: "owned", source: "routine", label: "献祭" },
   buyRestart: { policy: "owned", source: "routine", label: "重置维度重开" },
-  buyUpgrade: { policy: "owned", source: "routine", label: "买升级" },
+  // [Oreki R45] `buyUpgrade` 原来映射到 `routine`，但 `tryOrekiEarlyRoutine()` **一行升级都不买**
+  // （它只做：计数频率 / 维度提升 / 星系 / 献祭 / 买维度 / 首坍缩）。原版在「永恒之前」
+  // 唯一的升级商店就是无限升级（`InfinityUpgrade.all[i].purchase()`），
+  // 真实入口在 `OrekiEarlyAutomation.buyInfinityUpgrades()` —— 与 `buyInfinityUpgrade`
+  // 是同一个方法，这里只是把「声明了 owned 却没有真实动作」的这一条改成能真的动手。
+  buyUpgrade: { policy: "owned", source: "early", method: "buyInfinityUpgrades", label: "买升级" },
   crunch: { policy: "owned", source: "routine", label: "大坍缩" },
 
   // ── 无限（OrekiEarlyAutomation）──
@@ -142,20 +147,36 @@ const VERBS = {
   runReality: { policy: "owned", source: "reality", method: "tryReality", label: "现实重置" },
   // 现实机器（RM）不是买来的：由现实重置按公式产出，没有购买入口。
   buyRealityMachine: { policy: "unsupported", label: "买现实机器", why: "RM 由现实重置产出，原版无购买入口" },
-  // [Oreki R44] 复兴节点。原版有 `Perk(id).purchase()`（perks.js:40 的 SetPurchasableMechanicState），
-  // 但项目里**没有任何模块调用它**（`rg "Perks.add|Perk(" src/core` 只有存档迁移），
-  // 也没有注册进 `REGISTRY` 的 routine。所以这里的回答是「本层不代劳」——
-  // 不是「做不到」，而是「没有经过验证的购买顺序」：复兴树是图结构（只能买相邻节点），
-  // 乱买会把点数花在死路上，而点数只能靠现实次数拿。要代劳必须先有一个按连通性排序的模块。
-  buyRealityPerk: {
-    policy: "unsupported", label: "买复兴节点",
-    why: "没有自动化入口（perks.js 只有 purchase()，仓库内无调用点；图结构需要按连通性排序，未实现）"
-  },
+  // [Oreki R44] 复兴节点。原版有 `Perk(id).purchase()`（perks.js:40 的
+  // SetPurchasableMechanicState），扣 `Currency.perkPoints`、连通性由
+  // `isAvailableForPurchase`（perks.js:36-38）自己判。
+  // R44 之前这里写 unsupported，理由是「没有经过验证的购买顺序」——
+  // 现在这条理由由 `oreki-perk-automation.js` 消掉：它按当前已买集合做 BFS，
+  // 买「通往 automatorPoints 节点最短路」的第一步，不是固定 id 序列。
+  // 本层只代劳「模块本帧没买」的情况（同一个方法 `buyPerks()`，同一条购买路径）。
+  buyRealityPerk: { policy: "owned", source: "perk", method: "buyPerks", label: "买复兴节点" },
 
   // ── 挑战（归阶段模块）──
-  challengeSpecificOrder: { policy: "delegated", label: "挑战专项顺序", why: "挑战内购买顺序由 oreki-instant-challenges.js / OrekiEternityAutomation 按挑战规则处理" },
-  buyAllowedOnly: { policy: "delegated", label: "只买挑战允许项", why: "同上" },
-  crunchWhenDone: { policy: "delegated", label: "完成后坍缩", why: "同上" },
+  // [Oreki R45] 原来这三条写的是「由 oreki-instant-challenges.js / OrekiEternityAutomation
+  // 按挑战规则处理」，说得比实际宽。真实情况分两种，逐条写清：
+  //   · NC / IC：进挑战的当帧就被 `oreki-instant-challenges.js` 用原版结算出口
+  //     （`challenge.complete()` + 原版收益函数）做完并退出，**根本不进入战斗期**，
+  //     所以「挑战内购买顺序 / 只买允许项 / 完成后坍缩」在 Web 端不需要动作；
+  //     挑战期间照常跑的只有原版自己的维度/计数频率自动购买器。
+  //   · EC：入口与挑战内购买由 `OrekiEternityAutomation`（`buyEcStudiesAndStart`）
+  //     与 `OrekiDilationAutomation` 按挑战逐条处理。
+  challengeSpecificOrder: {
+    policy: "delegated", label: "挑战专项顺序",
+    why: "NC/IC 由 oreki-instant-challenges.js 当帧按原版出口结算、无战斗期；EC 内顺序由 OrekiEternityAutomation / OrekiDilationAutomation 处理"
+  },
+  buyAllowedOnly: {
+    policy: "delegated", label: "只买挑战允许项",
+    why: "同上；挑战期间只有原版维度/计数频率自动购买器在跑，它们自己就受挑战规则限制"
+  },
+  crunchWhenDone: {
+    policy: "delegated", label: "完成后坍缩",
+    why: "同上；NC/IC 的完成不走坍缩（当帧结算），EC 的退出由 eternity 模块的真实 eternity() 完成"
+  },
 
   // ── 天神（归 OrekiCelestialAutomation）──
   celestialSpecificOrder: { policy: "delegated", label: "天神专项顺序", why: "OrekiCelestialAutomation.tick() 内部按天神分派，这里再调等于递归" },
@@ -185,6 +206,19 @@ const STATE = {
   lastActionBySource: Object.create(null),
   /** verbId → 冷却到期毫秒（试过但没买到就压一会儿，避免第一个 verb 饿死后面的） */
   noopUntil: Object.create(null),
+  /**
+   * [Oreki R45] verbId → **连续没买到**的次数。
+   *
+   * 为什么必须在这里计数：`attemptCount` 与 `actionCount` 的比值（验收实测 79 : 4）
+   * 只能说明「在空转」，说明不了「为什么空转」。空转超过 2 次就把原因写进
+   * `debugState().blockers`（见 `runtimeBlockers()`），面板与探针都能直接看到
+   * 「哪一条动作、连续几次、模块自述的原因」，而不是 `blockers=[]` 静默。
+   */
+  noopStreak: Object.create(null),
+  /** 最近一次「没买到」的模块自述原因（中文一行）；空串 = 模块也不知道 */
+  lastNoopReason: "",
+  /** 最近一次「没买到」的冷却来源（用于诊断为什么这条 verb 抢不到机会） */
+  lastNoopAt: 0,
   actionCount: 0,
   attemptCount: 0,
   /**
@@ -282,6 +316,60 @@ function sourceReady(source, now) {
 }
 
 /**
+ * [Oreki R45] 问阶段模块「这一次为什么没买到」。
+ *
+ * 只问一个方法：`target.noopReason(verbId)`。它是**只读**的，返回中文一行，
+ * 说不清就返回空串（绝不编原因）。模块知道自己的阻塞形态（RM 不够 / 前置没解锁 /
+ * 槽位已满），执行层只认识 verb 名，所以解释权必须留在模块里。
+ *
+ * 这正是验收实测 `attemptCount=79 / actionCount=4` 时缺的那一环：
+ * 79 次调用里有 75 次什么都没买到，而 `blockers=[]` 一个字都不说。
+ */
+function explainNoop(verbId, spec) {
+  try {
+    const target = REGISTRY.get(spec?.source);
+    if (!target || typeof target.noopReason !== "function") return "";
+    const out = target.noopReason(verbId);
+    return typeof out === "string" ? out : "";
+  } catch (e) {
+    STATE.lastError = `noopReason ${verbId}: ${(e && e.message) || e}`;
+    return "";
+  }
+}
+
+/**
+ * [Oreki R45] 把「连续没买到」变成**可解释的阻塞**，追加在 spec 声明的 blockers 之后。
+ *
+ * 与 spec blockers 的区别写在字段里：`kind: "runtime"`。
+ * spec 的 `conventions.blockerDetection` 要求声明式 blockers「能由叶子机器判定」——
+ * 那是给解释器的；这里是**运行时事实**（这一帧真的调了、真的买了 0 个），
+ * 不可能用叶子表达，所以单独标 kind，不混进 `decision.blockers`。
+ */
+function runtimeBlockers(decision) {
+  const out = [];
+  const la = STATE.lastAction;
+  if (!la) return out;
+  const streak = STATE.noopStreak[la.verb] ?? 0;
+  // 只失败一次不算阻塞（可能是本帧刚被别的模块花掉了钱）；连续 2 次才报。
+  if (la.acted || streak < 2) return out;
+  const goalDone = decision?.goal?.done === true;
+  const reason = STATE.lastNoopReason || "模块没有给出原因";
+  out.push({
+    id: `noAction:${la.verb}`,
+    kind: "runtime",
+    verb: la.verb,
+    source: la.source,
+    title: goalDone
+      ? `目标「${decision.goal.title}」已完成，但「${la.label}」还在被调用且买不到`
+      : `「${la.label}」连续 ${streak} 次调用都没买到`,
+    advice: `${reason}（模块返回：${la.detail}）`,
+    detail: la.detail,
+    goalDone,
+  });
+  return out;
+}
+
+/**
  * 装点击监听：玩家一点、当前 goal 就静默 60 s。
  * 只监 `#ui`，且排除设置面板（`.l-options-grid`）与教程覆盖层（`.c-oreki-tutorial`）——
  * 那两处的点击不是「我在玩游戏」，不该触发让路。
@@ -337,8 +425,22 @@ function pickNext(priority) {
  * 主入口。在 `game.js` 的所有阶段模块之后调用一次。
  * @param {Record<string, any>} observed source → 该模块本帧 tick() 的返回值
  * @returns {object|null} 本帧决策（只读快照）
+ *
+ * [Oreki R45] 本函数是**主循环里唯一没有上层 try/catch 的调用点**
+ * （`game.js` 的 gameLoop 直接调它），所以这里必须自己兜底：
+ * 任何意外异常都只记进 `lastError`（面板「⑥ 阻塞」/降级提示会显示），
+ * 返回 null，绝不让异常穿到 gameLoop 触发全局崩溃弹窗。
  */
 function tick(observed) {
+  try {
+    return tickUnsafe(observed);
+  } catch (e) {
+    STATE.lastError = `tick: ${(e && e.message) || e}`;
+    return null;
+  }
+}
+
+function tickUnsafe(observed) {
   try {
     if (observed && typeof observed === "object") {
       for (const [source, result] of Object.entries(observed)) observe(source, result);
@@ -362,6 +464,10 @@ function tick(observed) {
   if (!STATE.lastSwitch) STATE.lastSwitch = { at: now, from: null, to: signature, kind: "init" };
   else if (STATE.lastSwitch.to !== signature) {
     STATE.lastSwitch = { at: now, from: STATE.lastSwitch.to, to: signature, kind: "switch" };
+    // 阶段/策略一换，旧动作的「连续没买到」就不再是当前阻塞了：
+    // 不清掉会让面板一直挂着上一个阶段的原因（详见 runtimeBlockers）。
+    STATE.noopStreak = Object.create(null);
+    STATE.lastNoopReason = "";
   }
 
   // 手动优先：本 goal 处于保护窗口 → 一个动作都不发
@@ -397,8 +503,17 @@ function tick(observed) {
   // 否则面板上的「执行次数」会把每 250 ms 一次的空调用也算成动作，看着像在干活其实没有。
   if (outcome.acted) STATE.actionCount++;
   // 没买到就压 2 秒，把机会让给 priority 里后面的 verb（见 NOOP_COOLDOWN_MS 注释）
-  if (outcome.acted) delete STATE.noopUntil[pick.verbId];
-  else STATE.noopUntil[pick.verbId] = Date.now() + NOOP_COOLDOWN_MS;
+  if (outcome.acted) {
+    delete STATE.noopUntil[pick.verbId];
+    STATE.noopStreak[pick.verbId] = 0;
+    STATE.lastNoopReason = "";
+  } else {
+    STATE.noopUntil[pick.verbId] = Date.now() + NOOP_COOLDOWN_MS;
+    // [Oreki R45] 空转必须留下**原因**：连续次数 + 模块自述。见 `runtimeBlockers()`。
+    STATE.noopStreak[pick.verbId] = (STATE.noopStreak[pick.verbId] ?? 0) + 1;
+    STATE.lastNoopAt = Date.now();
+    STATE.lastNoopReason = explainNoop(pick.verbId, pick.spec);
+  }
   STATE.lastAction = {
     at: Date.now(),
     verb: pick.verbId,
@@ -442,7 +557,9 @@ function debugState() {
     // ④ 正在执行 ⑤ 下一步 ⑥ 阻塞 ⑦ 最近切换
     action: STATE.lastAction,
     next,
-    blockers: decision?.blockers ?? [],
+    // [Oreki R45] spec 声明的阻塞（叶子可求值）+ 运行时阻塞（这一帧真的买了 0 个）。
+    // 后者带 `kind: "runtime"`，见 `runtimeBlockers()` —— 空转不再静默成 blockers=[]。
+    blockers: [...(decision?.blockers ?? []), ...runtimeBlockers(decision)],
     lastSwitch: STATE.lastSwitch,
     // 让路状态：必须显示，不许静默
     manualHold: hold,
@@ -453,6 +570,9 @@ function debugState() {
     noopUntil: Object.fromEntries(
       Object.entries(STATE.noopUntil).map(([id, until]) => [id, Math.max(0, until - now)])
     ),
+    /** verbId → 连续没买到次数（>0 且 lastAction.acted=false 时就是当前阻塞的那个动作） */
+    noopStreak: { ...STATE.noopStreak },
+    lastNoopReason: STATE.lastNoopReason,
     actionCount: STATE.actionCount,
     attemptCount: STATE.attemptCount,
     takeovers: STATE.takeovers,

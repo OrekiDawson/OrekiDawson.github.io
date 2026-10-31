@@ -776,8 +776,12 @@ window.player = {
   tutorialState: 0,
   tutorialActive: true,
   options: {
+    // [Oreki R45] 默认关闭新闻条。原版默认是 `true`，而底部滚动新闻会占掉
+    // 手机窄屏（320~430）里最宝贵的一行高度，还会随页面滚动遮住页签内容 ——
+    // 对一个「看数值 → 立刻决定买什么」的增量游戏来说是纯干扰。
+    // 只改默认值：玩家在设置里自己开过的存档不受影响（读档走各自的持久化值）。
     news: {
-      enabled: true,
+      enabled: false,
       repeatBuffer: 40,
       AIChance: 0,
       speed: 1,

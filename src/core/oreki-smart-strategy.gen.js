@@ -9,14 +9,14 @@ const data = {
   "schemaVersion": 1,
   "specId": "oreki-smart-autobuyer",
   "updatedAt": "2026-10-31",
-  "revision": "R44-A：阶段识别从 9 段扩到 20 段，覆盖 13 个进度节点；goals 从 7 条扩到 18 条且全部可求值；leaves 从 18 个扩到 34 个。所有阶段 detect 互相判定不相交（不再是「同时命中靠 precedence 决胜」），precedence 只作为防御性的最终裁决。",
+  "revision": "R44-A：阶段识别从 9 段扩到 20 段，覆盖 13 个进度节点；goals 从 7 条扩到 18 条且全部可求值；leaves 从 18 个扩到 34 个。所有阶段 detect 互相判定不相交（不再是「同时命中靠 precedence 决胜」），precedence 只作为防御性的最终裁决。 | R45-A：① **阶段合并（唯一一处判据改动）**：eternity + timeStudy 两段合并为 `eternityTimeStudy`，20 段→19 段。原因有实测：旧两段用 studiesBought 在 1 处切开，而 `player.timestudy.studies` 每次永恒都被清空，10000× 下阶段每 1.0 s 翻面（90 秒新档实测翻 9 次）。合并后只用单调位（eternityUnlocked / realityUnlocked / dilationUnlocked / eternityRunning），不是加防抖也不是调 precedence。② 说明与实现不符的三处按实现改写：realityTree 段的 note、realityTreePush 的 guards、删除 advisories.perksHaveNoAutomation（R44 已有 oreki-perk-automation.js 在买，留着等于让两端继续宣称「复兴树必须手点」）。③ 写清 manualOverride 的真实口径：执行层用「#ui 上任意点击」的宽口径启发式（按 goal 分域）；复兴节点不读这份信号，改认「已买集合增量里扣掉自家购买」。④ goal `build-time-study` 保留但不被任何阶段绑定 —— 它是 eternityTimeStudy 段的第一个里程碑，绑定的 goal 是该段的出口 `unlock-dilation`。",
   "note": "智能自动购买器的唯一策略源。Web 与 Android 共读本文件，禁止任何一端另写一套策略。规则是数据，两端各自实现解释器；策略不要写进代码。",
   "conventions": {
     "conditionGrammar": "见 condition-grammar 段；两端解释器必须实现同一套算子，语义以本段为准",
     "evaluationPeriod": "不得逐帧全量求值。默认 1 秒一次；状态变化（解锁/进入挑战/阶段切换）立即重算",
     "manualOverride": "玩家手动操作后 60 秒内不得被自动策略覆盖同一目标，见 manualOverride",
     "failSafe": "任一条件求值抛错时，策略层必须整体停机并回落到 lastKnownGoodStrategy，禁止抛到主循环",
-    "stagePrecedence": "阶段识别的第一原则是「各阶段 detect 逻辑不相交」——本文件的 20 个阶段两两不可能同时为真（每个阶段的 detect 里都显式写了对相邻阶段的取反，见各段 note 的「互斥依据」）。precedence 只作为防御性裁决：若日后有人改坏了互斥性导致两段同时命中，取 precedence 最大者；若两段 precedence 还相等 ⇒ 视为 spec 缺陷，解释器必须 fail closed（返回 degraded，不猜）。doomed 最高：毁灭态下其它阶段的判据全部无意义。",
+    "stagePrecedence": "阶段识别的第一原则是「各阶段 detect 逻辑不相交」——本文件的 19 个阶段两两不可能同时为真（每个阶段的 detect 里都显式写了对相邻阶段的取反，见各段 note 的「互斥依据」）。precedence 只作为防御性裁决：若日后有人改坏了互斥性导致两段同时命中，取 precedence 最大者；若两段 precedence 还相等 ⇒ 视为 spec 缺陷，解释器必须 fail closed（返回 degraded，不猜）。doomed 最高：毁灭态下其它阶段的判据全部无意义。",
     "stageGranularity": "阶段按「当前存档的真实状态」切分，不按时间、不按固定脚本顺序：已解锁功能（页签能否打开）、所处重置层、已完成挑战、升级与研究状态、各天神解锁位、目标是否满足。玩家跳序或手动推进时，靠「谁解锁得最远谁说了算」自然重新识别，不需要写死顺序。",
     "blockerDetection": "blockers 只放「能由叶子机器判定」的阻塞状态，detect 必须是 conditionGrammar 表达式。没有对应叶子的建议放进 advisories —— 不允许用自然语言字符串冒充条件，那会让解释器无法求值又看不出是空的。",
     "goalEvaluability": "goals[].done 必须是可求值的 conditionGrammar 表达式（叶子/op/value 或 all/any/not 组合）。自然语言说明只允许放在 goals[].note 里，不允许放在 done 里 —— 放进去就等于「永远无法判定完成」。"
@@ -236,49 +236,12 @@ const data = {
       "note": "【节点 4 的另一半：无限维度本身】已打破无限、没有挑战在跑，正在刷 ID/无限升级直到永恒解锁。互斥依据：见 breakInfinity / challenges。"
     },
     {
-      "id": "eternity",
+      "id": "eternityTimeStudy",
       "coversNodes": [
-        5
-      ],
-      "title": "第一次永恒之后（研究树未起）",
-      "detect": {
-        "all": [
-          {
-            "leaf": "progress.eternityUnlocked"
-          },
-          {
-            "not": {
-              "leaf": "progress.realityUnlocked"
-            }
-          },
-          {
-            "not": {
-              "leaf": "challenge.eternityRunning"
-            }
-          },
-          {
-            "not": {
-              "leaf": "progress.dilationUnlocked"
-            }
-          },
-          {
-            "leaf": "timeStudy.studiesBought",
-            "op": "lt",
-            "value": 1
-          }
-        ]
-      },
-      "goal": "build-time-study",
-      "strategy": "eternityPush",
-      "precedence": 70,
-      "note": "【节点 5 第一次永恒】刚拿到第一个永恒，时间研究一棵都没买（timeStudy.studiesBought = 0）。互斥依据：与 timeStudy 按 studiesBought 在 1 处分开；两者都要求「非 EC、未解锁膨胀、未解锁现实」。"
-    },
-    {
-      "id": "timeStudy",
-      "coversNodes": [
+        5,
         6
       ],
-      "title": "时间维度与时间研究",
+      "title": "永恒与时间研究（含第一次永恒）",
       "detect": {
         "all": [
           {
@@ -298,18 +261,13 @@ const data = {
             "not": {
               "leaf": "progress.dilationUnlocked"
             }
-          },
-          {
-            "leaf": "timeStudy.studiesBought",
-            "op": "gte",
-            "value": 1
           }
         ]
       },
       "goal": "unlock-dilation",
       "strategy": "eternityPush",
-      "precedence": 75,
-      "note": "【节点 6 时间维度、时间研究】已在买时间研究、未解锁膨胀。R44 修的就是这一段：旧 spec 用 `challenge.eternityRunning` 当 detect，等于「时间研究阶段 == 正在跑 EC」，不跑 EC 时永远进不去。现在真判据是 timeStudy.studiesBought（player.timestudy.studies.length），与 EC 完全解耦。互斥依据：见 eternity / dilation。"
+      "precedence": 72,
+      "note": "【节点 5+6 永恒与时间研究】R45 把原来的 eternity / timeStudy 两段合并成一段。为什么必须合并（有实测，不是审美）：旧 eternity 段用 `timeStudy.studiesBought lt 1`、timeStudy 段用 `gte 1`，两段 detect 本身互斥（这点没写错），但 studiesBought 读的是 `player.timestudy.studies.length`，而这个数组**每次永恒重置都会被清空**（原版语义：时间研究随永恒丢失）。10000× 下永恒间隔只有几秒，于是「永恒完数量归 0 → 阶段=eternity → 执行层买下第一棵 → 阶段=timeStudy → 下一次永恒又清 0」无限翻面，实测 90 秒新档里 [STAGE] 每 1.0 s 来回切了 9 次（t=12.3~22.6）。拿一个会被重置的瞬时量当阶段判别器是判据选错了对象，不是互斥写错，加防抖或调 precedence 都只是掩盖。合并后的判据只用「已解锁 / 未解锁」这类单调位（eternityUnlocked、realityUnlocked、dilationUnlocked）与「是否正在跑 EC」，同一时刻不可能再与相邻阶段互相翻面。互斥依据：与 eternityChallenges 按 eternityRunning 一真一假分开；与 dilation 按 dilationUnlocked 一真一假分开；与 reality 及之后各段按 realityUnlocked 分开。`timeStudy.studiesBought` 仍保留为叶子与 goal `build-time-study` 的判据（它是这一段的第一个里程碑），但**不再参与阶段识别**。"
     },
     {
       "id": "eternityChallenges",
@@ -366,7 +324,7 @@ const data = {
       "goal": "unlock-reality",
       "strategy": "dilationPush",
       "precedence": 80,
-      "note": "【节点 8 时间膨胀】膨胀研究 1（TimeStudy.dilation）已买 —— 判据就是原版 PlayerProgress.dilationUnlocked()（player-progress.js:53 → TimeStudy.dilation.isBought）。到第一次现实之前都在这一段：买膨胀研究 2~6、买时间维度 1~8、把 maxEP 指数推过 4000。互斥依据：与 timeStudy 按 progress.dilationUnlocked 一真一假分开。"
+      "note": "【节点 8 时间膨胀】膨胀研究 1（TimeStudy.dilation）已买 —— 判据就是原版 PlayerProgress.dilationUnlocked()（player-progress.js:53 → TimeStudy.dilation.isBought）。到第一次现实之前都在这一段：买膨胀研究 2~6、买时间维度 1~8、把 maxEP 指数推过 4000。互斥依据：与 eternityTimeStudy 按 progress.dilationUnlocked 一真一假分开。"
     },
     {
       "id": "reality",
@@ -473,7 +431,7 @@ const data = {
       "goal": "grow-reality-tree",
       "strategy": "realityTreePush",
       "precedence": 56,
-      "note": "【节点 10 复兴树】复兴节点（Perk，player.reality.perks）已经买到能给足自动机点数的程度（原版 player.automatorUnlocked 为真，automator-points.js）。这一段与 glyphs 的优先级完全不同：符文/现实升级是「花 RM」，复兴节点是「花每次现实发的复兴点数」，且复兴节点没有自动化入口。互斥依据：见 glyphs。"
+      "note": "【节点 10 复兴树】复兴节点（Perk，player.reality.perks）已经买到能给足自动机点数的程度（原版 player.automatorUnlocked 为真，automator-points.js）。这一段与 glyphs 的优先级完全不同：符文/现实升级是「花 RM」，复兴节点是「花每次现实发的复兴点数」。复兴节点的购买入口是 `Perk(id).purchase()`（perks.js:42 → PurchasableMechanicState.purchase，真实扣 perkPoints、真实写 player.reality.perks），由 `oreki-perk-automation.js` 按「当前已买集合的 BFS 最短路」驱动，见 strategy realityTreePush。互斥依据：见 glyphs。"
     },
     {
       "id": "celestialsTeresa",
@@ -759,7 +717,8 @@ const data = {
         "op": "gte",
         "value": 1
       },
-      "strategy": "eternityPush"
+      "strategy": "eternityPush",
+      "note": "R45 起**没有阶段绑定这条 goal**：它是 `eternityTimeStudy` 段的第一个里程碑（该段绑定的是出口 `unlock-dilation`），保留在这里是为了让面板/路线层还能单独判定「研究树起没起」。不要因为它是孤儿 goal 就删掉 —— 删了就没有任何叶子能回答「第一棵研究买了没」。"
     },
     {
       "id": "unlock-dilation",
@@ -1063,7 +1022,7 @@ const data = {
       ],
       "guards": [
         "复兴节点只能买与已买节点相邻的，不能跳着买",
-        "复兴节点没有任何自动化入口（本项目无对应 API 封装），执行层不代劳",
+        "复兴节点由阶段模块 OrekiPerkAutomation 驱动：按当前已买集合做 BFS、买通往 automatorPoints 节点最短路的第一步；执行层只是「模块本帧没买时补一手」，调的是同一个 buyPerks()，不许跳着买",
         "现实升级与复兴节点抢的是两种不同货币（RM / 复兴点数），不要互相等待"
       ]
     },
@@ -1221,13 +1180,6 @@ const data = {
       "advice": "先去把该挑战做掉，不要在主线里硬堆资源",
       "source": "各阶段 requirement()",
       "note": "这条无法用叶子判定：原版各阶段 requirement() 的判据形态各异，没有统一的「下一个解锁需要哪个挑战奖励」查询入口。因此它只是提示文案，不参与阻塞判定。"
-    },
-    {
-      "id": "perksHaveNoAutomation",
-      "title": "复兴节点没有自动化入口",
-      "advice": "复兴树必须手点：本项目没有买复兴节点的封装，执行层不会代劳。点数每跑一次现实就发一次，边刷现实边点。",
-      "source": "src/core/perks.js（只有 Perk(id).purchase()，仓库内无任何自动调用点）",
-      "note": "不是阻塞项，是能力缺口；用叶子无法表达「缺功能」。"
     }
   ]
 };

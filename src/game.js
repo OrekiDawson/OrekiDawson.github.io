@@ -11,6 +11,7 @@ import { OrekiEternityAutomation } from "./core/oreki-eternity-automation.js";
 import { OrekiRealityAutomation } from "./core/oreki-reality-automation.js";
 import { OrekiCelestialAutomation } from "./core/oreki-celestial-automation.js";
 import { OrekiEndgameAutomation } from "./core/oreki-endgame-automation.js";
+import { OrekiPerkAutomation } from "./core/oreki-perk-automation.js";
 import { OrekiSmartStrategy } from "./core/oreki-smart-strategy.js";
 import { OrekiSmartExecutor } from "./core/oreki-smart-executor.js";
 import { isOrekiBootstrapRun } from "./core/oreki-bootstrap.js";
@@ -34,6 +35,10 @@ OrekiSmartExecutor.register("routine", tryOrekiEarlyRoutine);
 OrekiSmartExecutor.register("early", OrekiEarlyAutomation);
 OrekiSmartExecutor.register("eternity", OrekiEternityAutomation);
 OrekiSmartExecutor.register("reality", OrekiRealityAutomation);
+// [Oreki R44] 复兴节点（Perk）：唯一缺口在「有 goal 没有动作」——
+// 20 阶段里只有 realityTree 的目标没有任何购买实现。模块本体见
+// core/oreki-perk-automation.js，走 `Perk(id).purchase()`（真实扣 perkPoints + 连通性校验）。
+OrekiSmartExecutor.register("perk", OrekiPerkAutomation);
 
 export function playerInfinityUpgradesOnReset() {
 
@@ -297,6 +302,20 @@ export function tryOrekiEarlyRoutine() {
     buyMaxTickSpeed();
     if (DimBoost.canBeBought) requestDimensionBoost(true);
     if (Galaxy.canBeBought) requestGalaxyReset(true);
+
+    // [Oreki R44] 维度献祭。原版的献祭自动器 `SacrificeAutobuyerState.isUnlocked`
+    // 要求 `EternityMilestone.autoIC` 或 `InfinityChallenge(2).isCompleted`
+    // （autobuyers/sacrifice-autobuyer.js:12-14），也就是说**开局到 IC2 完成之前
+    // 这一段完全没有献祭自动购买**，而 `growth` 策略的优先级里写着 `sacrifice`。
+    // 这里按原版自动器**完全相同的判据**补上：`nextBoost >= max(multiplier, 1.01)`
+    // （sacrifice-autobuyer.js:41；默认 multiplier = 2，见 player.js:122-125）。
+    // 放在买维度之前：`sacrificeReset()` 会重置第 1~7 维（sacrifice.js:133-135），
+    // 和 AD16 修的是同一类「同帧被重置冲掉」的问题。
+    // `Sacrifice.canSacrifice` 自己会挡掉挑战、Enslaved、没有第 8 维等情况。
+    if (Sacrifice.canSacrifice &&
+      Sacrifice.nextBoost.gte(Decimal.max(player.auto.sacrifice.multiplier, 1.01))) {
+      sacrificeReset();
+    }
 
     // 必须**升序**买：`AntimatterDimension.isAvailableForPurchase` 要求
     // 「上一维度 totalAmount > 0」（antimatter-dimension.js:537），
@@ -902,6 +921,12 @@ export function gameLoop(passDiff, options = {}) {
   // 详见 core/oreki-endgame-automation.js。
   OrekiEndgameAutomation.tick();
 
+  // [Oreki R44] 复兴节点自动购买：原版只有 `Perk(id).purchase()`，全仓库没有调用点。
+  // 放在现实自动化之后、智能层之前 —— 它花的是 perkPoints（只由现实次数发放），
+  // 与 RM / 符文 / 天神资源完全隔离，不会和上面任何模块抢钱。
+  // 模块内部：BFS 找「到自动机节点最短路」→ 每秒最多买 1 个 → 手动操作时让路。
+  const orekiPerkResult = OrekiPerkAutomation.tick();
+
   // [Oreki R40-S1] 智能策略层：**只读解释器**，不按任何购买键。
   // 规则全部来自 src/core/oreki-smart-strategy.json（经 gen_spec_module.mjs 转成 ESM），
   // 阶段识别 / 目标 / 阻塞只在 1 s 一次或阶段指纹变化时重算（由模块内部节流）。
@@ -918,6 +943,7 @@ export function gameLoop(passDiff, options = {}) {
     early: orekiEarlyResult,
     eternity: orekiEternityResult,
     reality: orekiRealityResult,
+    perk: orekiPerkResult,
   });
 
   // IP generation is broken into a couple of places in gameLoop; changing that might change the

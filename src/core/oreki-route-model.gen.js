@@ -159,8 +159,7 @@ const data = {
     {
       "id": "eternity-ec-first",
       "stageScope": [
-        "eternity",
-        "timeStudy",
+        "eternityTimeStudy",
         "eternityChallenges",
         "dilation"
       ],
@@ -176,8 +175,7 @@ const data = {
     {
       "id": "eternity-tt-first",
       "stageScope": [
-        "eternity",
-        "timeStudy",
+        "eternityTimeStudy",
         "eternityChallenges",
         "dilation"
       ],

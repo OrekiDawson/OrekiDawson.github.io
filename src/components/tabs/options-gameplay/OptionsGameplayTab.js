@@ -200,6 +200,10 @@ export default {
         note = `策略层降级：${s.error || "未知错误"}（沿用上一次成功决策）`;
       } else if (s.blockers.length) {
         note = s.blockers[0].advice || "";
+      } else if (s.advisories?.length) {
+        // [Oreki R45] 「已买齐 / 已完成」不是阻塞，但也必须说出来：
+        // 否则玩家看到「④ 正在执行：X → 无可买」会以为它卡住了，其实是本阶段已经不需要它。
+        note = `${s.advisories[0].title}：${s.advisories[0].advice || ""}`;
       }
       this.smartRows = rows;
       this.smartHold = hold;

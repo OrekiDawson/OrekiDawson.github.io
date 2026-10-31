@@ -247,6 +247,38 @@ export const OrekiPerkAutomation = {
     return { perks: this.buyPerks() ? 1 : 0 };
   },
 
+  /**
+   * [Oreki R45] 只读自述：「`buyRealityPerk` 为什么买了 0 个」。
+   * 由 `oreki-smart-executor.js::explainNoop()` 调用；只读、不改状态、说不清返回空串。
+   *
+   * 刻意**不调** `_manualHoldActive()`：那个方法会顺带做一次所有权采样
+   * （`_observeOwnership()` 会消费掉集合增量），从解释路径调用会干扰「玩家手点」的判定。
+   * 这里只读 `_manualHoldUntil` 这一个时间戳。
+   */
+  noopReason(verbId) {
+    if (verbId !== "buyRealityPerk") return "";
+    const now = Date.now();
+    try {
+      if (!this.active) return "复兴树自动购买未启用（尚未进入现实，或自动购买器已关）";
+      if (now < this._manualHoldUntil) {
+        return `让路中：检测到你在手动买节点，自动购买暂停（还剩 ${Math.ceil((this._manualHoldUntil - now) / 1000)} 秒）`;
+      }
+      if (now - this._lastBuyMs < PERK_MIN_INTERVAL_MS) {
+        return `节流中（相邻两个节点间隔 ${PERK_MIN_INTERVAL_MS} ms）`;
+      }
+      if (Currency.perkPoints.lt(1)) return `复兴点数不足 1（当前 ${Currency.perkPoints.value}）`;
+      const pick = this._pickNext();
+      if (!pick) return "没有可买的节点（通往 automatorPoints 的最短路已全部买完，或点数不够下一步）";
+      const perk = Perks.find(pick.id);
+      if (!perk) return `BFS 选中的节点 #${pick.id} 在 Perks 里找不到`;
+      if (!perk.canBeBought) return `节点「${perk.config?.name ?? pick.id}」当前不可购买（前置未满足或点数不足）`;
+      return "";
+    } catch (e) {
+      this._lastError = `noopReason: ${(e && e.message) || e}`;
+      return "";
+    }
+  },
+
   /** 只读诊断（探针/面板用）。 */
   debugState() {
     let points = null;

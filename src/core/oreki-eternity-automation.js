@@ -185,6 +185,42 @@ export const OrekiEternityAutomation = {
   },
 
   /**
+   * [Oreki R45] 只读自述：「这条动作为什么买了 0 个」。
+   * 由 `oreki-smart-executor.js::explainNoop()` 调用；只读、不改状态、说不清返回空串。
+   * 分支顺序照抄真实入口的门禁顺序（`tickEternity()` / `TimeTheorems.buyMax()`），
+   * 不另造一套判据 —— 解释与执行必须走同一条链，否则面板会开始撒谎。
+   */
+  noopReason(verbId) {
+    try {
+      if (verbId === "buyTimeTheorem") {
+        const canBuy = PlayerProgress.realityUnlocked() || TimeDimension(1).bought;
+        if (!canBuy) return "还没买过时间维度 1，原版不允许用 EP 换时间之理";
+        if (player.eternities.eq(0)) return "还没做过永恒，三种货币都不够换时间之理";
+        return "反物质 / IP / EP 三种货币都不够买下一个时间之理";
+      }
+      if (verbId === "eternity") {
+        if (!this.active) return "永恒自动器未启用（自动购买器关闭，或处于 Pelle 末日态）";
+        if (globalThis.OrekiIu15Sprint?.freezeResets === true) {
+          return "IU15 冲刺期间禁止永恒（永恒会把反物质指数打回 0）";
+        }
+        if (!Player.canEternity) return "还没到可永恒门槛（IP 需 1.797e308）";
+        if (this.holdForRealityUpgrade10()) {
+          return "为拿现实升级 10 暂压本现实里的第一次永恒（IP 指数需 ≥400），最多压 10 秒";
+        }
+        if (this.ecEntryPending()) return "正在等 EC 入口（主研究已买、只差资源），先不重置";
+        if (gainedEternityPoints().lt(Currency.eternityPoints.value.times(10))) {
+          return "本次永恒收益不足现有 EP 的 10 倍，等涨起来再重置";
+        }
+        return "";
+      }
+      return "";
+    } catch (e) {
+      this._err("noopReason", e);
+      return "";
+    }
+  },
+
+  /**
    * 目标 EC 需要的「互斥研究列」。
    *
    * 时间研究树有三组互斥列（`requiresST` 表示「买了对方就要花空间定理」，

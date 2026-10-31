@@ -219,6 +219,19 @@ const STATE = {
   lastNoopReason: "",
   /** 最近一次「没买到」的冷却来源（用于诊断为什么这条 verb 抢不到机会） */
   lastNoopAt: 0,
+  /**
+   * [Oreki R45] 本帧「一条动作都挑不出来」的原因快照；`null` = 本帧有动作，或只是在等模块让帧。
+   *
+   * 这条与 `noopStreak` 是两个不同的空白：
+   * · `noopStreak` 解释的是「调了、买了 0 个」；
+   * · 本条解释的是「**根本没调**」——验收实测里 `celestial` 阶段连续 120 秒
+   *   `attemptCount` 冻结、`blockers=[]`、`lastAction` 还挂着上一阶段的 `runReality`，
+   *   正是这个空白。它的全部 3 条动作都是 `delegated`，执行层结构上无事可做，
+   *   所以必须如实说出来，而不是让面板显示一条陈旧动作。
+   */
+  noAction: null,
+  /** 本帧被模块自述为「已完成」而跳过的动词：verbId → { label, why }。见 `verbDoneReason()`。 */
+  doneActions: Object.create(null),
   actionCount: 0,
   attemptCount: 0,
   /**
@@ -338,6 +351,85 @@ function explainNoop(verbId, spec) {
 }
 
 /**
+ * [Oreki R45] 问阶段模块「这条动作在本阶段是不是已经没意义了」。
+ *
+ * 与 `explainNoop()` 的分工：`noopReason()` 解释**这一次为什么买不动**；
+ * `verbDone()` 回答**以后都不用再调了**（例如「一次性现实升级已全部买齐」）。
+ * 返回非空字符串即视为已完成（字符串就是给玩家看的理由），返回空串/undefined = 还要调。
+ *
+ * 为什么需要：验收实测 `buyRealityUpgrade` 被调了 25 次，末段每次都是 `→0`，
+ * 而这 25 次里大部分发生在「20 个一次性 RU 已买齐」之后 —— 那不是阻塞，
+ * 是重复发起，每 250 ms 白烧一次调用。跳过它并在 `advisories` 里说明「已买齐」，
+ * 才算把「→0」讲清楚。
+ */
+function verbDoneReason(verbId, spec) {
+  try {
+    const target = REGISTRY.get(spec?.source);
+    if (!target || typeof target.verbDone !== "function") return "";
+    const out = target.verbDone(verbId);
+    return typeof out === "string" ? out : "";
+  } catch (e) {
+    STATE.lastError = `verbDone ${verbId}: ${(e && e.message) || e}`;
+    return "";
+  }
+}
+
+/**
+ * [Oreki R45] 把「这一帧一条动作都挑不出来」翻译成人话。
+ *
+ * 三档，只有前两档算阻塞：
+ *   · 全是 `delegated` / `unsupported` ⇒ **本阶段执行层无事可做**，如实说在等谁；
+ *   · 有 owned 但在退避中 ⇒ **刚刚真的试过且买了 0 个**，附模块自述原因；
+ *   · 只是 owned 的 source 还没闲够 3 帧 ⇒ **健康等待**，返回 null，不报阻塞。
+ * 第三种绝不能报：模块正在干活时执行层本来就该等（那是「同帧不抢」的设计）。
+ */
+function describeNoAction(skipped, decision) {
+  const delegated = skipped.delegated.map(({ spec }) => `${spec.label}${spec.why ? `（${spec.why}）` : ""}`);
+  const unsupported = skipped.unsupported.map(({ spec }) => `${spec.label}（${spec.why ?? "原版无入口"}）`);
+  const cooling = skipped.cooling.map(
+    ({ spec, remainMs }) => `${spec.label} 退避 ${Math.ceil(remainMs / 100) / 10}s`
+  );
+  const done = skipped.done.map(({ spec, why }) => `${spec.label}（${why}）`);
+  const ownedCount = skipped.cooling.length + skipped.waiting.length + skipped.done.length;
+  const total = ownedCount + delegated.length + unsupported.length + skipped.unknown.length;
+
+  // 健康等待：**全部**可代劳动作都只是「source 还没闲够 3 帧」。
+  // `ownedCount === 0` 不算健康 —— 那是「本阶段执行层根本没有可代劳项」，
+  // 正是验收里 120 秒静默的那种状态，必须报出来。
+  if (ownedCount > 0 && cooling.length === 0 && skipped.waiting.length === ownedCount) return null;
+
+  let title;
+  let advice;
+  if (ownedCount === 0) {
+    title = total === 0
+      ? `本阶段策略里没有登记任何动作（stage=${decision?.stage?.id ?? "?"}）`
+      : `本阶段 ${total} 个动作全部归阶段模块，执行层无可代劳项`;
+    advice = [delegated.length ? `等所属模块推进：${delegated.join("；")}` : "",
+      unsupported.length ? `原版无入口：${unsupported.join("；")}` : "",
+      skipped.unknown.length ? `spec 里有本层未登记的动作：${skipped.unknown.join("、")}` : ""]
+      .filter(Boolean).join("。");
+  } else if (cooling.length > 0) {
+    title = `可代劳动作都在退避中（${cooling.length}/${ownedCount} 条，最近一次买了 0 个）`;
+    advice = [
+      cooling.join("；"),
+      STATE.lastNoopReason ? `最近原因：${STATE.lastNoopReason}` : "模块没有给出原因",
+      done.length ? `已完成：${done.join("；")}` : "",
+    ].filter(Boolean).join("。");
+  } else {
+    title = `本阶段动作全部不可执行（${done.length} 条已完成，其余 ${delegated.length + unsupported.length} 条归阶段模块）`;
+    advice = [done.join("；"), delegated.join("；"), unsupported.join("；")].filter(Boolean).join("。");
+  }
+  return {
+    at: Date.now(),
+    stage: decision?.stage?.id ?? null,
+    goal: decision?.goal?.id ?? null,
+    title,
+    advice,
+    detail: `owned=${ownedCount} delegated=${delegated.length} unsupported=${unsupported.length} cooling=${cooling.length} waiting=${skipped.waiting.length}`,
+  };
+}
+
+/**
  * [Oreki R45] 把「连续没买到」变成**可解释的阻塞**，追加在 spec 声明的 blockers 之后。
  *
  * 与 spec blockers 的区别写在字段里：`kind: "runtime"`。
@@ -348,6 +440,22 @@ function explainNoop(verbId, spec) {
 function runtimeBlockers(decision) {
   const out = [];
   const la = STATE.lastAction;
+  const na = STATE.noAction;
+  // 「根本没调」优先于「调了但买了 0 个」：阶段刚切换时 lastAction 已被清空，
+  // 此时唯一能解释当前状态的就是 noAction。
+  if (na && (!la || na.at >= la.at)) {
+    out.push({
+      id: `noActionAvailable:${na.stage ?? "?"}`,
+      kind: "runtime",
+      stage: na.stage,
+      goalId: na.goal,
+      title: na.title,
+      advice: na.advice,
+      detail: na.detail,
+      goalDone: decision?.goal?.done === true,
+    });
+    return out;
+  }
   if (!la) return out;
   const streak = STATE.noopStreak[la.verb] ?? 0;
   // 只失败一次不算阻塞（可能是本帧刚被别的模块花掉了钱）；连续 2 次才报。
@@ -367,6 +475,17 @@ function runtimeBlockers(decision) {
     goalDone,
   });
   return out;
+}
+
+/** 「已完成 / 不必再调」的说明，与 blockers 分开显示（`advisories`）。 */
+function doneAdvisories() {
+  return Object.entries(STATE.doneActions).map(([verbId, info]) => ({
+    id: `actionDone:${verbId}`,
+    kind: "advisory",
+    verb: verbId,
+    title: `「${info.label}」已完成，本层不再重复发起`,
+    advice: info.why,
+  }));
 }
 
 /**
@@ -396,16 +515,35 @@ function installManualWatch() {
   STATE.watchInstalled = true;
 }
 
-/** 挑一个可执行的 verb：按 priority 顺序取第一个 owned、source 就绪、且不在冷却里的。 */
+/**
+ * 挑一个可执行的 verb：按 priority 顺序取第一个 owned、source 就绪、且不在冷却里的。
+ * 顺便把**没被挑中的每一条**为什么没被挑中分类带出去（`skipped`），
+ * 供 `describeNoAction()` 与 `doneAdvisories()` 使用 —— 这样「一条都没挑到」时
+ * 不需要再遍历一次 priority，也不会出现两处逻辑不同步。
+ */
 function pickExecutable(priority, now) {
+  const skipped = { delegated: [], unsupported: [], unknown: [], done: [], cooling: [], waiting: [] };
+  STATE.doneActions = Object.create(null);
   for (const verbId of priority) {
     const spec = VERBS[verbId];
-    if (!spec || spec.policy !== "owned") continue;
-    if ((STATE.noopUntil[verbId] ?? 0) > now) continue;
-    if (!sourceReady(spec.source, now)) continue;
-    return { verbId, spec };
+    if (!spec) { skipped.unknown.push(verbId); continue; }
+    if (spec.policy === "delegated") { skipped.delegated.push({ verbId, spec }); continue; }
+    if (spec.policy === "unsupported") { skipped.unsupported.push({ verbId, spec }); continue; }
+    if (spec.policy !== "owned") { skipped.unknown.push(verbId); continue; }
+    const doneWhy = verbDoneReason(verbId, spec);
+    if (doneWhy) {
+      STATE.doneActions[verbId] = { label: spec.label, why: doneWhy };
+      skipped.done.push({ verbId, spec, why: doneWhy });
+      continue;
+    }
+    if ((STATE.noopUntil[verbId] ?? 0) > now) {
+      skipped.cooling.push({ verbId, spec, remainMs: (STATE.noopUntil[verbId] ?? 0) - now });
+      continue;
+    }
+    if (!sourceReady(spec.source, now)) { skipped.waiting.push({ verbId, spec }); continue; }
+    return { verbId, spec, skipped };
   }
-  return null;
+  return { verbId: null, spec: null, skipped };
 }
 
 /** priority 里第一个还没法执行的动作（面板「下一步」用；只说名字不做承诺）。 */
@@ -413,6 +551,8 @@ function pickNext(priority) {
   for (const verbId of priority) {
     const spec = VERBS[verbId];
     if (!spec) return { verbId, label: verbId, policy: "unknown", why: "spec 里的动作本层未登记" };
+    // 已完成的不算「下一步」：它不会再被本层发起。
+    if (STATE.doneActions[verbId]) continue;
     if (spec.policy === "owned") return { verbId, label: spec.label, policy: "owned" };
   }
   const first = priority.map(id => VERBS[id]).find(Boolean);
@@ -468,6 +608,11 @@ function tickUnsafe(observed) {
     // 不清掉会让面板一直挂着上一个阶段的原因（详见 runtimeBlockers）。
     STATE.noopStreak = Object.create(null);
     STATE.lastNoopReason = "";
+    // [Oreki R45] 旧动作必须一起清掉：验收实测 `celestialsEnslaved` 阶段连续 120 秒
+    // 展示的仍是上一阶段 `realityTree` 的 `runReality`（`action.stage` 对不上当前 stage），
+    // 面板于是看起来「在忙」而其实一条新动作都没发。
+    STATE.lastAction = null;
+    STATE.noAction = null;
   }
 
   // 手动优先：本 goal 处于保护窗口 → 一个动作都不发
@@ -476,18 +621,23 @@ function tickUnsafe(observed) {
   }
 
   const priority = decision.strategy?.priority ?? [];
-  const pick = pickExecutable(priority, now);
-  if (!pick) {
+  const picked = pickExecutable(priority, now);
+  if (!picked.spec) {
     const next = pickNext(priority);
+    // null = 只是在等模块让出这一帧（健康）；非 null = 真的无事可做 / 刚试过买不到。
+    STATE.noAction = describeNoAction(picked.skipped, decision);
     return {
       ...decision,
       executor: {
         acted: false,
         reason: "no-owned-verb-ready",
         next: next ? `${next.label}${next.policy === "owned" ? "" : `（${next.policy}）`}` : null,
+        blocked: STATE.noAction?.title ?? null,
       },
     };
   }
+  const pick = picked;
+  STATE.noAction = null;
 
   const outcome = invoke(pick.verbId, pick.spec);
   STATE.takeovers++;
@@ -560,6 +710,13 @@ function debugState() {
     // [Oreki R45] spec 声明的阻塞（叶子可求值）+ 运行时阻塞（这一帧真的买了 0 个）。
     // 后者带 `kind: "runtime"`，见 `runtimeBlockers()` —— 空转不再静默成 blockers=[]。
     blockers: [...(decision?.blockers ?? []), ...runtimeBlockers(decision)],
+    /**
+     * [Oreki R45] 「不用再调了」的说明（不是阻塞）：模块自述已买齐 / 已完成。
+     * 与 blockers 分开，因为它们不该被当成故障计数（验收口径：阻塞 = 目标未完成却动不了）。
+     */
+    advisories: doneAdvisories(),
+    /** 本帧「一条动作都挑不出来」的原因快照；null = 有动作或在健康等待 */
+    noAction: STATE.noAction,
     lastSwitch: STATE.lastSwitch,
     // 让路状态：必须显示，不许静默
     manualHold: hold,

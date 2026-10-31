@@ -103,6 +103,32 @@ export const OrekiEarlyAutomation = {
   },
 
   /**
+   * [Oreki R45] 只读自述：「这条动作为什么买了 0 个」。
+   * 由 `oreki-smart-executor.js::explainNoop()` 调用；只读、不改状态、说不清返回空串。
+   */
+  noopReason(verbId) {
+    try {
+      if (verbId === "buyInfinityDimension") {
+        if (!InfinityDimensions.canBuy()) return "无限维度买不动：未解锁或 IP 不够（`InfinityDimensions.canBuy()` 为假）";
+        const buyable = InfinityDimensions.all.filter(d => d.isUnlocked && d.isAvailableForPurchase).length;
+        if (buyable === 0) return "所有已解锁的无限维度都买不动（IP 不足一次购买）";
+        return "";
+      }
+      if (verbId === "buyInfinityUpgrade" || verbId === "buyUpgrade") {
+        const all = InfinityUpgrade.all;
+        const left = all.filter(u => !u.isBought);
+        if (left.length === 0) return "无限升级已全部买齐";
+        const buyable = left.filter(u => u.isAvailableForPurchase && u.canBeBought).length;
+        if (buyable === 0) return `还剩 ${left.length} 条无限升级没买，但都不可买（前置未达成或 IP 不足）`;
+        return "";
+      }
+      return "";
+    } catch (e) {
+      return "";
+    }
+  },
+
+  /**
    * 主循环入口。
    * @returns {{ids: number, upgrades: boolean}} 本次动作摘要
    */

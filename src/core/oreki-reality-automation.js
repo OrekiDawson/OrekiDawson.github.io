@@ -275,6 +275,131 @@ export const OrekiRealityAutomation = {
   },
 
   /**
+   * [Oreki R45] 只读自述：「刚才那条动作为什么买了 0 个」。
+   *
+   * 由 `oreki-smart-executor.js::explainNoop()` 调用。执行层只认识 verb 名，
+   * 阻塞形态（RM 不够 / 前置没解锁 / 槽位已满 / 收益不够）只有本模块说得清。
+   * 三条铁律：① 只读，不改任何状态（连 `_readySince` 都不碰）；
+   * ② 说不清就返回空串，绝不编原因；③ 一句话中文，面板「⑥ 阻塞」原样展示。
+   */
+  noopReason(verbId) {
+    try {
+      if (verbId === "buyRealityUpgrades") return this._noopBuyRealityUpgrades();
+      if (verbId === "equipBestGlyph") return this._noopEquipGlyphs();
+      if (verbId === "runReality") return this._noopRunReality();
+      return "";
+    } catch (e) {
+      this._err("noopReason", e);
+      return "";
+    }
+  },
+
+  /**
+   * [Oreki R45] 只读自述：「这条动作在本阶段是不是已经不用再调了」。
+   * 非空字符串 = 已完成（字符串给玩家看）；空串 = 还要继续调。见执行层 `verbDoneReason()`。
+   */
+  verbDone(verbId) {
+    try {
+      if (verbId === "buyRealityUpgrades") {
+        return RealityUpgrades.allBought === true ? "20 个一次性现实升级已全部买齐（成就 147 已满足）" : "";
+      }
+      return "";
+    } catch (e) {
+      this._err("verbDone", e);
+      return "";
+    }
+  },
+
+  /** 面板数字统一走原版 `format`（不另造格式）；node 侧没有该全局时退回 String。 */
+  _fmtNum(value) {
+    try {
+      return typeof format === "function" ? format(value, 2, 2) : String(value);
+    } catch (e) {
+      return String(value);
+    }
+  },
+
+  _noopBuyRealityUpgrades() {
+    if (RealityUpgrades.allBought === true) return "一次性现实升级已全部买齐，没有可再买的项";
+    const db = GameDatabase.reality?.upgrades || [];
+    const unbought = [];
+    for (const cfg of db) {
+      if (cfg.id < 6) continue;
+      const upg = RealityUpgrade(cfg.id);
+      if (upg && !upg.isBought) unbought.push(upg);
+    }
+    if (unbought.length === 0) return "一次性现实升级已全部买齐";
+    const available = unbought
+      .filter(u => u.isAvailableForPurchase)
+      .sort((a, b) => (a.cost.lt(b.cost) ? -1 : a.cost.gt(b.cost) ? 1 : 0));
+    if (available.length === 0) {
+      return `还有 ${unbought.length} 项一次性现实升级没买，但全部未解锁（前置未达成），当前没有可购买项`;
+    }
+    const cheapest = available[0];
+    const have = Currency.realityMachines.value;
+    if (have.lt(cheapest.cost)) {
+      return `最便宜的未买项 #${cheapest.id} 需 ${this._fmtNum(cheapest.cost)} RM，当前只有 ${this._fmtNum(have)} RM`;
+    }
+    // 买得起却没买到：不是本模块能解释的（可能被别的入口抢先），交给执行层报 detail。
+    return "";
+  },
+
+  _noopEquipGlyphs() {
+    if (Glyphs.activeSlotCount === 0) return "还没有符文槽（现实升级 9 未购买）";
+    if (!this._glyphReqsDone()) {
+      return "符文形态正被现实升级 9/16/17/18/24 的解锁要求独占，本帧不做评分装备";
+    }
+    const inventory = this._glyphCandidates();
+    if (!inventory.length) return "符文仓库是空的，没有可装备的符文";
+    const score = g => g.level * g.strength;
+    const best = inventory.slice().sort((a, b) => score(b) - score(a)).slice(0, Glyphs.activeSlotCount);
+    const alreadyOn = best.every(glyph => Glyphs.activeWithoutCompanion.some(
+      g => g && g.level === glyph.level && g.strength === glyph.strength && g.type === glyph.type
+    ));
+    if (alreadyOn) {
+      return `评分最高的 ${best.length} 个符文已经在槽里，没有更值得换的`;
+    }
+    if (Glyphs.activeWithoutCompanion.length >= Glyphs.activeSlotCount) {
+      return `符文槽已满（${Glyphs.activeWithoutCompanion.length}/${Glyphs.activeSlotCount}），本层不替换已占槽（替换会触发一次无收益的现实重置）`;
+    }
+    return "";
+  },
+
+  _noopRunReality() {
+    if (globalThis.OrekiCelestialAutomation?.holdReality === true) {
+      return "天体模块要求暂缓现实（V 收尾 / 深度挑战要在同一个现实内攒进度）";
+    }
+    if (!this.realityReady) return "现实前置未满足（需要 EC1~12 全满 + 对应的那棵时间研究）";
+    const now = Date.now();
+    if (player.realities > 0 && !PlayerProgress.dilationUnlocked() &&
+      this._readySince && now - this._readySince < 10000) {
+      return "现实已就绪，正在给「膨胀研究 1」留最多 10 秒窗口（否则符文等级上不去）";
+    }
+    let interval = REALITY_MIN_INTERVAL_MS;
+    try {
+      interval = RealityUpgrades.allBought === true
+        ? OREKI_REALITY_INTERVAL_CELESTIAL_MS
+        : OREKI_REALITY_INTERVAL_PRE_RU_MS;
+    } catch (e) {
+      // 保持默认间隔
+    }
+    if (now - this._lastRealityAt < interval) {
+      const remain = Math.ceil((interval - (now - this._lastRealityAt)) / 1000);
+      return `距上次现实不足 ${Math.round(interval / 1000)} s（还差 ${remain} s），按当前阶段节奏收敛`;
+    }
+    try {
+      const gain = MachineHandler.gainedRealityMachines.times(simulatedRealityCount(false) + 1);
+      const have = Currency.realityMachines.value;
+      if (!gain.gte(have.times(0.02)) && now - this._lastRealityAt < interval * 3) {
+        return `本次现实只能得 ${this._fmtNum(gain)} RM，不足现有 ${this._fmtNum(have)} RM 的 2%，等收益起来再压`;
+      }
+    } catch (e) {
+      // 读不到收益就不猜
+    }
+    return "";
+  },
+
+  /**
    * 符文仓库管理：保留每个类型里评分最高的若干个，其余献祭/删除。
    * 评分用 `等级 × 强度`（与原版排序口径一致，glyph-core.js:40）。
    * 只在仓库剩余空间少于 12 格时清理，正常情况不动玩家的符文。

@@ -191,7 +191,7 @@ export default {
       </div>
     </div>
     <div class="c-automator-template-warnings">
-      <b>Possible things to consider:</b>
+      <b>需要注意的地方：</b>
       <div v-if="validWarnings.length !== 0">
         <div
           v-for="warning in validWarnings"

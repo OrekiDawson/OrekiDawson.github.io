@@ -114,7 +114,7 @@ export default {
         <br>
         <b>不符合的符文：</b> {{ trashStr }}
         <br>
-        <u><b>Type-specific Settings</b></u> <span :ach-tooltip="settingTooltipText">
+        <u><b>按符文类型分别设置</b></u> <span :ach-tooltip="settingTooltipText">
           <i class="fas fa-question-circle" />
         </span>
         <br>

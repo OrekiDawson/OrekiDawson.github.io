@@ -52,7 +52,7 @@ function numbersBlock(numbers) {
   if (!Array.isArray(numbers) || numbers.length === 0) return "";
   const rows = numbers.map(num => `<tr>
       <td class="c-oreki-tut__key">${esc(num.label)}</td>
-      <td>${esc(num.value)}<span class="c-oreki-tut__src">${esc(num.src)}</span></td>
+      <td>${esc(num.value)}</td>
     </tr>`).join("");
   return `<div class="c-oreki-tut__block">
     <div class="c-oreki-tut__label">关键数值</div>

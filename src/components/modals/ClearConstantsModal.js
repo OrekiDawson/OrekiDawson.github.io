@@ -28,7 +28,7 @@ export default {
       删除自动机常量
     </template>
     <div class="c-modal-message__text">
-      你确定要删除自动机中所有已定义的 formatInt(constantCount) 个常量吗？
+      你确定要删除自动机中所有已定义的 {{ formatInt(constantCount) }} 个常量吗？
       <br>
       <span
         class="l-lost-text"

@@ -94,6 +94,14 @@ const VERBS = {
   buyInfinityDimension: { policy: "owned", source: "early", method: "buyInfinityDimensions", label: "买无限维度" },
   buyInfinityUpgrade: { policy: "owned", source: "early", method: "buyInfinityUpgrades", label: "买无限升级" },
 
+  // [Oreki R44] 打破无限期的间隔升级。**刻意不代劳**：这条路径由
+  // `oreki-break-infinity-gate.js` 独占（它同时负责「一次性把 IP 补足到 32767」的相位判定），
+  // 执行层再插一手会和它的 `grantedThisSession` 相位打架。
+  buyBigCrunchInterval: {
+    policy: "delegated", label: "拉满大坍缩间隔",
+    why: "OrekiBreakInfinityGate 独占（间隔升级 + 一次性 IP 补足是同一相位，拆开会出现「发钱→被别的购买吃掉」）"
+  },
+
   // ── 永恒（OrekiEternityAutomation）──
   buyTimeTheorem: { policy: "owned", source: "eternity", method: "buyTimeTheorems", label: "买时间之理" },
   // ⚠ 这两个**刻意不代劳**：模块把研究购买节流在 `_frame % 30`（STUDY_TICK_INTERVAL），
@@ -109,6 +117,18 @@ const VERBS = {
     why: "同上（与时间研究同一段节流）"
   },
   eternity: { policy: "owned", source: "eternity", method: "tickEternity", label: "永恒重置" },
+
+  // [Oreki R44] 时间膨胀段的两个动词。膨胀的启动与升级都由
+  // `OrekiCelestialAutomation.tickDilation()` / `OrekiDilationAutomation` 独占（它们共用一个 `hold` 门禁，
+  // 见 oreki-dilation-automation.js:28/153），执行层代劳会绕过那道门禁。
+  startDilation: {
+    policy: "delegated", label: "启动时间膨胀",
+    why: "OrekiCelestialAutomation.tickDilation() 独占（与 hold 门禁共用，绕过会提前压现实）"
+  },
+  buyDilationUpgrade: {
+    policy: "delegated", label: "买膨胀升级",
+    why: "OrekiDilationAutomation 独占（速子粒子播种与升级顺序耦合）"
+  },
   // 原版没有「买永恒升级」这个动作：EternityUpgrade 不存在，里程碑自动生效。
   buyEternityUpgrade: { policy: "unsupported", label: "买永恒升级", why: "原版不存在永恒升级商店，里程碑自动生效" },
   runChallengeIfRewardBlocks: {
@@ -122,6 +142,15 @@ const VERBS = {
   runReality: { policy: "owned", source: "reality", method: "tryReality", label: "现实重置" },
   // 现实机器（RM）不是买来的：由现实重置按公式产出，没有购买入口。
   buyRealityMachine: { policy: "unsupported", label: "买现实机器", why: "RM 由现实重置产出，原版无购买入口" },
+  // [Oreki R44] 复兴节点。原版有 `Perk(id).purchase()`（perks.js:40 的 SetPurchasableMechanicState），
+  // 但项目里**没有任何模块调用它**（`rg "Perks.add|Perk(" src/core` 只有存档迁移），
+  // 也没有注册进 `REGISTRY` 的 routine。所以这里的回答是「本层不代劳」——
+  // 不是「做不到」，而是「没有经过验证的购买顺序」：复兴树是图结构（只能买相邻节点），
+  // 乱买会把点数花在死路上，而点数只能靠现实次数拿。要代劳必须先有一个按连通性排序的模块。
+  buyRealityPerk: {
+    policy: "unsupported", label: "买复兴节点",
+    why: "没有自动化入口（perks.js 只有 purchase()，仓库内无调用点；图结构需要按连通性排序，未实现）"
+  },
 
   // ── 挑战（归阶段模块）──
   challengeSpecificOrder: { policy: "delegated", label: "挑战专项顺序", why: "挑战内购买顺序由 oreki-instant-challenges.js / OrekiEternityAutomation 按挑战规则处理" },

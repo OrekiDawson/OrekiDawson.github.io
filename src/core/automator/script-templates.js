@@ -12,28 +12,56 @@
  * @member {TimeStudyTree} storedTreeObj  Study tree object for the specified study tree; storing it within the
  *  object instead of parsing it as-needed higher up in the call chain reduces boilerplate code
  */
+/**
+ * 脚本模板名称的**唯一来源**。
+ *
+ * 为什么放在这个文件：本类对模板名做 switch 分派，而数据侧
+ * （src/core/secret-formula/script-templates.js 的 scripts[].name）会显示给玩家。
+ * 以前两边各写一份字符串，数据侧改名、switch 没跟上时就会落进 default，
+ * 玩家点「创建模板」直接抛 `Unrecognized template name ...`，功能整体不可用。
+ * 现在两侧都从这里取，改名只需改一处，漂移在结构上被消除。
+ *
+ * 名称按 Android 官方简体中文对齐（values-zh-rCN 的 template_* 系列）：
+ *   template_climb_ep = 增长永恒点数 / template_grind_eternities = 刷永恒次数
+ *   template_grind_infinities = 刷无限次数 / template_complete_eternity_challenge = 完成永恒挑战
+ *   template_unlock_dilation = 解锁时间膨胀
+ */
+export const SCRIPT_TEMPLATE_NAMES = Object.freeze({
+  climbEP: "增长永恒点数",
+  grindEternities: "刷永恒次数",
+  grindInfinities: "刷无限次数",
+  completeEC: "完成永恒挑战",
+  unlockDilation: "解锁时间膨胀",
+});
+
+/** 供错误信息列出的可读清单；保持与上面同一顺序 */
+const KNOWN_TEMPLATE_NAMES = Object.freeze(Object.values(SCRIPT_TEMPLATE_NAMES));
+
 export class ScriptTemplate {
   constructor(params, templateName) {
     this.lines = [];
     this.warnings = [];
     switch (templateName) {
-      case "刷永恒点数":
+      case SCRIPT_TEMPLATE_NAMES.climbEP:
         this.templateClimbEP(params);
         break;
-      case "刷永恒次数":
+      case SCRIPT_TEMPLATE_NAMES.grindEternities:
         this.templateGrindEternities(params);
         break;
-      case "刷无限次数":
+      case SCRIPT_TEMPLATE_NAMES.grindInfinities:
         this.templateGrindInfinities(params);
         break;
-      case "完成永恒挑战":
+      case SCRIPT_TEMPLATE_NAMES.completeEC:
         this.templateDoEC(params);
         break;
-      case "解锁膨胀":
+      case SCRIPT_TEMPLATE_NAMES.unlockDilation:
         this.templateUnlockDilation(params);
         break;
       default:
-        throw new Error(`Unrecognized template name ${templateName} in ScriptTemplate`);
+        // 防回归：任何未登记的名称都会把「当前所有可用模板名」一起抛出来，
+        // 而不是只吐一个光秃秃的英文错误，改名漏改时一眼能看出该对齐哪一份清单。
+        throw new Error(`Unrecognized template name "${templateName}" in ScriptTemplate；`
+          + `当前可用模板名：${KNOWN_TEMPLATE_NAMES.join(" / ")}`);
     }
   }
 

@@ -1,6 +1,18 @@
 import ModalWrapperChoice from "./ModalWrapperChoice.js";
 import PrimaryButton from "../PrimaryButton.js";
 
+// [Oreki R43-C] 确认短语改为简体中文：原来是英文 "Gotta Go Fast!"，
+// 玩家必须在输入框里原样打出这串英文才能开始速通，属于「玩家可见英文残留」。
+// 提示文案与判定共用这个常量，避免两边再次漂移。
+const CONFIRM_PHRASE = "全速前进！";
+
+/** 全角 / 半角感叹号都接受，首尾空白忽略；否则手机上打出感叹号会卡住玩家 */
+function normalizePhrase(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/[!！]/gu, "！");
+}
+
 export default {
   name: "SpeedrunModeModal",
   components: {
@@ -12,11 +24,12 @@ export default {
       onInfoPage: true,
       name: "",
       confirmPhrase: "",
+      requiredPhrase: CONFIRM_PHRASE,
     };
   },
   computed: {
     willStartRun() {
-      return this.confirmPhrase === "Gotta Go Fast!";
+      return normalizePhrase(this.confirmPhrase) === CONFIRM_PHRASE;
     },
   },
   methods: {
@@ -43,18 +56,17 @@ export default {
       v-if="onInfoPage"
       class="c-modal-message__text"
     >
-      This will start a save with additional statistics tracking for when you reach certain points of
-      the game. These will be visible in the bottom-right of the screen and on a dedicated subtab of Statistics.
+      这会新建一个存档，并额外记录你在游戏各关键节点抵达时的时间。这些统计会显示在屏幕右下角，
+      以及“统计数据”里的一个专属子页签中。
       <br>
       <br>
-      Almost all animations and confirmations are disabled by default, but you can change any of these settings before
-      you reach their required progression. When you begin the run, the game remains paused until
-      your antimatter changes, allowing you to configure all your settings before starting. In order to avoid having
-      to wait for a long time before actually starting an optimized run, a few achievements are given for free.
+      几乎所有动画与确认弹窗都默认关闭，但你可以在进度到达相应节点之前随时修改这些设置。开始速通后，
+      游戏会一直保持暂停，直到你的反物质发生变化，方便你先配置好所有设置再出发。为了避免在真正开始
+      一次优化速通之前干等很久，少量成就会直接赠送。
       <br>
       <br>
       <i>
-        There is no additional content in Speedrun Mode.
+        速通模式没有额外内容。
       </i>
       <br>
       <br>
@@ -62,16 +74,15 @@ export default {
         class="o-primary-btn--width-medium c-modal-hard-reset-btn c-modal__confirm-btn"
         @click="nextPage"
       >
-        Continue
+        继续
       </PrimaryButton>
     </div>
     <div
       v-else
       class="c-modal-message__text"
     >
-      You can type in text below to name your speedrun save. This will have no effects on gameplay and only identifies
-      this particular save as yours. If no name is given, a random name will be generated instead. This name can be
-      changed by clicking your name in the speedrun info box, as long as the timer has not started yet.
+      你可以在下面输入文字，为这次速通存档起名。它不影响任何游戏内容，只是把这一个存档标记成你的。
+      留空则会随机生成一个名字。只要计时还没开始，点击速通信息框里的名字即可改名。
       <input
         ref="name"
         v-model="name"
@@ -81,19 +92,17 @@ export default {
       >
       <br>
       <br>
-      Speedrun saves can be imported and exported like regular saves. Importing a speedrun save will mark it as a
-      Segmented run, as importing and exporting allows for optimization of individual segments of the game.
-      Without importing, saves will remain as Single-segment runs.
+      速通存档可以像普通存档一样导入导出。导入一份速通存档会被标记为“分段速通”，因为导入导出让玩家
+      可以分别优化游戏的不同段落。不导入的话，存档始终是“单段速通”。
       <br>
       <br>
-      You can modify the Glyph RNG seed in the Options tab before starting your run, if desired.
+      如果愿意，你也可以在开始速通之前到“选项”页修改符文随机种子。
       <br>
       <br>
       <div class="c-modal-hard-reset-danger">
-        Starting a speedrun will reset your save to the beginning of the game. Some things will remain, such as
-        full-game completion stats, visual settings, automator scripts, and Glyph cosmetics, but otherwise it
-        will be as if you had just finished the entire game and chose to restart at the credits screen. Type
-        in "Gotta Go Fast!" below to confirm and (re)start the run.
+        开始速通会把你的存档重置到游戏开头。少数内容会保留，例如全流程完成统计、视觉效果设置、
+        自动机脚本与符文外观；除此之外，就相当于你刚刚通关、在制作人员名单界面选择了重新开始。
+        请在下面输入“{{ requiredPhrase }}”以确认并（重新）开始速通。
       </div>
       <input
         ref="confirmPhrase"
@@ -104,10 +113,10 @@ export default {
       >
     </div>
     <template #confirm>
-      Start Run!
+      开始速通
     </template>
     <template #cancel>
-      Cancel
+      取消
     </template>
   </ModalWrapperChoice>
   `

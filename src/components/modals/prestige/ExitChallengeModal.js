@@ -51,10 +51,9 @@ export default {
         你将在确认后立即重新进入{{ challengeName }}。
       </span>
       <span v-else>
-        这将使你返回到没有然后限制的{{ normalName }}。
+        这将使你返回到没有任何限制的{{ normalName }}。
       </span>
       <span v-if="hasHigherLayers">
-        Other effects coming from higher-layer restrictions will still continue to apply.
         来自更高层级的其他限制将继续生效。
       </span>
     </div>

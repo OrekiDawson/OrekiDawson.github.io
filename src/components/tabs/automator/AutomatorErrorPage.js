@@ -28,7 +28,7 @@ export default {
       >
         <b>在第 {{ error.startLine }} 行：</b>
         <button
-          v-tooltip="'Jump to line'"
+          v-tooltip="'跳到该行'"
           class="c-automator-docs--button fas fa-arrow-circle-right"
           @click="scrollToLine(error.startLine)"
         />

@@ -45,7 +45,7 @@ export default {
   template: `
   <div class="l-entry-padding">
     <button
-      v-tooltip="'Export Full Script Data'"
+      v-tooltip="'导出完整脚本数据'"
       class="l-button-margin fas fa-file-export"
       @click="exportData(script.id)"
       data-v-automator-data-transfer-single-entry

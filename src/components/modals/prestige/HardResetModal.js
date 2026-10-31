@@ -52,7 +52,7 @@ export default {
         </span>
         <span v-if="hasSpeedrun">
           <br>
-          你将失去速通资格。若要重新开始速通，请使用"Start Speedrun"按钮。
+          你将失去速通资格。若要重新开始速通，请使用“开始速通”按钮。
         </span>
       </div>
     </div>

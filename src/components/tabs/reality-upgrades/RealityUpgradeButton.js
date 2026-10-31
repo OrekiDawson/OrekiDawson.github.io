@@ -104,7 +104,7 @@ export default {
           <br>
           <DescriptionDisplay
             :config="requirementConfig"
-            label="Requirement:"
+            label="要求："
             class="c-reality-upgrade-btn__requirement"
           />
         </template>

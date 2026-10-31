@@ -64,7 +64,7 @@ export default {
     <br>
     <br>
     <PrimaryButton
-      v-tooltip="hasConstants ? null : 'You have no valid constants to delete!'"
+      v-tooltip="hasConstants ? null : '没有可删除的有效常量！'"
       class="c-delete-margin o-primary-btn--subtab-option"
       :class="{ 'o-primary-btn--disabled' : !hasConstants }"
       @click="deleteAllConstants"

@@ -105,8 +105,8 @@ export default {
       if (this.canModifySeed) {
         Modal.modifySeed.show();
       } else {
-        Modal.message.show(`You cannot modify your seed any more. Glyph RNG has already been used to generate
-          at least one Glyph on this run.`);
+        Modal.message.show(`你无法再修改符文随机种子了：本次运行中，符文随机数生成器已经用来生成过
+          至少一个符文。`);
       }
     }
   },

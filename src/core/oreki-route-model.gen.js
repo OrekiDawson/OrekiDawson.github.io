@@ -160,7 +160,9 @@ const data = {
       "id": "eternity-ec-first",
       "stageScope": [
         "eternity",
-        "timeStudy"
+        "timeStudy",
+        "eternityChallenges",
+        "dilation"
       ],
       "title": "先刷永恒挑战再推时间之理",
       "steps": [
@@ -174,7 +176,10 @@ const data = {
     {
       "id": "eternity-tt-first",
       "stageScope": [
-        "eternity"
+        "eternity",
+        "timeStudy",
+        "eternityChallenges",
+        "dilation"
       ],
       "title": "先堆时间之理再回头刷挑战",
       "steps": [
@@ -188,7 +193,9 @@ const data = {
     {
       "id": "reality-glyph-first",
       "stageScope": [
-        "reality"
+        "reality",
+        "glyphs",
+        "realityTree"
       ],
       "title": "先刷符文再推现实升级",
       "steps": [
@@ -202,7 +209,9 @@ const data = {
     {
       "id": "reality-machine-first",
       "stageScope": [
-        "reality"
+        "reality",
+        "glyphs",
+        "realityTree"
       ],
       "title": "先攒现实机器再刷符文",
       "steps": [
@@ -216,7 +225,12 @@ const data = {
     {
       "id": "celestial-nav-order",
       "stageScope": [
-        "celestials"
+        "celestialsTeresa",
+        "celestialsEffarig",
+        "celestialsEnslaved",
+        "celestialsV",
+        "celestialsRa",
+        "laitela"
       ],
       "title": "按导航顺序推进天神",
       "steps": [
@@ -233,7 +247,12 @@ const data = {
     {
       "id": "celestial-parallel-v",
       "stageScope": [
-        "celestials"
+        "celestialsTeresa",
+        "celestialsEffarig",
+        "celestialsEnslaved",
+        "celestialsV",
+        "celestialsRa",
+        "laitela"
       ],
       "title": "在推进其他天神时并行做薇的三项",
       "steps": [

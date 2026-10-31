@@ -5,7 +5,8 @@
 //     「当前阶段 / 当前目标 / 当前策略 / 优先级动作列表 / 阻碍项」的一个**决策对象**。
 // 不是：不买任何东西、不点任何按钮、不写任何 player 字段、不改自动购买器开关。
 //     执行层（`oreki-smart-executor.js`）才允许调购买 API —— 这是 team-lead 定的
-//     「路由层与执行层严格分离」，本文件连 `purchase` 这个词都不出现。
+//     「路由层与执行层严格分离」，本文件连「买」这个动词的英文 API 名都不出现
+//     （验收命令 `rg -c` 对购买动词计数必须恒为 0）。
 //
 // ── 为什么策略必须是数据 ────────────────────────────────────────────────
 // spec 的 `note` 写死了：Web 与 Android 共读同一份 JSON，规则是数据不是代码。
@@ -26,11 +27,16 @@
 // · `failSafe`：`evaluate()` 全程 try/catch；任一叶子抛错 ⇒ 整体停机，
 //   返回上一次成功的决策并标 `degraded: true`，绝不把异常抛给主循环。
 //
-// ── 叶子取值（18 个，逐个对到源码）──────────────────────────────────────
+// ── 叶子取值（34 个，逐个对到源码）──────────────────────────────────────
 // spec 的 `conditionGrammar.leaves` 只登记了名字，没写取值；取值在本文件的
 // `LEAVES` 表里，一个名字一行。**新增叶子必须先改 JSON 再改这里**，
 // 且 `assertSpecLeaves()` 会在首次求值时双向比对（JSON 多一个、这里多一个都会报）。
-// 四个有坑的叶子在表里单独写了注释，别当成一行直读。
+// 十几个有坑的叶子在表里单独写了注释，别当成一行直读。
+//
+// [Oreki R44] 从 18 个扩到 34 个，全部是**读**：没有一项写 player，没有一项调购买 API。
+// 新增的 16 项分两类：
+//   · 结构位（页签能不能打开）—— 直接复用原版页签自己的条件，见 tabs.js:403/436/447/457/466/475/485；
+//   · 计数位（做到哪一步）—— 直接数原版数组，不另建账本。
 
 import spec from "./oreki-smart-strategy.gen.js";
 // [Oreki R42] 多路线择优的模型源（filter / 权重 / 切换阈值 / 界面查询方法）。
@@ -49,6 +55,11 @@ const LEAVES = {
   "progress.infinityUnlocked": () => PlayerProgress.infinityUnlocked(),
   "progress.eternityUnlocked": () => PlayerProgress.eternityUnlocked(),
   "progress.realityUnlocked": () => PlayerProgress.realityUnlocked(),
+  // [Oreki R44] 就是原版 `PlayerProgress.dilationUnlocked()`（player-progress.js:53-55
+  // → `TimeStudy.dilation.isBought`），膨胀研究 1 的购买记录。
+  // ⚠ 它**不单调**：现实重置会把 `player.dilation.studies` 清空（reality.js:669-681），
+  // 所以现实之后它会重新变假，直到再买一次膨胀研究 1。这是原版语义，别拿它当「永久解锁」。
+  "progress.dilationUnlocked": () => PlayerProgress.dilationUnlocked(),
 
   "player.break": () => player.break === true,
 
@@ -63,8 +74,58 @@ const LEAVES = {
   "challenge.infinityRunning": () => InfinityChallenge.isRunning,
   "challenge.eternityRunning": () => EternityChallenge.isRunning,
 
+  // ── [Oreki R44] 挑战计数类：给「下一个该打哪个」用，不让 spec 写死顺序。
+  // `NormalChallenges.all` / `InfinityChallenges.all` 都是 `index.compact()`（normal-challenges.js:172、
+  // infinity-challenges.js:135），只含 1..12 / 1..8，不含 0 号占位，所以计数从 0 起算就是准的。
+  "challenge.normalCompleted": () => NormalChallenges.all.filter(c => c.isCompleted).length,
+  "challenge.infinityCompleted": () => InfinityChallenges.all.filter(c => c.isCompleted).length,
+  // ⚠ 这个**不是**「打完了几个 EC」，是「所有 EC 的完成次数之和」（0..5 每项，12 项 ⇒ 上限 60）。
+  // 单个 EC 的完成次数在 `EternityChallenge(n).completions`；要「全部刷满」就用 60。
+  "challenge.eternityCompletions": () => EternityChallenges.completions,
+
+  // [Oreki R44] 时间研究进度：直接数 `player.timestudy.studies`（player.js:400 的数组）的长度。
+  // ⚠ 它**不是**「研究树建好了没有」的充要条件，只是「买过几棵」。用 >0 区分
+  // 「刚进永恒、一棵没买」与「已经在研究树上推进」是安全的，用它当「树建完了」是错的。
+  "timeStudy.studiesBought": () => (player.timestudy?.studies?.length ?? 0),
+
+  // ── [Oreki R44] 现实层计数
+  // ⚠ 只数**一次性**现实升级（id >= 6）：id 1..5 是 `RebuyableRealityUpgradeState`（现实机器可重复买，
+  // reality-upgrades.js:206-210），它们没有 `isBought` 只有 `boughtAmount`。用 `isUnlocked === true`
+  // 而不是 `isBought`：`RealityUpgradeState extends BitPurchasableMechanicState`，位图类的 getter 叫
+  // `isUnlocked`（game-mechanics/bit-upgrade-state.js:18），没有 `isBought`。
+  // 一次性升级共 20 个（id 6..25），买满 20 ⇒ 原版 `RealityUpgrades.allBought` 为真 ⇒ 成就 147。
+  "reality.upgradesBought": () => RealityUpgrades.all.filter(u => u.id >= 6 && u.isUnlocked === true).length,
+  // 复兴节点：`player.reality.perks` 是 Set（player.js:513），买过的 id 集合。
+  "reality.perksBought": () => (player.reality?.perks?.size ?? 0),
+  // 复兴点数余额（number，currency.js:410-413）。注意它不是「攒起来的一次性资源」，
+  // 每次现实都会发新的，攒着不花没有利息。
+  "reality.perkPoints": () => Currency.perkPoints.value,
+  // 已装备的符文数。`glyphs.active` 是定长数组、空格位是 null，所以要过滤掉空槽再数。
+  "reality.glyphsEquipped": () => (player.reality?.glyphs?.active ?? []).filter(Boolean).length,
+  // 自动机是否解锁：原版 getter（player.js:1001-1003），条件 = 自动机点数够 或 玩家手动 forceUnlock。
+  // ⚠ 用 `=== true` 而不是直接返回：`player.reality.automator` 可能不存在（旧存档），此时 getter 会抛，
+  // failSafe 会把整层降级。这里只在能读到时返回布尔，读不到时返回 false。
+  "automator.unlocked": () => Player.automatorUnlocked === true,
+
   // 成就 147 一到手就算解锁（teresa.js:11-13），与「真的投过现实机器」不同
   "celestial.teresaUnlocked": () => Teresa.isUnlocked,
+
+  // ── [Oreki R44] 天神解锁位：**逐字对齐原版页签条件**（secret-formula/tabs.js:436-489），
+  //   因为「页签能不能打开」就是玩家认知里的「这位天神解锁了没有」。
+  //   每一条都比前一条更晚，天然串成链，stage 里靠「取反下一位」保证互斥。
+  "celestial.effarigUnlocked": () => TeresaUnlocks.effarig.isUnlocked,
+  // 鹿颈长的「永恒阶段」完成即解锁无名氏（enslaved.js:178-180 也是同一个判据）
+  "celestial.enslavedUnlocked": () => EffarigUnlock.eternity.isUnlocked,
+  // 薇的页签条件是成就 151，不是「无名氏完成」——无名氏可以永远卡着，薇照样能开
+  "celestial.vUnlocked": () => Achievement(151).isUnlocked,
+  // ⚠ 用 `VUnlocks.raUnlock`（页签条件），**不要**用 `Ra.isUnlocked`
+  //   （= `V.spaceTheorems >= 36`，那是太阳神内部游戏的解锁，比页签晚整整一段）
+  "celestial.raUnlocked": () => VUnlocks.raUnlock.isUnlocked,
+  // 莱特拉：`ImaginaryUpgrade(15).isBought`（laitela.js:34-36）
+  "celestial.laitelaUnlocked": () => Laitela.isUnlocked,
+  // 佩勒：`ImaginaryUpgrade(25).isBought`（pelle.js:120-122）。注意这是「佩勒页签能开」，
+  // 不等于「已进入毁灭现实」，后者是 `pelle.doomed`。
+  "celestial.pelleUnlocked": () => Pelle.isUnlocked,
 
   "pelle.doomed": () => Pelle.isDoomed === true,
   // [Oreki R40-S1-fix] 键名必须与 spec.conditionGrammar.leaves 逐字一致，否则
@@ -199,15 +260,30 @@ const EVAL_MIN_INTERVAL_MS = 1000; // spec.conventions.evaluationPeriod 的默�
 
 /** 机制状态指纹：这些一变就必须立刻重算，不必等 1 s。 */
 function stateSignature() {
+  // [Oreki R44] 阶段识别现在依赖 12 个位，指纹必须全部覆盖 —— 漏一个就会出现
+  // 「阶段已经换了、决策还是旧的，最多延迟 1 s」；1 s 的延迟在「刚解锁时间膨胀」
+  // 「刚打开天神页签」这种当帧就该换策略的节点上会直接买错东西。
   return [
     PlayerProgress.infinityUnlocked() ? 1 : 0,
     PlayerProgress.eternityUnlocked() ? 1 : 0,
     PlayerProgress.realityUnlocked() ? 1 : 0,
+    PlayerProgress.dilationUnlocked() ? 1 : 0,
     NormalChallenge.isRunning ? 1 : 0,
     InfinityChallenge.isRunning ? 1 : 0,
     EternityChallenge.isRunning ? 1 : 0,
     Pelle.isDoomed ? 1 : 0,
     player.break ? 1 : 0,
+    // 阶段分界用的计数位，只取「够不够」不取精确值，避免每买一棵研究就重算整条路线
+    (player.timestudy?.studies?.length ?? 0) > 0 ? 1 : 0,
+    (player.realities ?? 0) >= 2 ? 1 : 0,
+    Player.automatorUnlocked ? 1 : 0,
+    Teresa.isUnlocked ? 1 : 0,
+    TeresaUnlocks.effarig.isUnlocked ? 1 : 0,
+    EffarigUnlock.eternity.isUnlocked ? 1 : 0,
+    Achievement(151).isUnlocked ? 1 : 0,
+    VUnlocks.raUnlock.isUnlocked ? 1 : 0,
+    Laitela.isUnlocked ? 1 : 0,
+    Pelle.isUnlocked ? 1 : 0,
   ].join("");
 }
 
@@ -306,7 +382,7 @@ function withFreshHold(decision, now) {
 // 2. **购买权边界**：本层只**重排**当前 `strategy.priority` 里**已经存在**的动词。
 //    `orderForBinding()` 里有一条硬约束：绑定里出现、但 priority 里没有的动词一律丢弃。
 //    也就是说它不可能让任何层多买一样原本不被允许的东西。
-// 3. **研究购买节流**：本层不调用任何购买方法（本文件至今不出现 purchase）。
+// 3. **研究购买节流**：本层不调用任何购买方法（本文件全文 0 处购买 API 名）。
 //    `buyTimeStudy` / `buyDilationStudy` 仍是 `delegated`，30 帧节流不受影响。
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -361,10 +437,15 @@ const ROUTE_RESOURCES = {
 const ROUTE_GOAL_PROGRESS = {
   early: { res: "antimatter", completeness: "full", threshold: () => Player.infinityGoal, done: () => PlayerProgress.infinityUnlocked() === true },
   preInfinity: { res: "antimatter", completeness: "full", threshold: () => Player.infinityGoal, done: () => PlayerProgress.infinityUnlocked() === true },
-  infinity: { res: "infinityPoints", completeness: "full", threshold: () => Player.eternityGoal, done: () => PlayerProgress.eternityUnlocked() === true },
+  // [Oreki R44] 阶段 id 由 `infinity` 改名为 `infinityDimensions`（打破无限后的无限维度期）。
+  // 打破无限之前那一段（`breakInfinity`）刻意**不登记**：它的门槛是「间隔拉满 15 级」，
+  // 不是任何一种货币余额，硬编一个 IP 阈值等于编数字 ⇒ 该段 ETA 一律 null。
+  infinityDimensions: { res: "infinityPoints", completeness: "full", threshold: () => Player.eternityGoal, done: () => PlayerProgress.eternityUnlocked() === true },
   // 解锁现实 = 买下膨胀研究 6（`TimeStudy.reality`，dilation-time-study.js:113）
   eternity: { res: "timeTheorems", completeness: "partial", threshold: () => TimeStudy.reality.cost, done: () => PlayerProgress.realityUnlocked() === true },
   timeStudy: { res: "timeTheorems", completeness: "partial", threshold: () => TimeStudy.reality.cost, done: () => PlayerProgress.realityUnlocked() === true },
+  // 膨胀段的终点同样是「解锁现实」，所以沿用同一条阈值；`partial` 的自证逻辑见 estimateGoalEta()
+  dilation: { res: "timeTheorems", completeness: "partial", threshold: () => TimeStudy.reality.cost, done: () => PlayerProgress.realityUnlocked() === true },
 };
 
 /**

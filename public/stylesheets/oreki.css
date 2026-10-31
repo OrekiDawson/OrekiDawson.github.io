@@ -1812,6 +1812,25 @@
     pointer-events: none;
   }
 
+  /* --------------------------------------------------------------------------
+     [Oreki R43-C] 抽屉展开时收起常驻教程入口
+     缺陷（静态几何，320/360 两档）：
+       · 抽屉面板宽 22rem = 220px（max-width 84vw 在 320 时是 268px，不起作用），
+         铺满整个可视高度；
+       · 教程入口 pill 是「右锚定 + 宽约 145px」，320 时左缘 ≈ 168px，
+         与抽屉面板在 x 168~220 区间横向重叠约 52px，纵向正好压在面板底部 48px 的页签带上；
+       · 两者同在根层 z-index 5，而 pill 由 installTutorialEntry() 追加到 body 末尾，
+         绘制顺序更后 ⇒ pill 盖住抽屉页签，点在重叠区会被 pill 的
+         click（stopPropagation）吞掉，切页签失败。
+       同时 pill 的 z-index(5) 高于遮罩(4)，抽屉展开时它仍是全亮状态，破坏遮罩层级。
+     修法：只在抽屉展开期间隐藏 pill（visibility 不触发重排），关掉抽屉立刻恢复。
+     用 body:has() 而不是给 pill 加状态位：pill 在 src/core 里注入，不改它的代码。
+     -------------------------------------------------------------------------- */
+  body:has(.c-modern-sidebar--open) .c-oreki-tut-entry {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
   /* ---- 抽屉内的页签：横向可读，不再竖排 ----
      页签容器改成纵向 flex：否则 .l-tab-btn-inner 的 height:100% 会吃掉整个
      页签高度并盖在子页签上（它带 position: relative，定位元素永远画在
@@ -1896,6 +1915,87 @@
   /* 用户要求触控目标 ≥ 44px：教程入口原 36px 抬到 44px */
   .c-oreki-tut-entry {
     min-height: 4.4rem;
+  }
+}
+
+/* ==========================================================================
+   [Oreki R43-C] ≤430px：常驻教程入口缩小让位（实测遮挡 ≤5%）
+   --------------------------------------------------------------------------
+   背景：A 的 overlap2 实测（5 档视口，逐元素 rect + elementsFromPoint）
+   推翻了我原来的静态推导「320px 下 pill 与选项页按钮不遮挡」。原因是那套
+   推导只算了「最后一块内容」：.c-game-tab 的 padding-bottom 只保证列表
+   末尾不被压，而 pill 是右下角 fixed 悬浮件，选项页按钮是 x:0..W 的全宽行，
+   滚动时整排按钮会钻到它下面。文字版 pill（156.8×44）实测被遮：
+     320×640 「导入存档文件」         4076 px² / 26.5%
+     320×640 「显示距上次存档的时间」  1568 px² / 10.2%
+     360×640 「打开离线资源选项」     4024 px² / 23.8%
+     390×844 「恢复默认」             6506 px² / 34.8%
+     430×932 「自动（当前 10000×）」  5879 px² / 27.9%
+     640×320 无                        0
+   全部 centerCovered=false（非阻断），但有误触开教程的风险。
+
+   约束：用户新规则「底栏按官方的来」——不加底栏、不动导航形态、不动
+   .c-oreki-nav / ModernSidebar / 640px 断点 / 页签顺序；也不给
+   .o-primary-btn--option 加 margin 去挤列表。只改 pill 自身。
+
+   只「抬高」不管用：44×44 的 pill 从 bottom 6px 抬到 12px，390 档反而
+   由 9.75% 涨到 10.34%（抬起来正好更深地压进「恢复默认」）。
+
+   修法：≤430px 隐藏文字 label，按钮收成 28×28 圆形图标；触控面积仍 ≥44×44，
+   由 ::before 的负 inset 撑出透明命中环（padding box 26px + 0.9rem×2 = 44px，
+   伪元素是子元素，命中结果归属本按钮），满足 AGENTS.md §19；而
+   getBoundingClientRect 只算元素自身 28×28，故实测遮挡按 28×28 计。
+   复核（用 A 的 overlap2-report.json 原始 rect 重算，同一滚动位置）：
+     320 2.92% / 360 2.46% / 390 4.19% / 430 3.72% / 640×320 不触发
+   >430px 的文字版、.c-oreki-tut-entry__label 的 max-width 截断保护、
+   padding-bottom 护栏全部未动；640×320 视口宽 640 > 430，不触发本查询。
+   ========================================================================== */
+@media screen and (max-width: 430px) {
+  .c-oreki-tut-entry {
+    /* 28 是留给最坏档（390，Δy 全落进按钮）仍 ≤5% 的最大边长：
+       占比 = s² / (W×48)，390 档 s=28 → 784/18720 = 4.19%，s=32 → 5.47% 超标。
+       全局 * { box-sizing: border-box }，2.8rem 含 0.1rem 边框。 */
+    width: 2.8rem;
+    min-width: 2.8rem;
+    height: 2.8rem;
+    min-height: 2.8rem;
+    /* 抬离底边：safe-area + 1.2rem，不再贴 6px（用 env() 而非不存在的
+       --oreki-safe-bottom：本仓库只定义了 --oreki-touch-* 三个变量） */
+    bottom: calc(1.2rem + env(safe-area-inset-bottom, 0px));
+    /* [R43 修正] 右锚必须 ≥ ::before 的 inset（0.9rem）。
+       基础规则的 right 是 0.6rem(6px)，而命中环向外扩 9px —— 右侧 3px 越过视口
+       被裁，实测命中框只有 42×44 而不是 44×44。改成 0.9rem 后环右缘正好贴到
+       视口右缘（W-9+9 = W），命中框恢复 44×44。
+       副作用：pill 整体左移 3px，与下方选项按钮的重叠面积只会更小，不破坏 ≤5%。 */
+    right: 0.9rem;
+    padding: 0;
+    gap: 0;
+    justify-content: center;
+    border-radius: 50%;
+  }
+
+  /* 44×44 命中环：绝对定位负 inset 撑出透明区域。
+     padding box = 28 − 2×1px 边框 = 26px；26 + 2×9px = 44px。 */
+  .c-oreki-tut-entry::before {
+    content: "";
+    position: absolute;
+    inset: -0.9rem;
+    border-radius: 50%;
+  }
+
+  /* 用 display:none 而不是 visibility:hidden：后者仍占位，宽度不会收缩 */
+  .c-oreki-tut-entry__label {
+    display: none;
+  }
+
+  /* 28px 的圈里再套一个 22px 描边圈会糊成一团，去掉内圈，只留白色 ? 字样 */
+  .c-oreki-tut-entry__icon {
+    width: auto;
+    height: auto;
+    font-size: 1.5rem;
+    line-height: 1;
+    border: 0;
+    opacity: 1;
   }
 }
 

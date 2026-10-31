@@ -104,7 +104,7 @@ export default {
         data-v-shop-button
       >
         <div v-if="allSetsUnlocked">
-          All Sets unlocked!
+          已解锁全部套装！
         </div>
         <div v-else>
           将解锁 {{ formatInt(lockedCount) }} 个

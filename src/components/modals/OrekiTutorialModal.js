@@ -321,7 +321,7 @@ export default {
             :class="{ 'c-oreki-tut__nav-btn--active': i === index }"
             @click="goTo(i)"
           >
-            <span class="c-oreki-tut__nav-index">{{ i }}</span>
+            <span class="c-oreki-tut__nav-index">{{ i + 1 }}</span>
             <span class="c-oreki-tut__nav-title">{{ item.title }}</span>
             <span
               v-if="stageLabelOf(item)"
@@ -496,7 +496,6 @@ export default {
                     </td>
                     <td>
                       {{ num.value }}
-                      <span class="c-oreki-tut__src">{{ num.src }}</span>
                     </td>
                   </tr>
                 </tbody>
@@ -600,7 +599,7 @@ export default {
               回到当前进度
             </button>
             <span class="c-oreki-tut__counter">
-              {{ isAppendix ? "附 " + (appendixIndex + 1) + " / " + appendices.length : index + " / " + (chapters.length - 1) }}
+              {{ isAppendix ? "附 " + (appendixIndex + 1) + " / " + appendices.length : (index + 1) + " / " + chapters.length }}
             </span>
             <button
               class="o-primary-btn c-oreki-tut__nav-move"

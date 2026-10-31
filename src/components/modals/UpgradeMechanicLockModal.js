@@ -38,7 +38,7 @@ export default {
     @confirm="disableLock"
   >
     <template #header>
-      {{ upgradeStr }} Condition Lock
+      {{ upgradeStr }}的条件锁定
     </template>
     <div class="c-modal-message__text">
       你确定要{{ lockEvent }}吗？现在这么做会导致你

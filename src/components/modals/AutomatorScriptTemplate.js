@@ -149,7 +149,7 @@ export default {
       使用研究树预设：
       <button
         v-for="(preset, presetNumber) in presets"
-        :key="preset.name"
+        :key="presetNumber"
         class="o-primary-btn o-load-preset-button-margin"
         data-v-automator-script-template
         @click="loadPreset(preset.name, presetNumber + 1)"

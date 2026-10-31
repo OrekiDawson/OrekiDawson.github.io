@@ -193,8 +193,8 @@ export class ScriptTemplate {
     this.lines.push(`auto infinity 5s`);
     if (params.isBanked) {
       const has191 = this.storedTreeObj.purchasedStudies.includes(TimeStudy(191));
-      if (!has191) this.warnings.push(`TS191 is not reachable from an empty tree; banking anything in this template
-        will require Achievement "${Achievement(131).name}"`);
+      if (!has191) this.warnings.push(`从空树无法到达 TS191；要在本模板中储存无限次数，
+        需要成就“${Achievement(131).name}”`);
       const bankRate = has191 ? 0.1 : 0.05;
       this.lines.push("// Note: This template attempts to get all the Banked Infinities within a single Eternity");
       this.lines.push(`wait infinities > ${this.format(params.infinities.dividedBy(bankRate), 2)}`);
@@ -229,18 +229,18 @@ export class ScriptTemplate {
       this.lines.push(`unlock ec ${params.ec}`);
       // Attempt to buy it, supplying an error if we can't actually reach it
       if (!tree.hasRequirements(TimeStudy.eternityChallenge(params.ec), true)) {
-        this.warnings.push("Specified Study Tree cannot reach specified EC");
+        this.warnings.push("指定的研究树无法到达指定的永恒挑战");
       }
-    } else if (tree.ec !== params.ec) this.warnings.push("Specified Study Tree already has a different EC unlocked");
+    } else if (tree.ec !== params.ec) this.warnings.push("指定的研究树已解锁了另一个永恒挑战");
 
     // Apply autobuyer settings; we specifically want to turn auto-eternity off so that we can manually trigger the
     // prestige - otherwise, the autobuyer may end up preempting multiple completions
     this.lines.push(`auto infinity ${this.parseAutobuyerProp(params.autoInfMode, params.autoInfValue)}`);
     this.lines.push(`auto eternity off`);
-    if (!TimeStudy.eternityChallenge(params.ec)) this.warnings.push(`Specified template EC does not exist`);
+    if (!TimeStudy.eternityChallenge(params.ec)) this.warnings.push(`模板指定的永恒挑战不存在`);
     this.lines.push(`start ec ${params.ec}`);
 
-    if (params.completions > 5) this.warnings.push(`ECs cannot be completed more than ${formatInt(5)} times`);
+    if (params.completions > 5) this.warnings.push(`永恒挑战最多只能完成 ${formatInt(5)} 次`);
     this.lines.push(`wait pending completions >= ${params.completions}`);
     this.lines.push("eternity");
   }
@@ -259,7 +259,7 @@ export class ScriptTemplate {
     this.lines.push(`notify "Running Template Unlock Dilation"`);
     this.storeTreeData(params);
     if (![231, 232, 233, 234].some(s => this.storedTreeObj.purchasedStudies.includes(TimeStudy(s)))) {
-      this.warnings.push("Specified Study Tree cannot reach Dilation");
+      this.warnings.push("指定的研究树无法到达时间膨胀");
     }
     this.lines.push(`auto infinity off`);
     this.lines.push(`auto eternity ${this.parseAutobuyerProp(params.autoEterMode, params.autoEterValue)}`);

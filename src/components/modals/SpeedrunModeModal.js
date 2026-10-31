@@ -112,10 +112,10 @@ export default {
         @keyup.esc="emitClose"
       >
     </div>
-    <template #confirm>
+    <template #confirm-text>
       开始速通
     </template>
-    <template #cancel>
+    <template #cancel-text>
       取消
     </template>
   </ModalWrapperChoice>

@@ -104,6 +104,18 @@ const CSS = `
   line-height: 1.4;
   opacity: 0.55;
 }
+/* [R50] 教程正文的每个 block 都是 <section>，而上游 public/stylesheets/styles.css
+ * 里有一条营销页遗留的 section { float: right; width: 500px; padding-bottom: 50px }。
+ * 它会把每个 block 浮动成固定 500px 的两栏：中文长句（例如第 9 章的进入条件、
+ * 第 10 章的购买顺序）在 500px 栏里排不下，直接压到相邻栏上，两段文字互相遮挡。
+ * 教程内一律回到普通块级流，宽度跟随容器，不做多栏。
+ * 只作用于 .c-oreki-tut 内部，上游 styles.css 一个字未改。 */
+.c-oreki-tut section {
+  float: none;
+  width: auto;
+  max-width: 100%;
+  padding-bottom: 0;
+}
 .c-oreki-tut__block { margin: 0 0 0.9rem; }
 .c-oreki-tut__label {
   margin-bottom: 0.25rem;

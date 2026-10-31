@@ -440,6 +440,19 @@
   min-height: 20rem;
 }
 
+/* [R50] 小屏竖屏正文只剩两三行。
+ * 实测 320×568：弹窗总高 386px，其中正文滚动区只有约 150px —— 一行「阶段目标」
+ * 就吃掉半屏，玩家必须反复滚动才能读完一章。原因是布局盒子写死 50vh（284px），
+ * 而弹窗自身并不需要那么矮（视口还有 180px 空着）。
+ * 这里只在「屏幕不高」时把布局盒子抬高到 72vh，正文滚动区随之变大；
+ * 大屏（>= 721px 高）完全不受影响，桌面排版一个字没变。 */
+@media (max-height: 720px) {
+  .c-oreki-tut__layout {
+    height: 72vh;
+    min-height: 18rem;
+  }
+}
+
 .c-oreki-tut__nav {
   display: flex;
   flex: 0 0 17rem;
@@ -2164,3 +2177,37 @@
 
 /* [R47-C1] 教程禁绿：本文件里 c-oreki-tut 段的 --color-good 已换成这个蓝色强调色 */
 .c-oreki-tut { --oreki-tut-ok: #7cc6ff; }
+
+
+/* ==========================================================================
+   [R50-C2] 膨胀页（时间膨胀）升级网格窄屏被裁 —— AVD Chrome 实测
+   --------------------------------------------------------------------------
+   事实（Android AVD 1440×3200 @560dpi，Chrome 156，411×750 CSS px）：
+     .l-dilation-upgrades-grid            宽 660px，left=-124  right=536
+     10 个 .o-dilation-upgrade 按钮里      6 个在视口外（第一个 -109..81，第三个 331..521）
+   成因：components.css 里
+     .l-dilation-upgrades-grid__row { display:flex; flex-direction:row; justify-content:center }
+     .o-dilation-upgrade            { width: 19rem }（=190px，不收缩）
+   每行 3 个 190px 按钮 + 单元格左右各 1.5rem 外边距，行宽 660px；flex 居中时
+   溢出量左右各分一半，而 .c-game-ui 是 overflow-x: hidden —— 两侧直接被裁掉，
+   既看不到也点不到（不是「可以横滚」，是彻底不可达）。
+   修法：① 窄屏允许换行（flex-wrap），② 按钮宽度改为 min(19rem, 50vw - 2.2rem)，
+        使任何宽度下每行都能放下 2 个，③ 高度由固定 9rem 改为 min-height，
+        避免变窄后文字被压。
+   影响面：≤900px；桌面（>900px）命中不了任何一条，排版与现在完全一致。
+   ========================================================================== */
+@media screen and (max-width: 900px) {
+  .l-dilation-upgrades-grid__row[data-v-time-dilation-tab] {
+    flex-wrap: wrap;
+  }
+
+  .l-dilation-upgrades-grid__cell[data-v-time-dilation-tab] {
+    margin: 0.6rem 0.4rem;
+  }
+
+  .o-dilation-upgrade[data-v-dilation-upgrade-button] {
+    width: min(19rem, calc(50vw - 2.2rem));
+    height: auto;
+    min-height: 9rem;
+  }
+}

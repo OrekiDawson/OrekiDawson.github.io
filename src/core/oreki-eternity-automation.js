@@ -71,6 +71,30 @@ export const OrekiEternityAutomation = {
   /** [Oreki R40-A] 「满级关换关 respec」的次数与上次快照，仅用于观测与防抖 */
   _respecCount: 0,
   _fullEcRespec: null,
+  /**
+   * [Oreki R42-C] 被 catch 吞掉的异常（只读观测，不参与任何判定）。
+   *
+   * 本模块几乎所有方法都是 `try { ... } catch (e) { return false; }`。这在
+   * 「资源不够、前置没满足」时是对的，但它同时把**写错的代码**伪装成「条件不满足」：
+   * `FACTS` C.19 与 C.22 各踩过一次（`Currency.*.value.gte()` 抛 TypeError、
+   * `VUnlocks` 漏 import 抛 ReferenceError），表现都是「判据永远为假」，
+   * 从外部看不出任何异常。
+   *
+   * 这里只做一件事：把每个外层 catch 的异常消息记下来，供探针读。
+   * **不改变任何返回值、不改变任何游戏状态**，所以「记录」与「行为」是两件事，
+   * 加它不会让原本能跑的逻辑变慢或变快（同一个异常一条字符串，重复消息不重复写）。
+   */
+  _lastError: "",
+
+  /**
+   * 记录一次被吞掉的异常。同一个 tag+消息只写一次，避免每帧字符串拼接。
+   * @param {string} tag 调用点（方法名）
+   * @param {*} e 捕获到的异常
+   */
+  _err(tag, e) {
+    const msg = `${tag}: ${(e && e.message) || e}`;
+    if (this._lastError !== msg) this._lastError = msg;
+  },
 
   get active() {
     try {
@@ -114,6 +138,7 @@ export const OrekiEternityAutomation = {
       if (Pelle.isDoomed) return false;
       return true;
     } catch (e) {
+      this._err("active", e);
       return false;
     }
   },
@@ -140,6 +165,7 @@ export const OrekiEternityAutomation = {
       }
       return bought;
     } catch (e) {
+      this._err("buyTimeDimensions", e);
       return false;
     }
   },
@@ -153,6 +179,7 @@ export const OrekiEternityAutomation = {
     try {
       return TimeTheorems.buyMax(true) > 0;
     } catch (e) {
+      this._err("buyTimeTheorems", e);
       return false;
     }
   },
@@ -181,6 +208,7 @@ export const OrekiEternityAutomation = {
       if (id === 4 || id === 8) return 123;
       return 121;
     } catch (e) {
+      this._err("preferredColumn", e);
       return 121;
     }
   },
@@ -221,6 +249,7 @@ export const OrekiEternityAutomation = {
       if (ec11.completions >= ec11.maxCompletions && ec12.completions < ec12.maxCompletions) return 73;
       return 71;
     } catch (e) {
+      this._err("dimensionPathId", e);
       return 71;
     }
   },
@@ -267,6 +296,7 @@ export const OrekiEternityAutomation = {
       }
       return false;
     } catch (e) {
+      this._err("needsBranchRespec", e);
       return false;
     }
   },
@@ -288,6 +318,7 @@ export const OrekiEternityAutomation = {
       }
       return bought;
     } catch (e) {
+      this._err("buyTimeStudies", e);
       return 0;
     }
   },
@@ -315,6 +346,7 @@ export const OrekiEternityAutomation = {
       }
       return bought;
     } catch (e) {
+      this._err("buyDilationStudies", e);
       return 0;
     }
   },
@@ -461,6 +493,7 @@ export const OrekiEternityAutomation = {
       }
       return challenge.start(true) === true;
     } catch (e) {
+      this._err("buyEcStudiesAndStart", e);
       return false;
     }
   },
@@ -495,6 +528,7 @@ export const OrekiEternityAutomation = {
       if (!primaryMet) return false;
       return !study.isEntryGoalMet;
     } catch (e) {
+      this._err("shouldHoldReset", e);
       return false;
     }
   },
@@ -536,6 +570,7 @@ export const OrekiEternityAutomation = {
       }
       return 0;
     } catch (e) {
+      this._err("nextUnfinishedEcId", e);
       return 0;
     }
   },
@@ -564,6 +599,7 @@ export const OrekiEternityAutomation = {
       if (!primaryMet) return false;
       return !study.isEntryGoalMet;
     } catch (e) {
+      this._err("ecEntryPending", e);
       return false;
     }
   },
@@ -591,6 +627,7 @@ export const OrekiEternityAutomation = {
       if (gainedEternityPoints().lt(Currency.eternityPoints.value.times(10))) return false;
       return eternity(false, true) === true;
     } catch (e) {
+      this._err("tickEternity", e);
       return false;
     }
   },
@@ -598,26 +635,62 @@ export const OrekiEternityAutomation = {
   /**
    * 是否应该为了现实升级 10 压住第一次永恒。
    * 只读判断 + 会话内计时；**最多压 10 秒**，避免 IP 被自动买无限维度花掉时把这局卡死。
+   *
+   * [Oreki R42-C] **真缺陷修复，不是注释补充**。
+   *
+   * 原写法是 `player.eternities > 0`。`player.eternities` 是 Decimal
+   * （`player.js:377` 初始 `DC.D0`；`Currency.eternities.value` 就是它），
+   * 而 break_infinity 的 `Decimal#valueOf()` 会抛
+   * `Implicit conversion from Decimal to number`。
+   * 于是本函数**每一帧都在 throw**，被下面的 catch 吞掉、恒返回 false：
+   * 「为现实升级 10 压住第一次永恒」这条机制从写下来那天起就没生效过。
+   *
+   * 后果链（`reality-upgrades.js:146-148`）：
+   *   RU10 的 checkRequirement 是 `IP 指数 ≥ 400 && noEternities`，
+   *   而 `noEternities` 在第一次永恒时被置 false（`eternity.js:96`）；
+   *   自动永恒在 `Player.canEternity`（IP = 1.797e308，即指数 308）就触发，
+   *   永远差 92 个指数 ⇒ RU10 每个现实都拿不到 ⇒ 成就 147「购买所有现实升级」
+   *   永不成立 ⇒ 特蕾莎不出现。
+   * ⇒ **这是一条被判据写错掐死的推进链**，与 FACTS C.19 记录的
+   *   `Currency.*.value.gte()` 是同一类（Decimal 方法/运算符用错 + catch 吞异常）。
+   *
+   * 修法：改成 Currency 对象自己的 `gt()`（内部走 Decimal 比较），
+   * 指数比较先显式取 Number —— 两种写法都不会触发隐式转换。
+   * 语义不变：仍是「已经永恒过 / IP 指数已达标 / 已买 / 已可买」四条任一即放手。
+   *
+   * ── 同时把「10 秒上限」改成**单次**上限（`_ru10GaveUp` 闩锁）──────────────
+   * 旧实现超时后只清 `_ru10HoldSince`，下一帧又会重新置位，于是「压 10 s → 放 1 帧
+   * → 再压 10 s」可以无限循环。原版这条路因为 `player.eternities > 0` 恒抛异常而
+   * 从未走到过，一旦修好比较就**有可能真的把永恒按住不放**（例如某个现实里 IP 指数
+   * 一直够不到 400）。现在超时后置 `_ru10GaveUp = true`，直到 `stop` 条件整体
+   * 翻转（本现实结束 / 已买到 / 已可买）才重新武装 ⇒ **每个现实最多压 10 秒，
+   * 物理上不可能长期压死自动永恒**。
    */
   _ru10HoldSince: 0,
+  _ru10GaveUp: false,
 
   holdForRealityUpgrade10() {
     try {
       const noEternitiesYet = player.requirementChecks.reality.noEternities;
       const upg = RealityUpgrade(10);
+      const ipExp = Number(Currency.infinityPoints.value.exponent);
       const stop = !noEternitiesYet || !upg || upg.isAvailableForPurchase || upg.isBought ||
-        player.eternities > 0 || Currency.infinityPoints.exponent >= 400;
+        Currency.eternities.gt(0) || ipExp >= 400;
       if (stop) {
         this._ru10HoldSince = 0;
+        this._ru10GaveUp = false;
         return false;
       }
+      if (this._ru10GaveUp) return false;
       if (!this._ru10HoldSince) this._ru10HoldSince = Date.now();
       if (Date.now() - this._ru10HoldSince > 10000) {
         this._ru10HoldSince = 0;
+        this._ru10GaveUp = true;
         return false;
       }
       return true;
     } catch (e) {
+      this._err("holdForRealityUpgrade10", e);
       return false;
     }
   },
@@ -658,6 +731,7 @@ export const OrekiEternityAutomation = {
       if (!primaryMet) return false;
       return !study.isEntryGoalMet;
     } catch (e) {
+      this._err("shouldHoldCrunch", e);
       return false;
     }
   },
@@ -720,6 +794,7 @@ export const OrekiEternityAutomation = {
       }
       return did;
     } catch (e) {
+      this._err("tryReplicantiGalaxyForEc6", e);
       return false;
     }
   },

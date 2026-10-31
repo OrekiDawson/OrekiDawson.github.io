@@ -367,9 +367,11 @@
   padding: 0 0.9rem;
   font-family: inherit;
   font-size: 1.15rem;
-  color: var(--color-text);
-  background: var(--color-base);
-  border: 0.1rem solid var(--color-good);
+  /* [Oreki R42-C] 教程按钮统一为 #0078D7（与 Android 教程入口同色，用户指定）。
+     白字对比度 4.67:1，满足 WCAG AA 正文要求；图标圈用 currentColor 自动变白。 */
+  color: #fff;
+  background: #0078d7;
+  border: 0.1rem solid #0078d7;
   border-radius: 2rem;
   box-shadow: 0 0 0.8rem rgb(0 0 0 / 55%);
   cursor: pointer;
@@ -381,7 +383,8 @@
 .c-oreki-tut-entry:hover,
 .c-oreki-tut-entry:focus-visible {
   opacity: 1;
-  border-color: var(--color-reality);
+  background: #1a88e0;
+  border-color: #ffffff;
   outline: none;
 }
 
@@ -399,6 +402,13 @@
 
 .c-oreki-tut-entry__label {
   line-height: 1;
+  /* [Oreki R42-C] 文案由「教程」改成「打开 Oreki 中文教程」后，右锚定的 pill 会向左长到
+     约 180px。三件事：不换行（否则 min-content 会在空格处折成两行、把 44px 高撑破）、
+     宽度封顶不越过视口左缘、超长走省略号而不是溢出。 */
+  max-width: calc(100vw - 4rem);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 上游 .c-modal-message 带 min-width: 50rem（根字号 10px 时即 500px），
@@ -1679,5 +1689,294 @@
 
   .c-oreki-smart__key {
     flex: 0 0 auto;
+  }
+}
+
+/* ==========================================================================
+   R42-C · 手机端页签抽屉（≤640px）
+   问题（宿主机 320/360 视口实测，见 _tools/_r42c）：
+     R40-C 把侧栏压到 5.6rem = 56px 的窄条，320 视口下占掉 17.5% 宽度，
+     四字页签（统计数据/自动化）在 55px 内宽里逐字竖排，
+     内容区只剩 264px → 维度行「买到 10 个」被挤成两行、55 个元素右缘超出视口。
+     再压窄条没有意义：56px 已经是四字标签的地板，而标签本身在手机上并不需要常驻。
+   做法：窄屏把侧栏改为「抽屉」——主内容占满宽度（--sidebar-width: 0），
+     页签收进左侧滑出面板，用左上角 44×44 的按钮开合，
+     抽屉展开时带遮罩、点击遮罩或选中页签即收起；子页签在抽屉内联展开（不再依赖 hover）。
+   影响面：仅 ≤640px。桌面与平板（>640px）仍走原常驻侧栏，样式一字不动。
+   状态位：c-oreki-nav__toggle / c-oreki-nav__scrim / .c-modern-sidebar--drawer / --open
+   ========================================================================== */
+
+/* 外壳不吃点击，只有真正的控件吃：它挂在 #ui-fixed（pointer-events: none）里，
+   若不显式打开，按钮会点不动。 */
+.c-oreki-nav {
+  pointer-events: auto;
+}
+
+/* --------------------------------------------------------------------------
+   R42-C · 触摸设备禁掉「双击缩放」
+   mobile Chrome/Safari 在连续点两次同一个按钮时会把页面缩放 2 倍，
+   表现为「点了两下买 10 个，界面突然放大且回不去」。
+   touch-action: manipulation 只取消双击缩放与双击延迟，**保留双指捏合缩放**
+   （不禁用 user-scalable，不做无障碍倒退）。
+   用 (hover: none) 而不是断点：桌面鼠标环境完全不受影响。
+   -------------------------------------------------------------------------- */
+@media (hover: none) {
+  button,
+  .o-primary-btn,
+  .o-tab-btn,
+  .l-tab-btn-inner,
+  input,
+  select,
+  textarea,
+  a {
+    touch-action: manipulation;
+  }
+}
+
+.c-oreki-nav__toggle {
+  display: none;
+}
+
+@media screen and (max-width: 640px) {
+  /* 特异性提醒：new-ui-styles.css 由 ModernUi 模板在运行时以 <link> 注入，
+     实际排在 oreki.css 之后，同特异性的声明会被它盖掉。
+     所以本段一律提高一档（html:root / .c-oreki-nav .c-modern-sidebar），
+     不靠 !important，也不改上游文件。 */
+  html:root {
+    /* 主内容占满视口：.game-container 的 width/margin-left 都读这个变量 */
+    --sidebar-width: 0;
+  }
+
+  /* ---- 开合按钮 ---- */
+  .c-oreki-nav__toggle {
+    display: flex;
+    position: fixed;
+    top: calc(0.6rem + env(safe-area-inset-top, 0px));
+    left: 0.6rem;
+    z-index: 5;
+    width: 4.4rem;
+    height: 4.4rem;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.9rem;
+    color: #ffffff;
+    /* 与教程按钮同色系，保证在深色主题里看得见、也说明是同一套入口 */
+    background: #0078d7;
+    border: 0.1rem solid #0078d7;
+    border-radius: 0.6rem;
+    box-shadow: 0 0 0.8rem rgb(0 0 0 / 60%);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .c-oreki-nav__toggle--open {
+    background: #1a88e0;
+    border-color: #ffffff;
+  }
+
+  /* ---- 遮罩：只压暗主内容，z-index 低于抽屉本体 ---- */
+  .c-oreki-nav__scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 4;
+    background: rgb(0 0 0 / 55%);
+  }
+
+  /* ---- 抽屉本体 ---- */
+  .c-oreki-nav .c-modern-sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 22rem;
+    max-width: 84vw;
+    height: auto;
+    z-index: 5;
+    padding-bottom: calc(1.2rem + env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--color-base, #1d1b22);
+    border-right: 0.1rem solid var(--color-accent, #df5050);
+    transform: translateX(-102%);
+    transition: transform 0.18s ease-out;
+  }
+
+  .c-oreki-nav .c-modern-sidebar--open {
+    transform: none;
+    box-shadow: 0 0 2rem rgb(0 0 0 / 70%);
+  }
+
+  /* 抽屉在屏外时不接收点击，避免透明面板挡住左上角内容 */
+  .c-oreki-nav .c-modern-sidebar:not(.c-modern-sidebar--open) {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  /* ---- 抽屉内的页签：横向可读，不再竖排 ----
+     页签容器改成纵向 flex：否则 .l-tab-btn-inner 的 height:100% 会吃掉整个
+     页签高度并盖在子页签上（它带 position: relative，定位元素永远画在
+     静态的 .subtabs 之上）——实测点击坐标命中的是文字层而不是子页签按钮。 */
+  .c-oreki-nav .c-modern-sidebar--drawer > .o-tab-btn {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: 4.4rem;
+    margin-top: 0;
+    border-left-width: 0;
+    border-bottom-width: 0.1rem;
+  }
+
+  .c-oreki-nav .c-modern-sidebar--drawer > .o-tab-btn > .l-tab-btn-inner {
+    flex: 0 0 auto;
+    height: auto;
+    min-height: 4.4rem;
+    padding: 0 1.4rem;
+    flex-direction: row;
+    justify-content: flex-start;
+    font-size: 1.5rem;
+    line-height: 1.3;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  /* 子页签改为内联展开，且只展开「当前页签」那一个：
+     手机上 hover 不可靠，全部展开会得到 40+ 个格子。 */
+  .c-oreki-nav .c-modern-sidebar--drawer .subtabs {
+    display: none;
+    position: relative;
+    /* 上游 .subtabs 是 position:absolute + top/left 偏移，改成 relative 后必须清零，
+       否则整条子页签带会被推偏 */
+    top: auto;
+    left: auto;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 0.4rem;
+    padding: 0.4rem 1rem 0.9rem;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .c-oreki-nav .c-modern-sidebar--drawer .o-tab-btn--oreki-current .subtabs {
+    display: flex;
+  }
+
+  /* 前面加 .c-oreki-nav 一档：new-ui-styles 的
+     `.c-modern-sidebar .o-tab-btn { font-size: 1.2rem }` 与
+     `.c-modern-sidebar--drawer .o-tab-btn--subtab` 同特异性且后加载，会赢。
+     不抬这一档，子页签符号只剩 12px，在手机上等于看不清。 */
+  .c-oreki-nav .c-modern-sidebar--drawer .o-tab-btn--subtab {
+    display: flex;
+    width: 4.4rem;
+    height: 4.4rem;
+    margin-left: 0;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.9rem;
+    line-height: 1;
+    color: var(--color-text, #ffffff);
+    background: rgb(255 255 255 / 8%);
+    border: 0.1rem solid rgb(255 255 255 / 35%);
+    border-radius: 0.4rem;
+    box-sizing: border-box;
+  }
+
+  /* 子页签名称做成常显小字，触摸设备没有 hover 提示 */
+  .c-modern-sidebar--drawer .o-subtab__tooltip {
+    display: none;
+  }
+
+  /* 三角指示块在抽屉里没有意义（它指向侧栏右侧的浮层） */
+  .c-modern-sidebar--drawer .o-tab-btn::after {
+    display: none;
+  }
+}
+
+@media screen and (max-width: 900px) {
+  /* 用户要求触控目标 ≥ 44px：教程入口原 36px 抬到 44px */
+  .c-oreki-tut-entry {
+    min-height: 4.4rem;
+  }
+}
+
+/* ==========================================================================
+   R42-C · 长数字把整页撑宽（≤900px，宿主机 320/411/768 实测）
+   现象：#page 是 flex 容器，.game-container 是它的 flex 项且 min-width:auto。
+        中期存档里「无限维度」页出现无法折行的长数字（×2.55e103,000,326、
+        2.21e14,714,332 无限之力），最小内容宽度 349px，
+        于是 .game-container 拒绝缩到 320 —— 整页右移 29px，
+        而 #ui 又是 overflow-x: hidden，右侧 29px 直接看不见（无从滚动）。
+        现实解锁后更糟：同样的机制能撑到 828px。
+   修法：① 让 flex 项允许收缩（min-width: 0），页面不再整体右移；
+        ② 允许长数字在必要时断行（overflow-wrap: anywhere 只在放不下时才断，
+           正常宽度下排版与现在完全一致）。
+   影响面：≤900px（含仍用窄条侧栏的 641~900 平板档）；桌面不动。
+   ========================================================================== */
+@media screen and (max-width: 900px) {
+  .game-container,
+  .tab-container,
+  .c-prestige-info-blocks,
+  .information-header,
+  .c-game-tab,
+  .l-dimensions-container {
+    min-width: 0;
+  }
+
+  .c-game-tab p,
+  .c-game-tab li,
+  .c-game-tab span,
+  .c-game-tab div,
+  .information-header,
+  .information-header span {
+    overflow-wrap: anywhere;
+  }
+}
+
+@media screen and (max-width: 640px) {
+  /* 成就页与无限页是「固定宽度格子横排」，320 下整排 658 / 584 宽，
+     #ui 又裁掉溢出 → 右侧成就与无限升级点不到（R42-C 走查实测）。
+     窄屏允许换行并居中，格子尺寸保持不变（不缩小触控目标）。 */
+  .l-achievement-grid__row,
+  .l-infinity-upgrade-grid,
+  .l-infinity-upgrades-bottom-row,
+  .l-infinity-upgrades-tab__mult-rows {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .l-achievement-grid,
+  .l-infinity-upgrade-grid,
+  .l-infinity-upgrades-bottom-row {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  /* 上游写死 width: 60rem，窄屏会把整页撑开 */
+  .c-achievements-tab__header,
+  .c-achievements-tab__timer {
+    width: auto;
+    max-width: 100%;
+  }
+
+  /* 永恒页：时间研究树是按 rem 绝对定位的固定尺寸画布（约 100rem 宽），
+     窄屏右侧研究点不到也没有滚动条。这里让树在自己的框里横向滚动，
+     画布尺寸与格子位置一律不动。 */
+  .l-time-studies-tab__tree {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  /* 现实页：已装备符文槽 + 效果面板写死 65rem，411 下整块右侧被裁 */
+  .l-equipped-glyphs-and-effects-container {
+    width: auto;
+    max-width: 100%;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .l-equipped-glyphs {
+    width: auto;
+    max-width: 100%;
   }
 }

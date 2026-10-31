@@ -16,6 +16,10 @@ const OREKI_WEB_TAB_ORDER = [
   "options",
 ];
 
+// [Oreki R42-C] 手机断点：与 public/stylesheets/oreki.css 的 `@media (max-width: 640px)` 一致。
+// 只有窄屏才启用「抽屉」模式；桌面 / 平板仍用常驻侧栏，布局一字不动。
+const NARROW_QUERY = "(max-width: 640px)";
+
 export default {
   name: "ModernSidebar",
   components: {
@@ -25,7 +29,11 @@ export default {
   data() {
     return {
       isHidden: false,
-      tabVisMap: {}
+      tabVisMap: {},
+      // 抽屉是否展开。桌面端恒为 false 且不参与渲染。
+      drawerOpen: false,
+      // 由 matchMedia 驱动，而不是监听 resize：同一份断点定义只写一次。
+      isNarrow: false,
     };
   },
   computed: {
@@ -43,6 +51,25 @@ export default {
       return OREKI_WEB_TAB_ORDER.map(key => byKey.get(key)).filter(Boolean);
     }
   },
+  mounted() {
+    // matchMedia 在某些测试环境/旧 WebView 里不存在，缺了就退化成「永不抽屉」，
+    // 也就是回到 R41 的常驻侧栏，不会白屏。
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    this.mediaQuery = window.matchMedia(NARROW_QUERY);
+    this.isNarrow = this.mediaQuery.matches;
+    this.onMediaChange = event => {
+      this.isNarrow = event.matches;
+      // 旋屏到宽屏时抽屉概念不存在，必须复位，否则回到窄屏会「默认展开」挡内容。
+      if (!event.matches) this.drawerOpen = false;
+    };
+    if (this.mediaQuery.addEventListener) this.mediaQuery.addEventListener("change", this.onMediaChange);
+    else if (this.mediaQuery.addListener) this.mediaQuery.addListener(this.onMediaChange);
+  },
+  beforeDestroy() {
+    if (!this.mediaQuery) return;
+    if (this.mediaQuery.removeEventListener) this.mediaQuery.removeEventListener("change", this.onMediaChange);
+    else if (this.mediaQuery.removeListener) this.mediaQuery.removeListener(this.onMediaChange);
+  },
   methods: {
     update() {
       this.isHidden = AutomatorData.isEditorFullscreen;
@@ -50,22 +77,61 @@ export default {
       // 别的页签的可见性，表现为某些页该出现却没出现。
       this.tabVisMap = Object.fromEntries(Tabs.newUI.map(t => [t.key, t.isAvailable]));
     },
+    toggleDrawer() {
+      this.drawerOpen = !this.drawerOpen;
+    },
+    closeDrawer() {
+      // 选完页签立刻收起：不收起的话抽屉会一直盖住刚切过去的内容。
+      if (this.isNarrow) this.drawerOpen = false;
+    }
   },
   template: `
   <div
     v-if="!isHidden"
-    class="c-modern-sidebar"
+    class="c-oreki-nav"
   >
-    <ModernSidebarCurrency />
-    <template
-      v-for="tab in tabs"
+    <button
+      v-if="isNarrow"
+      type="button"
+      class="c-oreki-nav__toggle"
+      :class="{ 'c-oreki-nav__toggle--open': drawerOpen }"
+      :aria-expanded="drawerOpen ? 'true' : 'false'"
+      aria-controls="oreki-sidebar"
+      aria-label="打开页签导航"
+      @click.stop="toggleDrawer"
     >
-      <ModernTabButton
-        v-if="tabVisMap[tab.key]"
-        :key="tab.name"
-        :tab="tab"
+      <i
+        class="fas"
+        :class="drawerOpen ? 'fa-xmark' : 'fa-bars'"
+        aria-hidden="true"
       />
-    </template>
+    </button>
+    <div
+      v-if="isNarrow && drawerOpen"
+      class="c-oreki-nav__scrim"
+      aria-hidden="true"
+      @click.stop="closeDrawer"
+    />
+    <div
+      id="oreki-sidebar"
+      class="c-modern-sidebar"
+      :class="{
+        'c-modern-sidebar--drawer': isNarrow,
+        'c-modern-sidebar--open': drawerOpen
+      }"
+    >
+      <ModernSidebarCurrency />
+      <template
+        v-for="tab in tabs"
+      >
+        <ModernTabButton
+          v-if="tabVisMap[tab.key]"
+          :key="tab.name"
+          :tab="tab"
+          @click.native="closeDrawer"
+        />
+      </template>
+    </div>
   </div>
   `
 };

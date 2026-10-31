@@ -14,6 +14,22 @@ export const TUTORIAL_STYLE_ID = "oreki-tutorial-injected-style";
 
 const CSS = `
 .c-oreki-tut__scroll { overflow-x: hidden; }
+
+/* ── 底栏被裁穿（320/360 实测，命中测试确认）──────────────────────────────
+ * 现象：.c-oreki-tut__footer 里的「上一章 / 回到当前进度 / 下一章」整排只剩顶部
+ *   十几个像素，elementFromPoint 打在按钮中心拿到的是 .c-modal-message，
+ *   也就是「看得见一点、点不到」。
+ * 成因：.c-oreki-tut__layout 被 max-height 限高，进去的 .c-oreki-tut__main 是
+ *   min-height: auto，内部又是一块 max-height 的滚动盒加固定高度的表头/提示/底栏 ——
+ *   main 不肯收缩，子项合计超出 layout，多出来的部分被 .c-oreki-tut
+ *   （overflow-x: hidden 会把 overflow-y 一并算成 auto）裁掉，裁掉的正好是底栏。
+ * 修法：把可压缩的部分明确交给正文滚动盒，表头/提示/底栏不参与压缩。
+ */
+.c-oreki-tut__main { min-height: 0; }
+.c-oreki-tut__scroll { min-height: 0; }
+.c-oreki-tut__head,
+.c-oreki-tut__hint,
+.c-oreki-tut__footer { flex: 0 0 auto; }
 /* 关闭方式的提示：只要「能找到」，不抢视觉注意力，所以压小字号、压透明度 */
 .c-oreki-tut__hint {
   margin: 0.2rem 0 0.4rem;
@@ -185,6 +201,59 @@ const CSS = `
   color: var(--color-reality);
 }
 .c-oreki-tut__summary--current { color: var(--color-good); }
+
+/* ── 窄屏（≤900px，断点与 oreki.css 的教程降级保持一致）下的导航条与触屏目标 ──
+ *
+ * 缺陷 1（320/360 实测）：目录在窄屏被改成横排后，分组标题
+ *   「附录（不参与主线进度）」还是个普通 flex 项，被压到 min-content 宽度 →
+ *   中文逐字换行，撑出一列 104px 高的竖排字；默认 align-items: stretch，
+ *   于是 25 个按钮全被拉到 114px 高，导航条占掉 320×640 视口高度的 18%。
+ *   改成不收缩 / 不换行 / 纵向居中，导航条回落到单行高度。
+ * 缺陷 2：塌回单行后按钮只剩 min-height 3.6rem（36px），低于 44px 触屏目标，抬到 4.4rem。
+ * 缺陷 3：弹窗底部「关闭教程」是 3.2rem（32px），同样抬到 4.4rem。
+ */
+@media screen and (max-width: 900px) {
+  .c-oreki-tut__nav-label {
+    flex: 0 0 auto;
+    align-self: center;
+    margin: 0 0.9rem 0 0.2rem;
+    white-space: nowrap;
+  }
+  .c-oreki-tut__nav-btn { min-height: 4.4rem; }
+  .c-modal:has(.c-oreki-tut) .l-modal-buttons .o-primary-btn { min-height: 4.4rem; }
+}
+
+/* ── 横屏（矮视口）：640×320 实测正文滚动区只剩 17px，弹窗本身比视口高 3px ──
+ * 原因：竖屏那套降级（导航横条 47px + 10px 间距 + Esc 提示 22px）在 320px 高的屏幕上
+ * 把纵向空间吃光了。宽度有 640，横向放得下左侧目录列，所以这里还原成「左栏 + 正文」，
+ * 并把 Esc 提示让出来（横屏本来也不是主要阅读姿态）。
+ */
+@media screen and (max-height: 520px) and (min-width: 560px) {
+  .c-oreki-tut__layout {
+    flex-direction: row;
+    height: 64vh;
+    max-height: 64vh;
+  }
+  .c-oreki-tut__nav {
+    flex: 0 0 15rem;
+    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-bottom: 0;
+  }
+  .c-oreki-tut__nav-btn {
+    width: 100%;
+    white-space: normal;
+  }
+  .c-oreki-tut__nav-label {
+    flex: 0 0 auto;
+    align-self: auto;
+    margin: 0.6rem 0 0.2rem;
+    white-space: nowrap;
+  }
+  .c-oreki-tut__hint { display: none; }
+  .c-oreki-tut__scroll { max-height: none; }
+}
 `;
 
 /**

@@ -41,6 +41,24 @@ export const OrekiRealityAutomation = {
   _realitiesFired: 0,
   /** 「现实就绪」的起始时间戳（用于给膨胀研究 1 留窗口），0 表示当前未就绪 */
   _readySince: 0,
+  /**
+   * [Oreki R42-C] 被 catch 吞掉的异常（只读观测，不参与任何判定）。
+   * 理由与 `oreki-eternity-automation.js::_err` 完全相同：
+   * 本模块每个方法都是 `try { ... } catch (e) { return false/0; }`，
+   * 一旦里面某个 getter 写错（例如对普通 number 调 Decimal 方法），
+   * 外面看到的现象就是「现实永远不触发 / 符文永远装不上」，没有任何异常暴露。
+   * 这里只记录，不改变返回值。
+   */
+  _lastError: "",
+
+  /**
+   * @param {string} tag 调用点（方法名）
+   * @param {*} e 捕获到的异常
+   */
+  _err(tag, e) {
+    const msg = `${tag}: ${(e && e.message) || e}`;
+    if (this._lastError !== msg) this._lastError = msg;
+  },
 
   get active() {
     try {
@@ -53,6 +71,7 @@ export const OrekiRealityAutomation = {
       if (GlyphSelection.active) return false;
       return true;
     } catch (e) {
+      this._err("active", e);
       return false;
     }
   },
@@ -61,6 +80,7 @@ export const OrekiRealityAutomation = {
     try {
       return isRealityAvailable();
     } catch (e) {
+      this._err("realityReady", e);
       return false;
     }
   },
@@ -136,6 +156,23 @@ export const OrekiRealityAutomation = {
       interval = allRuBought ? OREKI_REALITY_INTERVAL_CELESTIAL_MS : OREKI_REALITY_INTERVAL_PRE_RU_MS;
       if (now - this._lastRealityAt < interval) return false;
 
+      // [Oreki R42-C] **这里故意不拦「现实 vs 研究/Boss 挑战」**，实测证据如下：
+      //
+      // ① 顺序上本来就不冲突：主循环里 `OrekiEternityAutomation.tick()`（game.js:883）
+      //    早于 `OrekiRealityAutomation.tick()`（:894），同一帧里研究购买永远先尝试，
+      //    「现实抢在研究购买之前」不存在，不需要在这里补一次购买。
+      // ② 真会被现实清掉的只有「正在跑的那次 EC」（`reality.js:651` 的
+      //    `player.eternityChalls = {}` + `:654` 的 `current = 0`）。真实新档 958 条
+      //    1 s 采样里 20 次现实，19 次发生在 EC 链 12/12 之后，唯一一次 t=443 是
+      //    EC12 打到一半被清、24 s 后补回 12/12 —— 代价 24 s，一次性。
+      // ③ 我试过加「`EC 链未满 + 有 EC 在跑` 就让路 30 s」的护栏，**结果是净亏**：
+      //    真实新档 A/B（同样 10000×、同样 1 s 采样）现实触发时刻
+      //      无护栏：69 / 139 / 197 / 246（与基线 68 / 134 / 194 / 243 基本一致）
+      //      有护栏：69 / 135 / 293 / 381 / 433 / 478 / 527 / 582
+      //    EC 在后期是「<1 s 的密集小段」，`_ecYieldSince` 在每个间隙被重置，
+      //    30 s 上限永远到不了，现实被切成 60~100 s 一轮 —— RM 增长速度直接砍半。
+      //    ⇒ 护栏已经回退，不要再往 `shouldReality()` 里加「等 X 做完再现实」。
+
       const gain = MachineHandler.gainedRealityMachines.times(simulatedRealityCount(false) + 1);
       const have = Currency.realityMachines.value;
       if (gain.gte(have.times(0.02))) return true;
@@ -145,6 +182,7 @@ export const OrekiRealityAutomation = {
       // 这个兜底只影响「已经就绪之后还要等多久」，缩到 5 s 不会刷出无意义的空循环。
       return now - this._lastRealityAt >= interval * 3;
     } catch (e) {
+      this._err("shouldReality", e);
       return false;
     }
   },
@@ -163,6 +201,7 @@ export const OrekiRealityAutomation = {
       this._realitiesFired++;
       return true;
     } catch (e) {
+      this._err("tryReality", e);
       return false;
     }
   },
@@ -230,6 +269,7 @@ export const OrekiRealityAutomation = {
       }
       return bought;
     } catch (e) {
+      this._err("buyRealityUpgrades", e);
       return 0;
     }
   },
@@ -258,6 +298,7 @@ export const OrekiRealityAutomation = {
       }
       return removed;
     } catch (e) {
+      this._err("manageGlyphs", e);
       return 0;
     }
   },
@@ -311,6 +352,7 @@ export const OrekiRealityAutomation = {
       }
       return equipped;
     } catch (e) {
+      this._err("equipGlyphs", e);
       return 0;
     }
   },
@@ -335,6 +377,7 @@ export const OrekiRealityAutomation = {
     try {
       return Glyphs.inventoryList.filter(g => g && g.type !== "companion");
     } catch (e) {
+      this._err("_glyphCandidates", e);
       return [];
     }
   },
@@ -347,6 +390,7 @@ export const OrekiRealityAutomation = {
       };
       return ok(9) && ok(16) && ok(17) && ok(18) && ok(24);
     } catch (e) {
+      this._err("_glyphReqsDone", e);
       return true;
     }
   },
@@ -434,6 +478,7 @@ export const OrekiRealityAutomation = {
         player.options.confirmations.glyphReplace = savedConfirm;
       }
     } catch (e) {
+      this._err("satisfyGlyphRequirements", e);
       return 0;
     }
   },

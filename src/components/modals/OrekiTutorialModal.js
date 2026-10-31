@@ -170,6 +170,9 @@ export default {
   mounted() {
     // 续读时回到上次那一行；正常打开从章首开始
     this.resetScroll(this.resumeScroll);
+    // 窄屏（≤900px）目录是横向滚动条，打开时可能停在 scrollLeft=0，
+    // 而当前章在可视带外 2800px 处：用户看不到自己读到哪一章。
+    this.revealActiveNav();
   },
   methods: {
     update() {
@@ -182,7 +185,10 @@ export default {
       this.stageSig = sig;
       this.stage = next;
       // 玩家还没自己翻过章时，跟着阶段变化重新定位；看附录时不抢
-      if (!this.navigated && !this.isAppendix) this.index = getTutorialStartIndex();
+      if (!this.navigated && !this.isAppendix) {
+        this.index = getTutorialStartIndex();
+        this.revealActiveNav();
+      }
     },
     stageSignature(stage) {
       return `${stage.key}|${stage.rows.map(row => row.status).join(",")}`;
@@ -205,6 +211,45 @@ export default {
         if (box) box.scrollTop = offset;
       });
     },
+    /**
+     * 让目录里的当前项落在可视带内。
+     *
+     * 窄屏（`max-width: 900px`）下 `.c-oreki-tut__nav` 被改成 `flex-direction: row`
+     * + `overflow-x: auto`，于是 18 章 + 7 篇附录铺成 5000px 长条。
+     * 不主动滚动的话 scrollLeft 恒为 0，第 5 章以后的当前项都在屏幕外，
+     * 玩家既看不出自己在哪一章，也没法从目录点回去。
+     *
+     * 横屏（矮视口）会还原成左侧竖列，这时要滚的是 scrollTop 而不是 scrollLeft，
+     * 所以按「容器实际哪个方向溢出」决定轴，而不是按屏幕宽度猜。
+     * 宽屏竖列同理走纵轴；两个方向都不溢出时这项是空操作。
+     */
+    revealActiveNav() {
+      this.$nextTick(() => {
+        const nav = this.$refs.nav;
+        if (!nav) return;
+        const btn = nav.querySelector(".c-oreki-tut__nav-btn--active");
+        if (!btn) return;
+        // 用 rect 差值而不是 offsetLeft：块的定位祖先不一定是 nav，rect 差值不依赖这条链
+        const navRect = nav.getBoundingClientRect();
+        const btnRect = btn.getBoundingClientRect();
+        const overY = nav.scrollHeight - nav.clientHeight;
+        const overX = nav.scrollWidth - nav.clientWidth;
+        if (overY > 2 && overX < 2) {
+          // 纵向目录：把当前项滚到中间；比可视高度还高的按钮对齐上沿，至少露出章号与标题开头
+          const fits = btnRect.height <= nav.clientHeight;
+          const centered = nav.scrollTop + (btnRect.top - navRect.top) - (nav.clientHeight - btnRect.height) / 2;
+          const topAligned = nav.scrollTop + (btnRect.top - navRect.top);
+          nav.scrollTop = Math.min(Math.max(0, fits ? centered : topAligned), overY);
+          return;
+        }
+        // 比可视带还宽的按钮（320 宽下「天神（一）：特蕾莎、鹿颈长、无名氏」这类长标题）
+        // 居中会让两端各切掉一截，连章序号都看不见；改成对齐左沿，至少露出「第 N 章」和标题开头。
+        const fits = btnRect.width <= nav.clientWidth;
+        const centered = nav.scrollLeft + (btnRect.left - navRect.left) - (nav.clientWidth - btnRect.width) / 2;
+        const leftAligned = nav.scrollLeft + (btnRect.left - navRect.left);
+        nav.scrollLeft = Math.min(Math.max(0, fits ? centered : leftAligned), Math.max(0, overX));
+      });
+    },
     /** 滚动过程中就把位置记下来：销毁时 ref 可能已经没了，那时再读会拿到 0 */
     onScroll(event) {
       const box = event && event.target;
@@ -217,6 +262,7 @@ export default {
       this.appendixIndex = -1;
       TutorialReadingPosition.scrollTop = 0;
       this.resetScroll(0);
+      this.revealActiveNav();
     },
     goToAppendix(index) {
       if (index < 0 || index >= this.appendices.length) return;
@@ -224,6 +270,7 @@ export default {
       this.appendixIndex = index;
       TutorialReadingPosition.scrollTop = 0;
       this.resetScroll(0);
+      this.revealActiveNav();
     },
     prevPage() {
       if (this.isAppendix) return this.goToAppendix(this.appendixIndex - 1);
@@ -239,6 +286,7 @@ export default {
       this.index = getTutorialStartIndex();
       TutorialReadingPosition.scrollTop = 0;
       this.resetScroll(0);
+      this.revealActiveNav();
     },
     stageLabelOf(chapter) {
       if (!chapter.stageKey) return null;
@@ -262,7 +310,10 @@ export default {
     </template>
     <div class="c-oreki-tut">
       <div class="c-oreki-tut__layout">
-        <nav class="c-oreki-tut__nav">
+        <nav
+          ref="nav"
+          class="c-oreki-tut__nav"
+        >
           <button
             v-for="(item, i) in chapters"
             :key="item.id"

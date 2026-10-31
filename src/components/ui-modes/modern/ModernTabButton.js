@@ -21,7 +21,11 @@ export default {
         "o-tab-btn": true,
         "o-tab-btn--modern-tabs": true,
         "o-tab-btn--subtabs": this.showSubtabs,
-        "o-tab-btn--active": this.isCurrentTab && Theme.currentName() !== "S9"
+        "o-tab-btn--active": this.isCurrentTab && Theme.currentName() !== "S9",
+        // [Oreki R42-C] 与主题无关的「当前页签」标记，只给窄屏抽屉用。
+        // 不能复用 o-tab-btn--active：S9 主题下那个类永远不加，
+        // 抽屉里就会谁都不展开子页签，等于手机上进不去「无限维度」这类页。
+        "o-tab-btn--oreki-current": this.isCurrentTab
       };
     },
     isCurrentTab() {

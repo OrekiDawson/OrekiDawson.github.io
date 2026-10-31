@@ -34,7 +34,7 @@ function createEntryButton(doc) {
   button.type = "button";
   button.className = "c-oreki-tut-entry";
   button.title = "内置教程（简体中文，随时可看）";
-  button.setAttribute("aria-label", "打开内置教程");
+  button.setAttribute("aria-label", "打开 Oreki 中文教程");
 
   const icon = doc.createElement("span");
   icon.className = "c-oreki-tut-entry__icon";
@@ -43,7 +43,7 @@ function createEntryButton(doc) {
 
   const label = doc.createElement("span");
   label.className = "c-oreki-tut-entry__label";
-  label.textContent = "教程";
+  label.textContent = "打开 Oreki 中文教程";
 
   button.append(icon, label);
   button.addEventListener("click", event => {

@@ -278,6 +278,12 @@ export const OrekiEndgameAutomation = {
       // 实测（R39 probe.mjs）：imLog10=10、OREKI_IU25_COST=5e9 时仍返回 false。
       return Number(Currency.imaginaryMachines.value) >= OREKI_IU25_COST;
     } catch (e) {
+      // [Oreki R42-C] 这里原来只有 `return false`。正是这个写法让 R39 那处 `.gte()`
+      // 的 TypeError 伪装成「前置不满足」，连续两轮都没人发现。
+      // 现在把异常存进 `_lastError`（debugState 与探针都会读它），仍然返回 false ——
+      // 记录与判定分开，不改变任何游戏行为。
+      const msg = `iu25: ${(e && e.message) || e}`;
+      if (this._lastError !== msg) this._lastError = msg;
       return false;
     }
   },
@@ -657,9 +663,25 @@ export const OrekiEndgameAutomation = {
 
   get debugState() {
     const pick = fn => { try { return fn(); } catch (e) { return null; } };
+    /**
+     * [Oreki R42-B] IM 的十进制指数。
+     *
+     * 这里原来写的是 `Currency.imaginaryMachines.value.log10()`。IM 是 `NumberCurrency`
+     * （currency.js:420），`.value` 是**普通 number**，没有 `.log10` ⇒ 每次读
+     * `debugState.imL` 都抛 TypeError，被 `pick` 吞成 `null`。
+     * 后果不是「看不见 IM」，而是**把 0（真的有 0 台 IM）与异常混成同一个 null**：
+     * R39 的探针就把 `imL=null` 读成「IM 没攒起来」，与 `iu25ConditionsReady()` 里
+     * 那处 `.gte()` 是同一类坑（同文件 :240 已记录过一次）。改用 Math.log10，
+     * 并显式把「非正数」返回 0 而不是 -Infinity，方便长期对照。
+     * 静态守卫见 `scripts/validate_number_currency.mjs`。
+     */
+    const imLog10 = () => {
+      const v = Number(Currency.imaginaryMachines.value);
+      return Number.isFinite(v) && v > 0 ? Math.log10(v) : 0;
+    };
     return {
       step: this.step,
-      imL: pick(() => Currency.imaginaryMachines.value.log10()),
+      imL: pick(imLog10),
       imCapL: pick(() => MachineHandler.currentIMCap),
       iuBought: this._iuBought,
       laitelaTier: pick(() => Laitela.difficultyTier),

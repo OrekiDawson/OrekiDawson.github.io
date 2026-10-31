@@ -71,6 +71,16 @@ const ACTION_MIN_INTERVAL_MS = 250;
  * `buyRealityUpgrade` / `runReality` 一次都没轮到（`r40s2-smoke2.jsonl`）。
  */
 const NOOP_COOLDOWN_MS = 2000;
+/**
+ * [Oreki R45·4] 连续多久挑不出动作，就不再算「健康等待」，必须报成阻塞。
+ *
+ * 3 帧（≈ 数百毫秒）内等模块让帧是设计，但**等 1 分钟以上就已经不是让帧了**。
+ * 验收实测：`celestialsEnslaved` 起 `attemptCount` 冻结在 235，一路到 1200 s 超时，
+ * 期间 `blockers` 恒为 `[]` —— 因为 `describeNoAction()` 把「所有可代劳动作都在等
+ * source 就绪」一律判成健康等待并返回 null。60 s 是留足余量的阈值：任何一个
+ * 正常阶段都不会连续 60 s 一条动作都发不出去。
+ */
+const STALL_REPORT_MS = 60000;
 
 /**
  * verb → 动作。`policy` 三态：
@@ -183,6 +193,21 @@ const VERBS = {
   spendUnlockResource: { policy: "delegated", label: "花解锁资源", why: "同上" },
   advanceCelestialNav: { policy: "delegated", label: "推进天神导航", why: "同上" },
 
+  // [Oreki R45·4] 莱特拉段唯一的**真动作**。
+  //
+  // 为什么必须有一条 owned：`celestial` 策略的三条动词全是 delegated，于是
+  // `celestialsTeresa/Effarig/Enslaved/V/Ra/laitela` 六段执行层**一条都挑不出来** ——
+  // 活性探针实测 `owned=0 delegated=3`，`attemptCount` 从进段起永久冻结、`blockers=[]`，
+  // 面板还挂着上一阶段的 `runReality`。验收跑里 laitela 段就是这样静默了 700 秒。
+  //
+  // 为什么指向 `driveLaitelaVerb` 而不是新造一套：`oreki-celestial-automation.js` 的
+  // `_canEnter/_enterRun` 只有 teresa/effarig/enslaved/v 四个 case，**没有莱特拉分支**；
+  // 真正推进莱特拉的代码只有 `OrekiEndgameAutomation.driveLaitela()`（刷 tier、压现实、
+  // 临门卸符文、买 IU25）。方法名带 `Verb` 是因为 `driveLaitela()` 本身不返回购买数
+  // （`undefined` ⇒ `didAct()` 恒 false），而 `driveLaitelaVerb()` 只在 tier / run / IU25
+  // 真的变化时回 `{acted:true}`，其余帧回 `{acted:false}` 并把原因交给 `noopReason()`。
+  driveLaitela: { policy: "owned", source: "endgame", method: "driveLaitelaVerb", label: "推进莱特拉" },
+
   // ── 佩勒终局（归 OrekiEndgameAutomation，实测 708.1 s / 783.1 s 两次通关的那套相位机）──
   armageddonLoopForShards: { policy: "delegated", label: "末日循环攒碎片", why: "OrekiEndgameAutomation.driveDoomed 相位机独占" },
   buyPelleKeepAutobuyers: { policy: "delegated", label: "买 keepAutobuyers", why: "同上" },
@@ -230,6 +255,17 @@ const STATE = {
    *   所以必须如实说出来，而不是让面板显示一条陈旧动作。
    */
   noAction: null,
+  /**
+   * [Oreki R45·4] 本帧挑不出动作的**起始时刻**；一旦真的发出一手就清零。
+   *
+   * 为什么还要这个：`noAction` 只是本帧快照，会被下一帧覆盖或清空，
+   * 所以「已经连续多少秒没动作」在快照里读不出来 —— 而这恰好是验收跑
+   * `attemptCount` 从 t≈191 s 冻结到 1200 s 超时、`blockers` 全程为 `[]` 的那段时间里
+   * 唯一有意义的量。有它才能把「等了 1 帧」和「等了 16 分钟」区分开。
+   */
+  noActionSince: 0,
+  /** 最近一次真的调用过动作（`invoke()`）的墙钟时刻。0 = 本次加载还没发过动作。 */
+  lastExecAt: 0,
   /** 本帧被模块自述为「已完成」而跳过的动词：verbId → { label, why }。见 `verbDoneReason()`。 */
   doneActions: Object.create(null),
   actionCount: 0,
@@ -314,7 +350,11 @@ function invoke(verbId, spec) {
     const method = target[spec.method];
     if (typeof method !== "function") return { acted: false, detail: "方法不存在" };
     const out = method.call(target);
-    return { acted: didAct(out), detail: `${spec.method}()→${summarize(out) || String(out)}` };
+    // 方法返回「什么都没做」的对象时 `summarize()` 必然是空串，此时不能再 `String(out)` ——
+    // 那会把面板写成 `driveLaitelaVerb()→[object Object]`。对象一律记「无变化」，只读字符串照旧。
+    const summary = summarize(out)
+      || (out !== null && typeof out === "object" ? "无变化" : String(out));
+    return { acted: didAct(out), detail: `${spec.method}()→${summary}` };
   } catch (e) {
     STATE.lastError = `invoke ${verbId}: ${(e && e.message) || e}`;
     return { acted: false, detail: "抛错（已吞）" };
@@ -383,7 +423,47 @@ function verbDoneReason(verbId, spec) {
  *   · 只是 owned 的 source 还没闲够 3 帧 ⇒ **健康等待**，返回 null，不报阻塞。
  * 第三种绝不能报：模块正在干活时执行层本来就该等（那是「同帧不抢」的设计）。
  */
-function describeNoAction(skipped, decision) {
+/**
+ * [Oreki R45·4] 「已经很久挑不出动作」的统一说明。
+ *
+ * 单独抽出来是因为它有**两个入口**：`describeNoAction()` 的健康等待分支，
+ * 以及 `tickUnsafe()` 的兜底（当 `describeNoAction()` 返回 null 但停滞确实超阈值时）。
+ * 后者不是多余：验收跑在 `laitela` 阶段实测到 `noAction=null` + `blockers=[]`
+ * 与「3 条动作全是 delegated」不自洽，无论这个不自洽来自哪一层，**长时间静默
+ * 都不允许发生**，所以宁可再从外面兜一次。
+ */
+function stuckNoAction(skipped, decision, stalledMs) {
+  const owned = skipped.cooling.length + skipped.waiting.length + skipped.done.length;
+  const waiting = skipped.waiting.map(({ spec }) => `${spec.label}←${spec.source}`);
+  const delegated = skipped.delegated.map(({ spec }) => `${spec.label}（${spec.why ?? "归阶段模块"}）`);
+  const unsupported = skipped.unsupported.map(({ spec }) => `${spec.label}（${spec.why ?? "原版无入口"}）`);
+  const sources = [...new Set(skipped.waiting.map(({ spec }) => spec.source))];
+  const idleText = sources.length
+    ? sources.map(src => `${src}(idle=${STATE.idle[src] ?? 0}/${IDLE_FRAMES_BEFORE_ACT})`).join(" ")
+    : "";
+  const parts = [
+    waiting.length ? `等所属模块让出这一帧：${waiting.join("；")}` : "",
+    // 一条可代劳项都没有时，必须点名「在等哪个模块」，否则面板等于没说
+    owned === 0 && delegated.length ? `本阶段动作全部归阶段模块：${delegated.join("；")}` : "",
+    unsupported.length ? `原版无入口：${unsupported.join("；")}` : "",
+    idleText ? `相关 source 的连续无动作帧数：${idleText}（要满 ${IDLE_FRAMES_BEFORE_ACT} 帧才轮到执行层）` : "",
+  ].filter(Boolean);
+  return {
+    at: Date.now(),
+    stage: decision?.stage?.id ?? null,
+    goal: decision?.goal?.id ?? null,
+    title:
+      `执行层已 ${Math.round(stalledMs / 1000)} 秒发不出任何动作`
+      + `（owned=${owned} delegated=${delegated.length} unsupported=${unsupported.length}）`,
+    advice: parts.join("。"),
+    detail:
+      `stalled=${Math.round(stalledMs / 1000)}s owned=${owned} `
+      + `waiting=${skipped.waiting.length} delegated=${delegated.length} unsupported=${unsupported.length}`,
+    stalled: true,
+  };
+}
+
+function describeNoAction(skipped, decision, stalledMs = 0) {
   const delegated = skipped.delegated.map(({ spec }) => `${spec.label}${spec.why ? `（${spec.why}）` : ""}`);
   const unsupported = skipped.unsupported.map(({ spec }) => `${spec.label}（${spec.why ?? "原版无入口"}）`);
   const cooling = skipped.cooling.map(
@@ -396,7 +476,13 @@ function describeNoAction(skipped, decision) {
   // 健康等待：**全部**可代劳动作都只是「source 还没闲够 3 帧」。
   // `ownedCount === 0` 不算健康 —— 那是「本阶段执行层根本没有可代劳项」，
   // 正是验收里 120 秒静默的那种状态，必须报出来。
-  if (ownedCount > 0 && cooling.length === 0 && skipped.waiting.length === ownedCount) return null;
+  if (ownedCount > 0 && cooling.length === 0 && skipped.waiting.length === ownedCount) {
+    // [Oreki R45·4] 但「等让帧」只在**短时间**内是健康的。连续 60 s 还是同一批动作在等
+    // 同一批 source，说明那个 source 长期自称有动作而目标一动不动 —— 这不是设计，
+    // 是活性坏了。此前这里一律 `return null`，于是 `blockers` 空了 16 分钟没人知道。
+    if (stalledMs < STALL_REPORT_MS) return null;
+    return stuckNoAction(skipped, decision, stalledMs);
+  }
 
   let title;
   let advice;
@@ -441,6 +527,22 @@ function runtimeBlockers(decision) {
   const out = [];
   const la = STATE.lastAction;
   const na = STATE.noAction;
+  // 策略判定失败时，下面两条都不会有内容（本帧根本没走到挑动作那一步），
+  // 于是又会静默成 blockers=[]。这里先把它说清楚。
+  if (decision && decision.ok !== true) {
+    out.push({
+      id: "decisionFailed",
+      kind: "runtime",
+      stage: decision.stage?.id ?? null,
+      goalId: decision.goal?.id ?? null,
+      title: "策略判定失败，本帧没有可用决策",
+      advice: decision.error
+        ? `解释器报错：${decision.error}`
+        : `解释器返回 ok=${String(decision.ok)}${decision.reason ? `（${decision.reason}）` : ""}`,
+      detail: decision.reason ?? "",
+    });
+    return out;
+  }
   // 「根本没调」优先于「调了但买了 0 个」：阶段刚切换时 lastAction 已被清空，
   // 此时唯一能解释当前状态的就是 noAction。
   if (na && (!la || na.at >= la.at)) {
@@ -617,15 +719,26 @@ function tickUnsafe(observed) {
 
   // 手动优先：本 goal 处于保护窗口 → 一个动作都不发
   if (decision.manualHold && decision.manualHold.untilMs > now) {
+    // 让路是玩家主动造成的，不能算「执行层卡住」，所以把停滞计时一直推到当前。
+    STATE.noActionSince = now;
     return { ...decision, executor: { acted: false, reason: "manual-hold" } };
   }
 
   const priority = decision.strategy?.priority ?? [];
   const picked = pickExecutable(priority, now);
   if (!picked.spec) {
+    // [Oreki R45·4] 停滞计时：只在**真的发出动作**时归零，阶段切换不清零。
+    // 阶段抖动是已知现象（见 §R45 阶段翻面），如果这里跟着清，抖动就能把
+    // 「连续 16 分钟零动作」洗成「每帧都刚卡住」，又变回静默。
+    if (!STATE.noActionSince) STATE.noActionSince = now;
+    const stalledMs = now - STATE.noActionSince;
     const next = pickNext(priority);
-    // null = 只是在等模块让出这一帧（健康）；非 null = 真的无事可做 / 刚试过买不到。
-    STATE.noAction = describeNoAction(picked.skipped, decision);
+    // null = 只是在等模块让出这一帧（健康）；非 null = 真的无事可做 / 刚试过买不到 / 已经卡太久。
+    let na = describeNoAction(picked.skipped, decision, stalledMs);
+    // 兜底：不管上面因为哪个分支返回了 null，只要「挑不出动作」已超过阈值就必须说出来。
+    // 这一条是结构性的，不依赖 describeNoAction 的内部分支是否判断正确。
+    if (!na && stalledMs >= STALL_REPORT_MS) na = stuckNoAction(picked.skipped, decision, stalledMs);
+    STATE.noAction = na;
     return {
       ...decision,
       executor: {
@@ -638,6 +751,9 @@ function tickUnsafe(observed) {
   }
   const pick = picked;
   STATE.noAction = null;
+  // 这一帧真的发出动作了 ⇒ 停滞计时归零（下一段「发不出去」从这一刻重新算）
+  STATE.noActionSince = 0;
+  STATE.lastExecAt = now;
 
   const outcome = invoke(pick.verbId, pick.spec);
   STATE.takeovers++;
@@ -732,6 +848,14 @@ function debugState() {
     lastNoopReason: STATE.lastNoopReason,
     actionCount: STATE.actionCount,
     attemptCount: STATE.attemptCount,
+    /**
+     * [Oreki R45·4] 活性指标：距离上一次**真的发出动作**过去多少秒；
+     * 以及当前这一轮「发不出动作」已经持续多少秒（0 = 本帧正常）。
+     * 验收里最能说明问题的两个数，过去只能靠 `attemptCount` 冻结去反推。
+     */
+    lastExecAgoSec: STATE.lastExecAt ? Math.round((now - STATE.lastExecAt) / 1000) : null,
+    stalledSec: STATE.noActionSince ? Math.round((now - STATE.noActionSince) / 1000) : 0,
+    stallThresholdSec: Math.round(STALL_REPORT_MS / 1000),
     takeovers: STATE.takeovers,
     takeoverWhileModuleActed: STATE.takeoverWhileModuleActed,
     lastConflict: STATE.lastConflict,

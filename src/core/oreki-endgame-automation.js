@@ -172,6 +172,18 @@ export const OrekiEndgameAutomation = {
   _laiRunAtMs0: 0,
   /** [Oreki R40] tier 8 后「护住 DS6 / 等 IM」的有界准备期起点（真实毫秒，0 = 未开始） */
   _iu25HoldSince: 0,
+  /** [Oreki R45·4] tier 8 进 run 但没买成、被本帧撤 run 的次数（只读观测）。 */
+  _iu25Aborts: 0,
+  /**
+   * [Oreki R45·5] `tick()` 被调用过多少次（含自动购买器关闭时的空转帧）。
+   *
+   * 为什么要有这个数：验收里追查「末日模块是不是死代码」时，双方都只能靠看
+   * `game.js` 有没有那一行来判断 —— 而部署副本可能落后于 `src/`（本轮实测就发生了：
+   * `_deploy/site/src/game.js` 有调用点但没有 `register("endgame")`）。
+   * 有了计数器，探针直接读 `debugState().tickCount` 就能给出「跑到第几帧、调了几次」，
+   * 不需要再靠 grep 猜测。
+   */
+  _tickCount: 0,
   _pelleUpgrades: 0,
   _pelleEntered: false,
   _lastDoomBuyMs: 0,
@@ -216,6 +228,7 @@ export const OrekiEndgameAutomation = {
 
   /** 由 `game.js` 主循环每帧调用（放在 `OrekiCelestialAutomation.tick()` 之后） */
   tick() {
+    this._tickCount = (this._tickCount || 0) + 1;
     if (!player.auto.autobuyersOn) return null;
     try {
       if (player.isGameEnd === true) return null;
@@ -228,8 +241,109 @@ export const OrekiEndgameAutomation = {
     return null;
   },
 
-  // ── ① 虚幻升级：按链路优先级逐个真实购买 ──────────────────────────────
-  //
+  /**
+   * [Oreki R45·5] 执行层 verb `driveLaitela` 的入口（登记见 oreki-smart-executor.js 的 VERBS）。
+   *
+   * 为什么不直接把 `driveLaitela` 挂上去：它没有返回值（`undefined`），执行层的
+   * `didAct(undefined)` 恒为 false —— 每一帧都会被记成「买了 0 个」，空转计数一路涨，
+   * 面板上仍然看不出「到底推没推进」。这里只回答一个问题：**这一帧莱特拉链动了没有**
+   * （tier / run 开关 / IU25 三者任一变化）。
+   *
+   * 动手的仍然只有 `driveLaitela()` 本身（含 `SLOW_TICK_MS = 500` 节流与 `_laiHold` 门禁），
+   * 执行层调它与 `tick()` 调它是同一个函数，不存在第二条购买路径、不写任何 player 字段。
+   * @returns {{acted: boolean}} 只回这一个键：其余数字键会被 `didAct()` 当成「有动作」。
+   */
+  driveLaitelaVerb() {
+    try {
+      const beforeTier = Laitela.difficultyTier;
+      const beforeRun = Laitela.isRunning;
+      const beforeIu25 = ImaginaryUpgrade(25).isBought;
+      this.driveLaitela();
+      return {
+        acted: Laitela.difficultyTier !== beforeTier
+          || Laitela.isRunning !== beforeRun
+          || ImaginaryUpgrade(25).isBought !== beforeIu25,
+      };
+    } catch (e) {
+      this._lastError = `driveLaitelaVerb: ${(e && e.message) || e}`;
+      return { acted: false };
+    }
+  },
+
+  /**
+   * [Oreki R45·5] 执行层问：「这条动作用不用再调」。
+   * 非空 = 以后不必再发起，进 `advisories`（不再每 250 ms 记一次空转）。
+   * 只声明「链路已走完 / 还没轮到」两种，**不把「在等」说成完成** ——
+   * 等 DS6、等 IM、等下一次现实都会自己变真，仍要轮询。
+   * @param {string} verbId
+   * @returns {string}
+   */
+  verbDone(verbId) {
+    try {
+      if (verbId !== "driveLaitela") return "";
+      if (player.isGameEnd === true) return "本局已结束（isGameEnd），莱特拉链不再需要推进";
+      if (Pelle.isDoomed) return "已进入毁灭现实，莱特拉 → 佩勒链已走完";
+      if (Pelle.isUnlocked) return "佩勒已解锁（IU25 已买入），莱特拉链已走完";
+      if (!Laitela.isUnlocked) return "莱特拉未解锁（IU15 未买入），本层无可推进";
+      return "";
+    } catch (e) {
+      return "";
+    }
+  },
+
+  /**
+   * [Oreki R45·5] 执行层问：「刚才那一下为什么没推进」。
+   *
+   * 分支顺序照抄 `driveLaitela()` 的真实判定（tier≥8 准备期 → run 在位 → 熵等现实
+   * → 反物质指数不够 → 入场窗口过期），不另造一套判据 —— 解释与执行必须是同一条链，
+   * 否则面板会开始撒谎。只读；说不清就返回空串。
+   * @param {string} verbId
+   * @returns {string}
+   */
+  noopReason(verbId) {
+    try {
+      if (verbId !== "driveLaitela") return "";
+      const tier = Laitela.difficultyTier;
+      if (tier > 8) {
+        return `莱特拉 tier 已变成 ${tier}（应为 8）：IU25 要求 maxAllowedDimension 恰好为 0，`
+          + `当前是 ${Laitela.maxAllowedDimension}，靠等不会自己恢复`;
+      }
+      if (tier === 8) {
+        if (!TimeStudy.reality.isBought) {
+          return "tier 已到 8，但本现实还没买回膨胀研究 6（TimeStudy.reality）"
+            + "——IU25 的 checkRequirement 需要它，而每次现实重置都会清空";
+        }
+        const im = Number(Currency.imaginaryMachines.value);
+        if (im < OREKI_IU25_COST) {
+          return `tier 已到 8、研究已在位，但虚幻机器只有 ${im >= 1e6 ? `1e${Math.log10(im).toFixed(2)}` : Math.round(im)}，`
+            + `IU25 要 ${OREKI_IU25_COST.toExponential(0)}`;
+        }
+        if (Glyphs.activeWithoutCompanion.length > 1) {
+          return `tier 已到 8，但符文槽还装着 ${Glyphs.activeWithoutCompanion.length} 个非同伴符文`
+            + "（IU25 要求 ≤1），卸不下来就买不了";
+        }
+        return "tier 已到 8 且四个前置齐全，本帧购买未成功（下一帧重试）";
+      }
+      if (Laitela.isRunning) return "run 在位，正在等同一次现实结算熵（必须落在现实前 30 秒内）";
+      if (!(Number(player.celestials.laitela.entropy) >= 0)) {
+        return "熵已被上一次完成置为 -1，等现实重置把它清回 0";
+      }
+      const amE = Number(player.antimatter?.exponent ?? 0);
+      if (amE < LAT_RUN_MIN_AM_EXP) {
+        return `反物质指数 1e${amE.toExponential(2)} 低于入场线 1e${LAT_RUN_MIN_AM_EXP.toExponential(2)}，`
+          + "此时进 run 熵填不满 30 秒窗口";
+      }
+      if (player.records.thisReality.realTime >= LAT_RUN_ENTER_MAX_REAL_MS) {
+        return `本现实已过 ${(player.records.thisReality.realTime / 1000).toFixed(1)} s，`
+          + `超过 ${LAT_RUN_ENTER_MAX_REAL_MS / 1000} s 入场窗口，等下一次现实`;
+      }
+      return "";
+    } catch (e) {
+      return "";
+    }
+  },
+
+  // ── ① 虚幻升级：按链路优先级逐个真实购买 ──────────────────────────────  //
   // 只买这条终局链真正需要的几项，避免把 IM 花在无关升级上导致 IU15/IU25 攒不满：
   //   15（莱特拉入口 1e9）→ 25（佩勒入口，OREKI_IU25_COST）
   // 其余（6/8/13/20 等）要么条件不可达、要么会把 IM 余额吸干，一律不碰。
@@ -322,6 +436,15 @@ export const OrekiEndgameAutomation = {
       if (tier >= 8) {
         const im = Number(Currency.imaginaryMachines.value);
         const ds6 = TimeStudy.reality.isBought;
+        // [Oreki R45·4] tier 越过 8 是**不可逆**的：IU25 要 `maxAllowedDimension === 0`，
+        // 而 `game.js:1165` 的 `difficultyTier++` 没有上限（见本分支下面撤 run 那段注释）。
+        // 一旦发生就只可能是上一轮「进 run 没买成」留下的，这里只记录、不写存档字段 ——
+        // 真正让它不再发生的是下面「买不上就本帧撤 run」那条。
+        if (tier > 8 && this._tierOverflowLogged !== tier) {
+          this._tierOverflowLogged = tier;
+          console.warn(`[R45-LAI] difficultyTier=${tier} 已越过 8：`
+            + `maxAllowedDimension=${Laitela.maxAllowedDimension}，IU25 的「=== 0」不再成立，需人工处理`);
+        }
         // [Oreki R40] EC 链已全部 5/5（= DS6 已可买 / 即将买到）时提前压现实。
         // 理由见文件上方 IU25_HOLD_MAX_MS 的实测证据：等 DS6 到账再判断必然输掉竞态。
         const ecChainDone = (() => {
@@ -359,6 +482,22 @@ export const OrekiEndgameAutomation = {
             Glyphs.unequipAll(true);
           }
         }
+        // 「进 run → 买不上 → 本帧撤 run」如果一直重复，就是每帧一次起/撤 churn。
+        // 撤 run 后压 1.5 s 再进，既不给熵留出填满的机会，也不会把日志刷爆。
+        if (this._iu25RetryAt && now < this._iu25RetryAt) return;
+        // [Oreki R45·5] 熵已在 0.9 以上时**不要**起 run：
+        // 这种熵是上一轮 run 被 `clearCelestialRuns()` 中断后留下的进度（现实重置会清 0，
+        // 主动撤 run 不会）。此时起 run 会在一两帧内直接结算 ⇒ `game.js:1173` 的
+        // `difficultyTier++` 会把 8 顶成 9，而 IU25 要 `maxAllowedDimension === 0`
+        // （= `8 - tier`），9 之后这份存档就**永久**买不到 IU25。
+        // 这里只是「本帧不起 run」，不碰 hold：现实照常循环，下一轮熵会被清回 0 再来。
+        if (!Laitela.isRunning && ent > 0.9) {
+          if (!this._laiEntropySkipAt || now - this._laiEntropySkipAt > 5000) {
+            this._laiEntropySkipAt = now;
+            console.warn(`[R45-LAI] 熵残量 ${ent.toFixed(3)} 未清零，本帧不起 run（等现实重置；tier=${tier}）`);
+          }
+          return;
+        }
         if (!Laitela.isRunning) Laitela.initializeRun();
         // 原版的解锁位是 `player.reality.imaginaryUpgReqs`（`imaginary-upgrades.js:63`），
         // 由 `tryUnlock()` 在条件成立时置位、**且跨现实保留**（`player.js:496` 只在
@@ -390,6 +529,28 @@ export const OrekiEndgameAutomation = {
               this._laiHold = false;
             } else if (!this._laiRunAtMs0) {
               this._laiRunAtMs0 = now;
+            }
+            // [Oreki R45·4] **本帧就撤 run，不要等那 20 秒**。
+            //
+            // 事实链（源码可判，不需实测）：
+            //   · tier 8 时 `maxAllowedDimension = 0`，8 层无限维度全停产
+            //     （infinity-dimension.js:126-129），但**反物质不清零**；
+            //   · 熵增速 `clamp((log10AM/2e7)²,0,100)/200`（laitela.js:82）用的是账面 AM，
+            //     AM 指数 ≥2e8 时就是满速 0.5/s ⇒ **2 秒**填满（`_r45` 验收跑的 amL 全程 ≥1e9）；
+            //   · `game.js:1164-1165` 只要这次完成落在 `thisRealityRealTime < 30 s` 内，
+            //     就无条件 `difficultyTier++` —— **没有 Math.min(…, 8)**，全仓也没有别的钳制；
+            //   · 而 IU25 的 `checkRequirement` 要的是 `maxAllowedDimension === 0`
+            //     （imaginary-upgrades.js:362），tier 一变 9 就是 `-1`，**永远不再成立**。
+            // ⇒ 「进 run 却没买成」如果不立刻撤 run，2 秒后这一档存档就永久废掉。
+            // 原来的 20 s 兜底比 2 秒晚了一个数量级，等于没有。
+            // 这里用原版 `clearCelestialRuns()` 撤销，不写任何 player 字段；
+            // 购买位 `player.reality.imaginaryUpgReqs` 跨现实保留，下一轮只需重新进 run。
+            if (Laitela.isRunning) {
+              this._iu25Aborts = (this._iu25Aborts || 0) + 1;
+              this._iu25RetryAt = now + 1500;
+              clearCelestialRuns();
+              this._laiRunAtMs0 = 0;
+              this._laiHold = false;
             }
           }
         } catch (e) { /* 购买失败下个 tick 重试 */ }
@@ -429,6 +590,10 @@ export const OrekiEndgameAutomation = {
         return;
       }
       if (realMs >= LAT_RUN_ENTER_MAX_REAL_MS) return; // 时间不够，等下个现实
+      // [Oreki R45·5] 与 tier≥8 同一条理由：残熵 >0.9 时起 run 等于立刻结算一层，
+      // 但这一层的 30 s 窗口会被「instant」吃掉，其它并行操作（买研究 / 卸符文）来不及做。
+      // 只跳过本帧，不压现实。
+      if (ent > 0.9) return;
       const before = tier;
       Laitela.initializeRun();
       this._laitelaRunAtMs = now;
@@ -681,6 +846,8 @@ export const OrekiEndgameAutomation = {
     };
     return {
       step: this.step,
+      /** 本局 `tick()` 被调用次数（只读；证明主循环真的在驱动本模块） */
+      tickCount: this._tickCount ?? 0,
       imL: pick(imLog10),
       imCapL: pick(() => MachineHandler.currentIMCap),
       iuBought: this._iuBought,

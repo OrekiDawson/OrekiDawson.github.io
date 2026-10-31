@@ -28,7 +28,7 @@ if (GlobalErrorHandler.handled) {
 }
 GlobalErrorHandler.cleanStart = true;
 
-// [Oreki R40-S2] 把执行层的四个动手目标交给它（执行层自己不 import 这些模块：
+// [Oreki R40-S2] 把执行层的动手目标交给它（执行层自己不 import 这些模块：
 // 它只认识「函数」或「带方法的对象」，这样它能在 node 里单测，也不会与 game.js 形成环）。
 // 注册的是模块本体，不是包装 —— 执行层调 `buyInfinityDimensions()` 与本文件调是同一条路。
 OrekiSmartExecutor.register("routine", tryOrekiEarlyRoutine);
@@ -39,6 +39,10 @@ OrekiSmartExecutor.register("reality", OrekiRealityAutomation);
 // 20 阶段里只有 realityTree 的目标没有任何购买实现。模块本体见
 // core/oreki-perk-automation.js，走 `Perk(id).purchase()`（真实扣 perkPoints + 连通性校验）。
 OrekiSmartExecutor.register("perk", OrekiPerkAutomation);
+// [Oreki R45·4] 终局链路（莱特拉 / 佩勒）：`celestial` 策略里新增的 `driveLaitela`
+// 动词指向它。不注册的话执行层 invoke 会直接返回「未注册」，等于又变回空转。
+// 注册的是模块本体（不是包装），执行层调 `driveLaitelaVerb()` 与本文件调 `tick()` 同一类路径。
+OrekiSmartExecutor.register("endgame", OrekiEndgameAutomation);
 
 export function playerInfinityUpgradesOnReset() {
 
@@ -634,7 +638,6 @@ export function getGameSpeedupFactor(effectsToConsider, blackHolesActiveOverride
     }
   }
 
-
   factor *= PelleUpgrade.timeSpeedMult.effectValue.toNumber();
 
   // 1e-300 is now possible with max inverted BH, going below it would be possible with
@@ -916,16 +919,19 @@ export function gameLoop(passDiff, options = {}) {
   // 再进天神 run、最后解锁 V。详见 core/oreki-celestial-automation.js。
   OrekiCelestialAutomation.tick();
 
-  // [Oreki R37-A] 终局链路（V 之后）：虚幻机器 → 莱特拉 → 佩勒 → 原版 GameEnd。
-  // 这四步在原版里只有 UI 调用点，没有任何自动器，所以即使 V 解锁也会原地停住。
-  // 详见 core/oreki-endgame-automation.js。
-  OrekiEndgameAutomation.tick();
-
   // [Oreki R44] 复兴节点自动购买：原版只有 `Perk(id).purchase()`，全仓库没有调用点。
   // 放在现实自动化之后、智能层之前 —— 它花的是 perkPoints（只由现实次数发放），
   // 与 RM / 符文 / 天神资源完全隔离，不会和上面任何模块抢钱。
   // 模块内部：BFS 找「到自动机节点最短路」→ 每秒最多买 1 个 → 手动操作时让路。
   const orekiPerkResult = OrekiPerkAutomation.tick();
+
+  // [Oreki R37-A] 终局链路（V 之后）：虚幻机器 → 莱特拉 → 佩勒 → 原版 GameEnd。
+  // 这四步在原版里只有 UI 调用点，没有任何自动器，所以即使 V 解锁也会原地停住。
+  // 详见 core/oreki-endgame-automation.js。
+  // [Oreki R45·4] 捕获返回值：`tick()` 恒返回 null，但执行层的 `observe()` 需要这个
+  // source 的每帧摘要才能累加 `idle`（连续无动作帧数）。不传的话 `endgame` 的
+  // `sourceReady()` 永远为假，`driveLaitela` 这条 owned 动词一次都轮不到。
+  const orekiEndgameResult = OrekiEndgameAutomation.tick();
 
   // [Oreki R40-S1] 智能策略层：**只读解释器**，不按任何购买键。
   // 规则全部来自 src/core/oreki-smart-strategy.json（经 gen_spec_module.mjs 转成 ESM），
@@ -944,6 +950,7 @@ export function gameLoop(passDiff, options = {}) {
     eternity: orekiEternityResult,
     reality: orekiRealityResult,
     perk: orekiPerkResult,
+    endgame: orekiEndgameResult,
   });
 
   // IP generation is broken into a couple of places in gameLoop; changing that might change the
@@ -953,7 +960,6 @@ export function gameLoop(passDiff, options = {}) {
   if (!Pelle.isDoomed) {
     passivePrestigeGen();
   }
-
 
   applyAutoprestige(realDiff / getGlobalSpeedFactor());
   updateImaginaryMachines(realDiff);

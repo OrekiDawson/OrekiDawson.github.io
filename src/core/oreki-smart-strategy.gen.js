@@ -1035,11 +1035,13 @@ const data = {
       "priority": [
         "celestialSpecificOrder",
         "spendUnlockResource",
-        "advanceCelestialNav"
+        "advanceCelestialNav",
+        "driveLaitela"
       ],
       "guards": [
         "每位天神单独判定，禁止一套顺序套六个",
-        "进入天神前确认前置资源足够"
+        "进入天神前确认前置资源足够",
+        "前三条归阶段模块（delegated），driveLaitela 是本段唯一的可代劳项：它指向 OrekiEndgameAutomation.driveLaitelaVerb()，因为 oreki-celestial-automation.js 没有莱特拉分支（_canEnter 只有 teresa/effarig/enslaved/v）；莱特拉未解锁时该动词由 verbDone() 自述「本层无可推进」，不会空转"
       ]
     },
     {

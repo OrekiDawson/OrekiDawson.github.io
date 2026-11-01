@@ -66,8 +66,8 @@ export default {
     /** 当前档位文案：一眼看出是默认档还是严格档 */
     automationModeLabel() {
       return OrekiSmartExecutor.strictGlobal
-        ? "当前档位：严格（全局串行）"
-        : "当前档位：默认（每个自动操作各自守间隔）";
+        ? "当前档位：严格（连续购买也纳入间隔管辖）"
+        : "当前档位：默认（间隔只管辖策略决策）";
     },
     speedHint() {
       return `默认 ${GameSpeed.format(GameSpeed.defaultFactor)}×，可调范围 ${GameSpeed.min}× ~ ${GameSpeed.max}×`;
@@ -134,8 +134,8 @@ export default {
     automationStrict(newValue) {
       OrekiSmartExecutor.setStrictGlobal(newValue);
       this.automationAppliedHint = newValue
-        ? "严格模式已开启：全系统任意两次自动操作之间都至少间隔上述秒数（游戏推进会显著变慢）"
-        : "已切回默认档：每个自动操作各自守间隔；连续购买路径按原版节奏跟随产量";
+        ? "严格模式已开启：连续购买也纳入管辖，全系统任意两次自动操作之间都至少间隔上述秒数（推进可能停滞）"
+        : "已切回默认档：间隔只管辖策略决策，连续购买按原版自动购买器节奏执行";
     },
   },
   // This puts the slider in the right spot on initialization
@@ -421,16 +421,22 @@ export default {
         <PrimaryToggleButton
           v-model="automationStrict"
           class="o-primary-btn--option l-options-grid__button c-oreki-sched__strict-toggle"
-          label="严格模式（全局串行）："
-          on="开"
-          off="关"
+          label="严格模式："
+          on="纳入"
+          off="不纳入"
         />
         <div class="o-primary-btn o-primary-btn--option c-oreki-sched__info">
           <b>{{ automationModeLabel }}</b>
           <span class="c-oreki-sched__hint">
-            开启后，<b>全系统任意两次自动操作之间</b>都至少间隔上面设定的秒数，一条都不例外。
-            代价是游戏推进会显著变慢（实测：开启 3 秒严格模式时，开局阶段会长时间停在首次无限之前）。
-            关闭时为默认档：每个自动操作各自守间隔，连续购买（维度 / 无限维度 / 时间研究）跟随产量节奏。
+            默认不勾选：间隔只管辖<b>策略决策</b>（现实 / 天神 / 复兴 / 终局等）——
+            买维度、买无限维度、买时间研究属于<b>原版自动购买器的职责</b>（原版那些器锁在永恒里程碑后），
+            按原版节奏执行，不受此间隔限制。
+          </span>
+          <span class="c-oreki-sched__hint">
+            勾选后，这 4 条（反物质维度 / 无限维度与升级 / 时间研究 / 自动永恒）<b>也纳入间隔管辖</b>，
+            全系统任意两次自动操作之间都至少间隔上述秒数。
+            <b>注意：开启后游戏推进可能显著变慢甚至停滞</b>（实测 3 秒严格模式下，开局会长时间停在首次无限之前），
+            仅在需要完全统一节拍时使用。
           </span>
         </div>
       </div>

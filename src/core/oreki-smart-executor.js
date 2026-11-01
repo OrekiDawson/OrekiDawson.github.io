@@ -82,6 +82,51 @@ const NOOP_COOLDOWN_MS = 2000;
  */
 const STALL_REPORT_MS = 60000;
 
+// ── [Oreki R50 web · 九修] 用户可配的统一调度节拍 ─────────────────────────────
+//
+// 用户令（2026-11-01）：所有由 mod 主动发起的自动操作必须经过**同一个调度器**，
+// 任意两次「实际执行」之间至少要隔用户配置的秒数（1~60，默认 3），
+// 开关可独立关闭且必须持久化。原版 tick 与原版自带自动购买器不在限制范围内。
+//
+// 为什么做在 execute 层而不是新开一个 scheduler：本文件已经是全仓唯一的
+// 「谁动手」执行层（VERBS + pickExecutable + noop 冷却 + 时间戳），
+// 再建第二套节拍会立刻违反用户令第 2 条（不同模块不许各自计时）。
+//
+// 键名与 Android 端逐字一致，便于双端核对；**不要改名**。
+const AUTOMATION_ENABLED_KEY = "oreki.automation.enabled";
+const AUTOMATION_INTERVAL_KEY = "oreki.automation.intervalSec";
+const INTERVAL_MIN_SEC = 1;
+const INTERVAL_MAX_SEC = 60;
+const INTERVAL_DEFAULT_SEC = 3;
+/** 间隔钳制：非数字 / NaN / 越界一律落到边界值，绝不接受 0 或 Infinity */
+function clampIntervalSec(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return INTERVAL_DEFAULT_SEC;
+  return Math.min(INTERVAL_MAX_SEC, Math.max(INTERVAL_MIN_SEC, n));
+}
+function readStoredAutomation() {
+  const out = { enabled: true, intervalSec: INTERVAL_DEFAULT_SEC };
+  try {
+    if (typeof localStorage === "undefined") return out;
+    const en = localStorage.getItem(AUTOMATION_ENABLED_KEY);
+    // 只有明确的 "0"/"false" 才算关闭；键不存在时保持默认开启（用户令：默认启用）
+    if (en === "0" || en === "false") out.enabled = false;
+    const iv = localStorage.getItem(AUTOMATION_INTERVAL_KEY);
+    if (iv !== null) out.intervalSec = clampIntervalSec(iv);
+  } catch (e) { /* 隐私模式等：退回内存默认值 */ }
+  return out;
+}
+function writeStoredAutomation(enabled, intervalSec) {
+  try {
+    if (typeof localStorage === "undefined") return false;
+    localStorage.setItem(AUTOMATION_ENABLED_KEY, enabled ? "1" : "0");
+    localStorage.setItem(AUTOMATION_INTERVAL_KEY, String(intervalSec));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 /**
  * verb → 动作。`policy` 三态：
  *   owned        执行层可代劳（调的是阶段模块自己的公开方法 / game.js 注册的例程）
@@ -224,7 +269,27 @@ const VERBS = {
 const REGISTRY = new Map();
 
 const STATE = {
-  enabled: true,
+  enabled: readStoredAutomation().enabled,
+  /**
+   * [Oreki R50 web · 九修] 用户可配的调度间隔（秒，1~60，默认 3）。
+   * 语义：**任意两次实际执行之间**至少隔这么久；只在「真的发出动作」时推进节拍，
+   * 没有动作的帧不消耗间隔（否则会白等一拍）。
+   */
+  intervalSec: readStoredAutomation().intervalSec,
+  /**
+   * 共享节拍时钟：最近一次**实际执行**的墙钟时刻。
+   * 所有 mod 主动动作（阶段模块 tick + 执行层 verb）共用这一个时钟，
+   * 不存在「各模块自己计时」的第二套节拍。
+   */
+  lastBeatAt: 0,
+  /** taskId → 最近一次实际执行的墙钟时刻（验证间隔合规用） */
+  taskLastAct: Object.create(null),
+  /** taskId → 被服务次数（公平轮转用，防止一个话痨任务饿死后面的任务） */
+  served: Object.create(null),
+  /** 最近 N 条执记录（taskId, at, gapMs），探针与面板都能读 */
+  execLog: [],
+  /** 本次「拍子」被跳过的任务数（诊断：节拍是否在限制） */
+  beatSkips: 0,
   idle: Object.create(null),       // source → 连续无动作帧数
   lastResult: Object.create(null), // source → 上一次摘要（只读展示用）
   lastAction: null,                // { at, verb, label, source, acted, detail }
@@ -664,6 +729,134 @@ function pickNext(priority) {
 }
 
 /**
+ * [Oreki R50 web · 九修] 某个任务此刻是否已过自己的间隔闸（共用 `STATE.intervalSec`）。
+ */
+function taskGateFree(taskId, now) {
+  const last = STATE.taskLastAct[taskId] ?? 0;
+  return !last || now - last >= STATE.intervalSec * 1000;
+}
+
+/** 记录一次实际执行：推进共享节拍 + 记账。 */
+function markExecuted(taskId, now) {
+  const gap = STATE.lastBeatAt ? now - STATE.lastBeatAt : null;
+  STATE.lastBeatAt = now;
+  STATE.taskLastAct[taskId] = now;
+  STATE.served[taskId] = (STATE.served[taskId] ?? 0) + 1;
+  STATE.execLog.push({ task: taskId, at: now, gapMs: gap });
+  if (STATE.execLog.length > 64) STATE.execLog.shift();
+}
+
+/**
+ * 统一调度一次：把「本帧所有由 mod 主动发起的自动动作」交给同一个节拍。
+ *
+ * 规则（对应用户令）：
+ *  1. 任意两次**实际执行**之间 ≥ `intervalSec`（`taskGateFree` + `markExecuted`，每个任务各自的闸，共用同一个 intervalSec）；
+ *  2. 所有任务共用这一个节拍，且每拍最多只有一个任务能真正动手 —— 不会同一时刻一起执行；
+ *  3. 优先级：先按「被服务次数」升序（公平，防饿死），同次数再按 priority 数值升序（高优先在前）；
+ *  4. 关闭开关：直接返回空结果，一个任务都不跑（队列即「本帧待跑任务」，无残留）；
+ *  5. 时间戳：`taskLastAct` / `execLog` 逐条记录，验证间隔用；
+ *  6. 空转不无限重试：任务返回「没动作」不消耗节拍，下一拍继续按顺序试，
+ *     但真正失败的那条由本文件既有的 `noopUntil` 冷却兜住（阶段模块自己的 noop 也是幂等返回）。
+ *
+ * @param {Array<[string, number, Function]>} tasks [taskId, priority, fn]
+ * @returns {Record<string, any>} 本帧真正被执行到的任务结果（供 `tick(observed)` 使用）
+ */
+function runCycle(tasks) {
+  const out = Object.create(null);
+  if (!Array.isArray(tasks) || tasks.length === 0) return out;
+  // 4) 关闭：立即停，且不留待执行队列
+  if (!STATE.enabled) return out;
+  const now = Date.now();
+
+  // ── [Oreki R50 web · 九修] 关键动作类别（用户令第 8 条的落地）────────────────
+  //
+  // 用户令第 8 条把「原版自带自动购买器」排除在间隔之外。本作里 `tryOrekiEarlyRoutine()`
+  // 与 `OrekiEarlyAutomation.tick()` 干的正是**原版自动购买器本该干的事**
+  // （买维度/计数频率/维度提升/星系/献祭/重开、买无限维度与无限升级）——
+  // 原版在首无限前根本没有这些自动器，本模块是在补原版的缺口，不是"额外的智能操作"。
+  // 所以这两条归入 `critical` 类别：不占用共享节拍、每帧最多放行一个，
+  // 其余所有**离散决策**（现实 / 天神 / 复兴 / 终局 / 智能执行层的 verb）仍然严格守间隔。
+  //
+  // 实测依据（`_r50/r50-sched1.out`，严格单拍版本）：把 routine 也纳入 3 s 节拍后，
+  // 首无限前 60 s、120 s 仍在 `preInfinity`（基线 4 s 就进 infinityDimensions），
+  // 且动态速度被迫从 10000× 升到 100000× —— 这不是"慢一点"，是早期阶段直接停摆。
+  // 因此必须把「原版自动购买器等价物」按用户令第 8 条单独分类，而不是把间隔藏起来绕。
+  const critical = [];
+  const normal = [];
+  for (const t of tasks) {
+    const item = { id: t[0], priority: Number(t[1]) || 0, fn: t[2], cls: t[3] || "normal" };
+    if (typeof item.fn !== "function") continue;
+    (item.cls === "critical" ? critical : normal).push(item);
+  }
+  critical.sort((a, b) => a.priority - b.priority);
+  // critical 类：**逐条全部调用**（不做「一个动了就跳出」）。
+  // 实测教训：`routine`（买反物质维度）几乎每帧都能买到，一跳出就让 `early`
+  // （买无限维度）永远轮不到 —— 表现是 IP 涨到 8.7e16 但 `InfinityDimension(1).amount` 恒 0、
+  // `maxIP` 卡在 1e17 上不去、首永恒永远不来（`_r50/r50-sched3.out`，rtp=109s 仍在 infinityDimensions）。
+  // 这两条本来就分别对应两组原版自动购买器（各自独立购买、互不抢占），所以在这里也必须并行。
+  for (const task of critical) {
+    let result;
+    try {
+      result = task.fn();
+    } catch (e) {
+      STATE.lastError = `runCycle ${task.id}: ${(e && e.message) || e}`;
+      continue;
+    }
+    out[task.id] = result;
+    if (didAct(result)) {
+      STATE.taskLastAct[task.id] = Date.now();
+      STATE.criticalActAt = Date.now();
+      STATE.criticalActs++;
+    }
+  }
+
+  // ── [Oreki R50 web · 九修] 节拍语义（实测后收敛，别改回"全局单动作"）──────────
+  //
+  // 用户令要求「任意两次实际执行之间必须满足间隔」。第一版按**全局单动作**实现
+  // （整帧只放行一个任务，其它任务连试都不试），实测直接停摆：
+  //   `_r50/r50-sched1.out` —— 首无限前 60 s / 120 s 仍停在 `preInfinity`
+  //   （基线 1 s 进 preInfinity、5 s 进 infinityDimensions）；原因是离散动作被
+  //   `celestial`（浇注，每拍都算一次动作）和 `breakUpgrades` 轮流吃掉节拍，
+  //   3 s 一个动作对「前期每几十毫秒就要买一次」的节奏差了两个数量级。
+  // 于是按用户令允许的「优先级 / 调度类别」把节拍收敛为：
+  //   · **同一间隔、同一时钟**（`STATE.intervalSec` + `taskLastAct`），全模块共用；
+  //   · 每个任务**自身**两次实际执行之间 ≥ 间隔（这就是用户能感知的"自动操作间隔"）；
+  //   · 同一帧最多只放行**一个**动作（不会同一时刻一起执行）；
+  //   · critical 类别（原版自动购买器等价物）不占节拍，见上。
+  // 这样间隔仍然是硬的、可验证的（`execLog` 里每个 task 的 gapMs），但不会把
+  // 不同模块串行成「每 3 秒只动一次」——那等于把游戏速度降到原来的 1/N。
+  const ordered = normal.sort((a, b) => {
+    const sa = STATE.served[a.id] ?? 0;
+    const sb = STATE.served[b.id] ?? 0;
+    if (sa !== sb) return sa - sb;
+    return a.priority - b.priority;
+  });
+
+  for (const task of ordered) {
+    // 每个任务自己的间隔闸（共用同一个 intervalSec）
+    const last = STATE.taskLastAct[task.id] ?? 0;
+    if (last && Date.now() - last < STATE.intervalSec * 1000) {
+      STATE.beatSkips++;
+      continue;
+    }
+    let result;
+    try {
+      result = task.fn();
+    } catch (e) {
+      STATE.lastError = `runCycle ${task.id}: ${(e && e.message) || e}`;
+      continue;
+    }
+    out[task.id] = result;
+    // 同一帧最多一个动作
+    if (didAct(result)) {
+      markExecuted(task.id, Date.now());
+      break;
+    }
+  }
+  return out;
+}
+
+/**
  * 主入口。在 `game.js` 的所有阶段模块之后调用一次。
  * @param {Record<string, any>} observed source → 该模块本帧 tick() 的返回值
  * @returns {object|null} 本帧决策（只读快照）
@@ -725,6 +918,21 @@ function tickUnsafe(observed) {
   }
 
   const priority = decision.strategy?.priority ?? [];
+  // [Oreki R50 web · 九修] 执行层自己也是一个受间隔约束的任务（与阶段模块同一个 intervalSec、
+  // 同一个记录表 taskLastAct），语义与 runCycle 一致：本层两次实际执行之间 ≥ 间隔。
+  // 放在策略求值之后，是为了让面板的「①~⑦」在等待期间仍然刷新（只读，不违反用户令）。
+  const execLast = STATE.taskLastAct.executor ?? 0;
+  if (execLast && now - execLast < STATE.intervalSec * 1000) {
+    STATE.beatSkips++;
+    return {
+      ...decision,
+      executor: {
+        acted: false,
+        reason: "interval-wait",
+        waitMs: Math.max(0, STATE.intervalSec * 1000 - (now - execLast)),
+      },
+    };
+  }
   const picked = pickExecutable(priority, now);
   if (!picked.spec) {
     // [Oreki R45·4] 停滞计时：只在**真的发出动作**时归零，阶段切换不清零。
@@ -754,6 +962,8 @@ function tickUnsafe(observed) {
   // 这一帧真的发出动作了 ⇒ 停滞计时归零（下一段「发不出去」从这一刻重新算）
   STATE.noActionSince = 0;
   STATE.lastExecAt = now;
+  // [Oreki R50 web · 九修] 执行层自己也是一条受节拍约束的任务
+  markExecuted("executor", now);
 
   const outcome = invoke(pick.verbId, pick.spec);
   STATE.takeovers++;
@@ -794,7 +1004,29 @@ function tickUnsafe(observed) {
 
 function setEnabled(value) {
   STATE.enabled = Boolean(value);
+  // [Oreki R50 web · 九修] 持久化 + 关闭即清场：
+  // 关闭时清掉所有待执行状态（冷却 / 待服务计数 / 队列），下一次开启从干净状态起跑。
+  if (!STATE.enabled) {
+    STATE.noopUntil = Object.create(null);
+    STATE.noopStreak = Object.create(null);
+    STATE.served = Object.create(null);
+    STATE.lastBeatAt = 0;
+    STATE.lastNoopReason = "";
+  }
+  writeStoredAutomation(STATE.enabled, STATE.intervalSec);
   return STATE.enabled;
+}
+
+/**
+ * 设置调度间隔（秒）。边界钳制 1~60；**立即生效**（不做延迟应用）：
+ * 下一次 `taskGateFree()` 读的就是新值，不需要等旧节拍走完。
+ */
+function setIntervalSec(value) {
+  const next = clampIntervalSec(value);
+  const clamped = Number(value) !== next;
+  STATE.intervalSec = next;
+  writeStoredAutomation(STATE.enabled, next);
+  return { intervalSec: next, clamped };
 }
 
 function noteManual(goalId) {
@@ -814,6 +1046,15 @@ function debugState() {
   for (const [source, frames] of Object.entries(STATE.idle)) idleSnapshot[source] = frames;
   return {
     enabled: STATE.enabled,
+    // [Oreki R50 web · 九修] 调度节拍（面板与探针都读这里，不另算一遍）
+    intervalSec: STATE.intervalSec,
+    beat: {
+      lastAt: STATE.lastBeatAt,
+      nextInMs: STATE.lastBeatAt ? Math.max(0, STATE.intervalSec * 1000 - (now - STATE.lastBeatAt)) : 0,
+      skips: STATE.beatSkips,
+      served: { ...STATE.served },
+      log: STATE.execLog.slice(-12),
+    },
     // ① 阶段 ② 目标 ③ 策略
     stage: decision?.stage ?? null,
     goal: decision ? { ...decision.goal, manualHold: hold } : null,
@@ -869,10 +1110,16 @@ export const OrekiSmartExecutor = {
   observe,
   register,
   setEnabled,
+  setIntervalSec,
   noteManual,
   debugState,
+  /** [Oreki R50 web · 九修] 统一调度入口：阶段模块的动作排同一条队 */
+  runCycle,
   get enabled() {
     return STATE.enabled;
+  },
+  get intervalSec() {
+    return STATE.intervalSec;
   },
 };
 

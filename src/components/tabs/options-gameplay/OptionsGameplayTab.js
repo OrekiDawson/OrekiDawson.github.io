@@ -39,6 +39,11 @@ export default {
       smartHold: "",
       smartNote: "",
       smartAt: 0,
+      // [Oreki R50 web · 九修] 智能自动操作的开关与间隔。唯一来源是 OrekiSmartExecutor
+      // （它自己持久化到 localStorage 的 oreki.automation.*），这里只做镜像供绑定。
+      automationEnabled: OrekiSmartExecutor.enabled,
+      automationIntervalInput: String(OrekiSmartExecutor.intervalSec),
+      automationAppliedHint: "",
     };
   },
   computed: {
@@ -52,6 +57,10 @@ export default {
       return this.dynamicSpeed
         ? "进度连续停滞时会自动升档（每次 ×2，上限沿用倍率上限）；进度在走时不动"
         : "手动模式：倍率只由你设定，控制器不会自动升档";
+    },
+    /** [Oreki R50 web · 九修] 当前生效的间隔（只读镜像，读的是执行层的真实值） */
+    automationIntervalLabel() {
+      return `${OrekiSmartExecutor.intervalSec} 秒`;
     },
     speedHint() {
       return `默认 ${GameSpeed.format(GameSpeed.defaultFactor)}×，可调范围 ${GameSpeed.min}× ~ ${GameSpeed.max}×`;
@@ -107,6 +116,13 @@ export default {
     dynamicSpeed(newValue) {
       GameSpeed.setDynamic(newValue);
       this.speedFactor = GameSpeed.factor;
+    },
+    // [Oreki R50 web · 九修] 开关即时生效并持久化
+    automationEnabled(newValue) {
+      OrekiSmartExecutor.setEnabled(newValue);
+      this.automationAppliedHint = newValue
+        ? "已启用：自动操作按下面的间隔执行"
+        : "已关闭：所有本作自动操作立即停止，待执行队列已清空（手动操作不受影响）";
     },
   },
   // This puts the slider in the right spot on initialization
@@ -209,8 +225,23 @@ export default {
       this.smartHold = hold;
       this.smartNote = note;
     },
-    applySpeedValue(value) {
-      const result = GameSpeed.set(value);
+    /**
+     * [Oreki R50 web · 九修] 应用调度间隔。边界钳制在执行层里做（1~60），
+     * 这里负责把「被钳制过」的事实明确告诉玩家，不静默改值。
+     * 改完**下一次调度立即采用新值**（执行层每次读 STATE.intervalSec，没有缓存节拍）。
+     */
+    applyAutomationInterval() {
+      const result = OrekiSmartExecutor.setIntervalSec(this.automationIntervalInput);
+      this.automationIntervalInput = String(result.intervalSec);
+      if (result.clamped) {
+        this.automationAppliedHint = `输入超出 1~60 秒范围，已钳制为 ${result.intervalSec} 秒（下一次调度立即生效）`;
+        GameUI.notify.info(`自动操作间隔已钳制为 ${result.intervalSec} 秒`);
+      } else {
+        this.automationAppliedHint = `已设为 ${result.intervalSec} 秒，下一次调度立即生效`;
+        GameUI.notify.success(`自动操作间隔已设为 ${result.intervalSec} 秒`);
+      }
+    },
+    applySpeedValue(value) {      const result = GameSpeed.set(value);
       if (!result.ok) {
         GameUI.notify.error(`倍率设置失败：${result.message}`);
         this.speedInput = String(GameSpeed.factor);
@@ -332,6 +363,45 @@ export default {
             开启后，计数频率自动购买器的购买间隔会按游戏速度倍率缩短，
             让计数频率升级跟得上游戏时间；默认关闭，×1 时行为不变。
           </span>
+        </div>
+      </div>
+      <div class="l-options-grid__row c-oreki-sched__row">
+        <PrimaryToggleButton
+          v-model="automationEnabled"
+          class="o-primary-btn--option l-options-grid__button c-oreki-sched__toggle"
+          label="智能自动操作："
+          on="启用"
+          off="关闭"
+        />
+        <div class="o-primary-btn o-primary-btn--option c-oreki-sched__info">
+          <b>调度间隔 {{ automationIntervalLabel }}</b>
+          <span class="c-oreki-sched__hint">
+            所有由本作主动发起的自动操作共用同一节拍：任意两次实际执行之间至少隔这么久。
+            范围 1~60 秒，默认 3 秒；关闭开关会立刻停止全部自动操作并清空待执行队列
+            （你的手动操作完全不受影响，原版 tick 与原版自动购买器也不受影响）。
+          </span>
+        </div>
+      </div>
+      <div class="l-options-grid__row c-oreki-sched__row">
+        <div class="o-primary-btn o-primary-btn--option c-oreki-sched__input">
+          <input
+            v-model="automationIntervalInput"
+            class="c-oreki-sched__field"
+            type="text"
+            inputmode="numeric"
+            aria-label="智能自动操作间隔（秒）"
+            @keyup.enter="applyAutomationInterval"
+          >
+          <span class="c-oreki-sched__unit">秒</span>
+        </div>
+        <OptionsButton
+          class="o-primary-btn--option c-oreki-sched__apply"
+          @click="applyAutomationInterval"
+        >
+          应用间隔
+        </OptionsButton>
+        <div class="o-primary-btn o-primary-btn--option c-oreki-sched__info">
+          <span class="c-oreki-sched__hint">{{ automationAppliedHint }}</span>
         </div>
       </div>
       <div class="l-options-grid__row c-oreki-smart">

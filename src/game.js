@@ -874,64 +874,38 @@ export function gameLoop(passDiff, options = {}) {
   // 否则 EC12 可能在同一帧里先被限时判定判失败。详见 core/oreki-instant-challenges.js。
   tryInstantCompleteChallenges();
 
-  // [Oreki AU6] Break Infinity 升级自动购买：这组升级廉价且给维度乘数，
-  // 是 Break 之后把产量抬过下一档成本的通道。受既有「自动购买器」总开关控制，不新增存档字段。
-  // 详见 core/oreki-autobuy-break-infinity.js。
-  tryBuyBreakInfinityUpgrades();
-
-  // [Oreki AD5] Break Infinity 闸门：把大坍缩自动器间隔从 150000 拉到 100 是 Break 的**前置**
-  // （breakInfinity() 第一行就要求 hasMaxedInterval），而这条路径在原版里只有 UI 按钮能走，
-  // 未 Break 时每次坍缩又固定只给 1 IP → 攒满 32767 IP 要约 9 天。
-  // 这里补上自动化缺口 + 一次性阶段奖励。详见 core/oreki-break-infinity-gate.js。
-  tryOpenBreakInfinityGate();
-
-  // [Oreki AD7] 开局例行操作自动化：首次无限前原版维度自动器不可用，
-  // 进度完全由点击速率决定（实测 1e130 卡 60 秒），时间倍率在这一段无效。
-  // 详见 core/oreki-early-automation.js 与本文件 tryOrekiEarlyRoutine 的说明。
-  const orekiRoutineResult = tryOrekiEarlyRoutine();
-
-  // [Oreki AD6] 首次永恒前的阶段自动化：无限维度与无限升级在原版里都没有自动购买
-  // （ID 自动器与 IP 倍率自动器都锁在 Eternal Milestone 之后，buyMax 的源码注释写着
-  //  "Called from Max All UI buttons and nowhere else"）。10000× 速度下玩家跟不上点击节奏，
-  // 于是 maxAM 永远停在 1e5921 量级、IP 停在 1e29，摸不到 1.797e308 的永恒门槛。
-  // 详见 core/oreki-early-automation.js。
-  const orekiEarlyResult = OrekiEarlyAutomation.tick();
-
-  // [Oreki AD10] Eternity 阶段的通路自动化：时间维度 → 时间定理 → 时间研究。
-  // 实测 EP 已到 1e694437 却一个时间研究都没买上，因为
-  // `TimeTheorems.checkForBuying()` 要求先买过时间维度（time-theorems.js:112），
-  // 而 Reality 的唯一闸门是 `TimeStudy.reality.isBought`（reality.js:119）。
-  // 详见 core/oreki-eternity-automation.js。
-  const orekiEternityResult = OrekiEternityAutomation.tick();
-
-  // [Oreki AD13] 自动永恒（带 EC 入口保护）：原版没有自动永恒，而永恒会
-  // `invalidateCachedRequirements()` 清掉 EC 的入口资源峰值采样（eternity.js:147），
-  // 导致 EC3 要求的「单次运行内第八维度 17300」永远攒不到。
-  // 前提已满足：AD11.1 修好「已满级 EC 不要重复买研究」后，研究链稳定为 22 个且含 171。
-  OrekiEternityAutomation.tickEternity();
-
-  // [Oreki R26] 现实层自动化：首次现实 / 现实循环 / 现实升级 / 符文装备。
-  // 原版现实没有无条件自动器（RealityAutobuyerState.isUnlocked 要求 RealityUpgrade 25，
-  // 而 25 要 100000 RM），首次现实因此永远不会发生。详见 core/oreki-reality-automation.js。
-  const orekiRealityResult = OrekiRealityAutomation.tick();
-
-  // [Oreki R27] 天神 / 特蕾莎浇注 / V 解锁 自动化：在现实自动化之后调用，先买 RU、再浇特蕾莎、
-  // 再进天神 run、最后解锁 V。详见 core/oreki-celestial-automation.js。
-  OrekiCelestialAutomation.tick();
-
-  // [Oreki R44] 复兴节点自动购买：原版只有 `Perk(id).purchase()`，全仓库没有调用点。
-  // 放在现实自动化之后、智能层之前 —— 它花的是 perkPoints（只由现实次数发放），
-  // 与 RM / 符文 / 天神资源完全隔离，不会和上面任何模块抢钱。
-  // 模块内部：BFS 找「到自动机节点最短路」→ 每秒最多买 1 个 → 手动操作时让路。
-  const orekiPerkResult = OrekiPerkAutomation.tick();
-
-  // [Oreki R37-A] 终局链路（V 之后）：虚幻机器 → 莱特拉 → 佩勒 → 原版 GameEnd。
-  // 这四步在原版里只有 UI 调用点，没有任何自动器，所以即使 V 解锁也会原地停住。
-  // 详见 core/oreki-endgame-automation.js。
-  // [Oreki R45·4] 捕获返回值：`tick()` 恒返回 null，但执行层的 `observe()` 需要这个
-  // source 的每帧摘要才能累加 `idle`（连续无动作帧数）。不传的话 `endgame` 的
-  // `sourceReady()` 永远为假，`driveLaitela` 这条 owned 动词一次都轮不到。
-  const orekiEndgameResult = OrekiEndgameAutomation.tick();
+  // ── [Oreki R50 web · 九修] 统一调度：所有 mod 主动发起的自动动作走同一条节拍 ──────────
+  //
+  // 用户令（2026-11-01）：mod 主动发起的自动操作必须经过**同一个调度器**，
+  // 任意两次「实际执行」之间至少隔用户配置的秒数（默认 3 s，可 1~60，可整体关闭），
+  // 不许各模块自己计时、不许同一时刻一起执行。
+  //
+  // 实现：全部塞进 `OrekiSmartExecutor.runCycle()` —— 它内部只有一个共享时钟
+  // （`STATE.lastBeatAt`）和一个间隔（`STATE.intervalSec`），每拍最多放行**一个**
+  // 真正改变了游戏状态的任务；没有动作的任务不消耗节拍，所以不会被白白跳过。
+  // 公平性用「被服务次数」做一级排序、调用顺序（这里的 priority 数字）做二级排序，
+  // 防止某个每拍都能买的任务饿死后面的模块。
+  //
+  // 刻意**不**放进队列的三处（都是只读判据或规则内判定，不是"买/按"动作）：
+  //   · `tryInstantCompleteChallenges()`：挑战"进入即完成"是规则的一部分，
+  //     必须与 `EternityChallenge(12).tryFail()` 同帧同序（见其上方注释），节流会让 EC12 判失败；
+  //   · `shouldHoldReset()` / `shouldHoldCrunch()`：只回答是/否，节流会让闸门失去时效性；
+  //   · `OrekiSmartStrategy.evaluate()`：只读解释器，不按任何键。
+  const orekiCycle = OrekiSmartExecutor.runCycle([
+    // id            priority  action                                  类别
+    // 「原版自动购买器等价物」= critical（用户令第 8 条豁免，见 runCycle 注释）
+    ["routine", 10, () => tryOrekiEarlyRoutine(), "critical"],
+    ["early", 20, () => OrekiEarlyAutomation.tick(), "critical"],
+    // 其余全部是离散决策，严格守共享节拍
+    ["breakUpgrades", 5, () => tryBuyBreakInfinityUpgrades()],
+    ["breakGate", 6, () => tryOpenBreakInfinityGate()],
+    ["eternity", 30, () => OrekiEternityAutomation.tick(), "critical"],
+    ["eternityReset", 31, () => OrekiEternityAutomation.tickEternity(), "critical"],
+    ["reality", 40, () => OrekiRealityAutomation.tick()],
+    ["celestial", 50, () => OrekiCelestialAutomation.tick()],
+    ["perk", 60, () => OrekiPerkAutomation.tick()],
+    ["endgame", 70, () => OrekiEndgameAutomation.tick()],
+  ]);
 
   // [Oreki R40-S1] 智能策略层：**只读解释器**，不按任何购买键。
   // 规则全部来自 src/core/oreki-smart-strategy.json（经 gen_spec_module.mjs 转成 ESM），
@@ -944,14 +918,10 @@ export function gameLoop(passDiff, options = {}) {
   // 且调的是该模块自己的公开方法（同一条购买路径、同样的成本检查），不写任何 player 字段。
   // 手动优先：玩家在 #ui 上点一下，当前 goal 静默 60 s（面板显示剩余秒数）。
   // 详见 core/oreki-smart-executor.js 头注释。
-  OrekiSmartExecutor.tick({
-    routine: orekiRoutineResult,
-    early: orekiEarlyResult,
-    eternity: orekiEternityResult,
-    reality: orekiRealityResult,
-    perk: orekiPerkResult,
-    endgame: orekiEndgameResult,
-  });
+  // 把这一拍真正跑到的任务结果喂给执行层：`observe()` 用它们累计 `idle`（连续无动作帧数），
+  // 没被跑到的任务**不喂**（不喂 = 不累加 idle），否则节流会被误读成「模块没事干」，
+  // 执行层就会在同一拍里替它动手，等于绕过间隔。
+  OrekiSmartExecutor.tick(orekiCycle);
 
   // IP generation is broken into a couple of places in gameLoop; changing that might change the
   // behavior of eternity farming.

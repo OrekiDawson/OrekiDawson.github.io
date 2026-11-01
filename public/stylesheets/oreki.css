@@ -1735,6 +1735,63 @@
    加「让路原因」（手动操作后 60 秒内暂停必须写出来，不许静默暂停）。
    放在设置页而不是 HUD：它解释「为什么自动层这样动」，与倍率设置同屏更合理。
    -------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------
+   [Oreki R50 web · 九修] 智能自动操作：开关 + 调度间隔（设置 → 游戏玩法）
+   用途：让玩家能一键关掉本作的全部自动操作，或把动作节拍从 3 秒放到 60 秒。
+   颜色全部走 CSS 变量，深色模式自动跟随，不写死背景色。
+   -------------------------------------------------------------------------- */
+.c-oreki-sched__row {
+  align-items: stretch;
+}
+
+.c-oreki-sched__info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  padding: 0.8rem 1rem;
+  box-sizing: border-box;
+  text-align: left;
+  white-space: normal;
+  flex: 1 1 auto;
+}
+
+.c-oreki-sched__hint {
+  font-size: 0.85rem;
+  line-height: 1.4;
+  opacity: 0.8;
+  white-space: normal;
+}
+
+.c-oreki-sched__input {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 0.9rem;
+  box-sizing: border-box;
+}
+
+.c-oreki-sched__field {
+  width: 5rem;
+  padding: 0.3rem 0.5rem;
+  font: inherit;
+  text-align: right;
+  color: var(--color-text, inherit);
+  background: var(--color-base, transparent);
+  border: 0.1rem solid var(--color-accent, #8888);
+  border-radius: 0.4rem;
+}
+
+.c-oreki-sched__unit {
+  opacity: 0.8;
+}
+
+@media screen and (max-width: 600px) {
+  .c-oreki-sched__row {
+    flex-direction: column;
+  }
+}
+
 .c-oreki-smart__panel {
   display: flex;
   flex-direction: column;

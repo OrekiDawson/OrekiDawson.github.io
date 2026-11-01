@@ -331,7 +331,141 @@ sha256sum <(tr -d '\r' < reports/_deploy_check/<文件名>) <(tr -d '\r' < <源�
 
 ---
 
-## 9. Web 与 Android 的关系
+## 9. Linux 和 macOS 使用说明
+
+> **先说清本仓库的性质**：本仓库只包含**静态部署文件**（`index.html`、`src/`、`public/`、`modules/`、`serve.mjs`），
+> **不是完整的开发源码仓库**。功能开发、构建、测试都在源码仓库 `AD-Oreki-Edition` 进行，
+> 本仓库的代码改动会在下次同步时被覆盖。
+>
+> **实测范围声明**：以下命令基于仓库实际内容核验（`serve.mjs` 三平台分支已读源码确认），
+> 但**编写时仅在 Windows 环境实际运行过**。Linux 与 macOS 部分**未经实机验证**，标注为【未实测】。
+> 若你执行时遇到差异，请以实际报错为准并回馈修正。
+
+### 9.1 四种使用场景，别混淆
+
+| 场景 | 去哪做 | 需要什么 |
+| --- | --- | --- |
+| ① 只是玩 | 浏览器打开 <https://oreki.net> | 无 |
+| ② 本地跑起来玩 | 本仓库，`serve.mjs` | Node.js |
+| ③ 改游戏功能 | **源码仓库 `AD-Oreki-Edition`** | Node.js + 完整源码 |
+| ④ 部署到自己的托管平台 | 本仓库内容上传即可 | 无（产物已是静态文件） |
+
+### 9.2 直接在线玩
+
+浏览器访问 <https://oreki.net> 即可，无需安装任何东西。
+
+**推荐浏览器**：Chrome / Edge / Firefox 最新版。游戏使用 ES 模块（`<script type="module">`）
+与较新的 CSS 特性，**IE 与老旧内核浏览器不支持**，页面会显示「你的浏览器不支持」提示。
+
+### 9.3 获取文件
+
+```bash
+# 方式一：克隆（含完整历史）
+git clone https://github.com/OrekiDawson/OrekiDawson.github.io.git
+cd OrekiDawson.github.io
+
+# 方式二：只取最新快照
+curl -L -o ad-oreki.tar.gz https://github.com/OrekiDawson/OrekiDawson.github.io/archive/refs/heads/main.tar.gz
+tar xzf ad-oreki.tar.gz && cd OrekiDawson.github.io-main
+```
+
+> 若只需部署产物、不需要历史，用方式二更小。
+
+### 9.4 本地启动
+
+**不需要 `npm install`**——本仓库没有 `package.json`，`serve.mjs` 只用 Node.js 内置模块
+（`node:http` / `node:fs` / `node:path` / `node:url` / `node:child_process`），**零第三方依赖**。
+
+```bash
+node serve.mjs          # 默认 8080 端口
+node serve.mjs 8200     # 指定端口
+```
+
+启动后浏览器会自动打开 `http://127.0.0.1:<端口>/`（脚本按平台选择 `start` / `open` / `xdg-open`）。
+若没有自动打开，手动访问该地址即可。停止：`Ctrl + C`。
+端口被占用时脚本会提示换端口。
+
+**为什么必须用 http 而不是双击 `index.html`**：页面通过 `<script type="module">` 加载 ES 模块，
+浏览器在 `file://` 协议下会拒绝加载，直接双击打开会白屏。
+
+#### 安装 Node.js
+
+| 平台 | 方式 |
+| --- | --- |
+| **macOS** | 官方安装包：<https://nodejs.org/> 下载 `.pkg`；或 Homebrew：`brew install node`<br>Apple 芯片（M 系列）与 Intel 芯片**安装包不同**，官网会按架构给对应版本；Homebrew 会自动匹配 |
+| **Linux（Debian/Ubuntu）** | `sudo apt update && sudo apt install -y nodejs` |
+| **Linux（Fedora/RHEL）** | `sudo dnf install -y nodejs` |
+| **Linux（Arch）** | `sudo pacman -S nodejs` |
+| **任意 Linux** | 或用 nvm：`curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh \| bash` 后 `nvm install --lts` |
+
+**版本要求**：`serve.mjs` 使用 `node:` 协议前缀导入内置模块，需要 **Node.js ≥ 14.18**；
+建议使用 **18 LTS 或更高**。用 `node --version` 确认。
+
+> 发行版仓库里的 `nodejs` 可能偏旧（例如某些 Ubuntu LTS 自带 12.x）。
+> 若报 `Cannot find module 'node:http'`，就是版本过低，改用 nvm 或 NodeSource 源安装。
+
+#### Linux 上自动打开浏览器失败
+
+脚本在 Linux 用 `xdg-open`。若提示找不到命令或没有反应：
+
+```bash
+# Debian/Ubuntu
+sudo apt install -y xdg-utils
+# Fedora
+sudo dnf install -y xdg-utils
+```
+
+装不上也没关系——**服务本身已经起来了**，手动在浏览器打开 `http://127.0.0.1:<端口>/` 即可。
+
+#### macOS 首次运行被拦截
+
+从网络下载的脚本可能被 Gatekeeper 标记。用 `node serve.mjs` 直接运行**不涉及可执行权限**，
+正常不会触发；若遇到，`xattr -d com.apple.quarantine serve.mjs` 解除标记。
+
+### 9.5 本地验证部署效果
+
+本地跑起来就等于验证了部署效果——**本仓库内容本身就是最终部署产物**，没有额外构建步骤。
+
+要严格模拟线上，注意两点：
+
+1. 线上由 GitHub Pages 提供，路径区分大小写；Linux 文件系统**也区分大小写**（macOS 默认不区分），
+   所以 **Linux 上测出来的路径问题最接近线上真实情况**
+2. 线上根路径是 `/`，本地也是 `http://127.0.0.1:<端口>/`，相对路径行为一致；若资源用了绝对路径 `/xxx`，
+   本地一样能暴露问题
+
+### 9.6 部署到自己的静态托管
+
+本仓库产物是纯静态文件，可直接上传到任意静态托管（GitHub Pages / Cloudflare Pages / Netlify / Vercel / 自己的 Nginx）。
+
+注意事项：
+
+- **不要上传** `.git/`、`CNAME`（那是给 `oreki.net` 用的，换了域名要改或删）
+- `.nojekyll` 需要保留（否则 GitHub Pages 会走 Jekyll 处理，忽略 `_` 开头的目录）
+- 上传后访问根路径即可
+
+> **本仓库不是第二个代码源**。要做功能改动，请在源码仓库 `AD-Oreki-Edition` 修改，
+> 再通过同步脚本更新本仓库；直接在本仓库改功能会在下次同步时丢失。
+
+### 9.7 常见问题
+
+| 现象 | 原因 | 处理 |
+| --- | --- | --- |
+| 打开页面白屏 | 用了 `file://` 双击打开 | 必须走 `node serve.mjs` 的 http 地址 |
+| `Cannot find module 'node:http'` | Node.js 版本 < 14.18 | 升级 Node（推荐 18 LTS+） |
+| `EADDRINUSE` 端口被占用 | 端口已被其他程序占用 | `node serve.mjs 8200` 换端口 |
+| 浏览器没自动打开 | Linux 缺 `xdg-open`，或沙箱环境限制 | 手动访问 `http://127.0.0.1:<端口>/` |
+| 提示「你的浏览器不支持」 | 内核过旧 | 换 Chrome / Edge / Firefox 最新版 |
+| 改了文件页面没变 | 浏览器缓存 | 强制刷新（`Ctrl+Shift+R` / `Cmd+Shift+R`） |
+| 资源 404（大小写） | 线上与 Linux 区分大小写，macOS 默认不区分 | 按仓库实际文件名大小写引用 |
+
+### 9.8 与 Windows 说明的关系
+
+仓库根目录的 `启动游戏.bat` 是 **Windows 专用**，Linux/macOS 不能用。
+Linux/macOS 一律使用 `node serve.mjs`。两者最终跑的是同一个服务器脚本，行为一致。
+
+---
+
+## 10. Web 与 Android 的关系
 
 同一产品的两个实现，追求**行为等价**，不要求代码相同：
 

@@ -893,14 +893,16 @@ export function gameLoop(passDiff, options = {}) {
   //   · `OrekiSmartStrategy.evaluate()`：只读解释器，不按任何键。
   const orekiCycle = OrekiSmartExecutor.runCycle([
     // id            priority  action                                  类别
-    // 「原版自动购买器等价物」= critical（用户令第 8 条豁免，见 runCycle 注释）
-    ["routine", 10, () => tryOrekiEarlyRoutine(), "critical"],
-    ["early", 20, () => OrekiEarlyAutomation.tick(), "critical"],
-    // 其余全部是离散决策，严格守共享节拍
+    // 顺序即优先级（数字越小越先）。
+    // `"cont"` = 连续购买路径（原版自动购买器等价物）：默认档不受节拍约束（否则首无限前停摆，
+    // 三次实测见任务单 §八），严格模式下同样受限。其余任务一律走节拍。
+    ["routine", 10, () => tryOrekiEarlyRoutine(), "cont"],
+    ["early", 20, () => OrekiEarlyAutomation.tick(), "cont"],
+    // 离散决策：守节拍（两种模式都受限）
     ["breakUpgrades", 5, () => tryBuyBreakInfinityUpgrades()],
     ["breakGate", 6, () => tryOpenBreakInfinityGate()],
-    ["eternity", 30, () => OrekiEternityAutomation.tick(), "critical"],
-    ["eternityReset", 31, () => OrekiEternityAutomation.tickEternity(), "critical"],
+    ["eternity", 30, () => OrekiEternityAutomation.tick(), "cont"],
+    ["eternityReset", 31, () => OrekiEternityAutomation.tickEternity(), "cont"],
     ["reality", 40, () => OrekiRealityAutomation.tick()],
     ["celestial", 50, () => OrekiCelestialAutomation.tick()],
     ["perk", 60, () => OrekiPerkAutomation.tick()],

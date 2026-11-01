@@ -43,6 +43,7 @@ export default {
       // （它自己持久化到 localStorage 的 oreki.automation.*），这里只做镜像供绑定。
       automationEnabled: OrekiSmartExecutor.enabled,
       automationIntervalInput: String(OrekiSmartExecutor.intervalSec),
+      automationStrict: OrekiSmartExecutor.strictGlobal,
       automationAppliedHint: "",
     };
   },
@@ -61,6 +62,12 @@ export default {
     /** [Oreki R50 web · 九修] 当前生效的间隔（只读镜像，读的是执行层的真实值） */
     automationIntervalLabel() {
       return `${OrekiSmartExecutor.intervalSec} 秒`;
+    },
+    /** 当前档位文案：一眼看出是默认档还是严格档 */
+    automationModeLabel() {
+      return OrekiSmartExecutor.strictGlobal
+        ? "当前档位：严格（全局串行）"
+        : "当前档位：默认（每个自动操作各自守间隔）";
     },
     speedHint() {
       return `默认 ${GameSpeed.format(GameSpeed.defaultFactor)}×，可调范围 ${GameSpeed.min}× ~ ${GameSpeed.max}×`;
@@ -123,6 +130,12 @@ export default {
       this.automationAppliedHint = newValue
         ? "已启用：自动操作按下面的间隔执行"
         : "已关闭：所有本作自动操作立即停止，待执行队列已清空（手动操作不受影响）";
+    },
+    automationStrict(newValue) {
+      OrekiSmartExecutor.setStrictGlobal(newValue);
+      this.automationAppliedHint = newValue
+        ? "严格模式已开启：全系统任意两次自动操作之间都至少间隔上述秒数（游戏推进会显著变慢）"
+        : "已切回默认档：每个自动操作各自守间隔；连续购买路径按原版节奏跟随产量";
     },
   },
   // This puts the slider in the right spot on initialization
@@ -402,6 +415,23 @@ export default {
         </OptionsButton>
         <div class="o-primary-btn o-primary-btn--option c-oreki-sched__info">
           <span class="c-oreki-sched__hint">{{ automationAppliedHint }}</span>
+        </div>
+      </div>
+      <div class="l-options-grid__row c-oreki-sched__row c-oreki-sched__row--strict">
+        <PrimaryToggleButton
+          v-model="automationStrict"
+          class="o-primary-btn--option l-options-grid__button c-oreki-sched__strict-toggle"
+          label="严格模式（全局串行）："
+          on="开"
+          off="关"
+        />
+        <div class="o-primary-btn o-primary-btn--option c-oreki-sched__info">
+          <b>{{ automationModeLabel }}</b>
+          <span class="c-oreki-sched__hint">
+            开启后，<b>全系统任意两次自动操作之间</b>都至少间隔上面设定的秒数，一条都不例外。
+            代价是游戏推进会显著变慢（实测：开启 3 秒严格模式时，开局阶段会长时间停在首次无限之前）。
+            关闭时为默认档：每个自动操作各自守间隔，连续购买（维度 / 无限维度 / 时间研究）跟随产量节奏。
+          </span>
         </div>
       </div>
       <div class="l-options-grid__row c-oreki-smart">

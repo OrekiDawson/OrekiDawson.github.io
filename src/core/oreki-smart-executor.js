@@ -1034,14 +1034,23 @@ function tickUnsafe(observed) {
 
 function setEnabled(value) {
   STATE.enabled = Boolean(value);
-  // [Oreki R50 web · 九修] 持久化 + 关闭即清场：
-  // 关闭时清掉所有待执行状态（冷却 / 待服务计数 / 队列），下一次开启从干净状态起跑。
+  // [九修·六次] 关闭即清场 —— 但**绝不能清时间戳**。
+  //
+  // 清 `lastBeatAt` 会开出一条绕过间隔的口子：关一下再开，节拍被重置为 0，
+  // 下一次调度立刻放行，等于「想跳过 3 秒间隔，拨一下开关就行」。
+  // 这与用户令「任意两次实际执行之间必须满足间隔」直接冲突，
+  // 也属于执行令禁止的「为缩短通关时间绕过用户配置的操作间隔」。
+  //
+  // 保留时间戳才是正确语义：关一小时再开，`now - lastBeatAt` 早已远超间隔，
+  // 第一次执行本来就该立刻放行 —— 那是**真的满足间隔**，不是漏洞。
+  // 清掉的只有「待执行状态」：冷却 / 每任务失败计数 / 公平轮转计数 / 阶段名额。
+  // （Android 侧 `OrekiAutomationScheduler` 同语义：只清 failUntil/streak/帧名额，时间戳全保留。）
   if (!STATE.enabled) {
     STATE.noopUntil = Object.create(null);
     STATE.noopStreak = Object.create(null);
     STATE.served = Object.create(null);
-    STATE.lastBeatAt = 0;
     STATE.lastNoopReason = "";
+    // ⚠️ 刻意不清：STATE.lastBeatAt / STATE.taskLastAct（间隔判定的唯一依据）
   }
   writeStoredAutomation(STATE.enabled, STATE.intervalSec, STATE.strictGlobal);
   return STATE.enabled;

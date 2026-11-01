@@ -42,6 +42,8 @@
 import { PlayerProgress } from "./player-progress.js";
 import { OrekiEternityAutomation } from "./oreki-eternity-automation.js";
 import { OREKI_V_UNLOCK_REALITIES, OREKI_V_UNLOCK_DILATED_TIME } from "./secret-formula/celestials/v.js";
+import { VUnlocks } from "./celestials/V.js";
+import { Laitela } from "./celestials/laitela/laitela.js";
 
 /**
  * 深度挑战的推进顺序（每关打满 5 次才切下一关）。
@@ -189,6 +191,34 @@ export const OrekiDilationAutomation = {
       // tp=0 / maxDT=0 / laiDim=0(已到 tier 8) / iu25=false`，卡在 laitela 阶段。
       // 现在改成「IU25 买到才算这条链结束」。
       if (ImaginaryUpgrade(25).isBought) return this._release("iu25-bought");
+
+      // ── [Oreki R50 web · 八修] 莱特拉刷层窗口（tier 0~7）里不再压现实 ──────────
+      //
+      // 【实测】`r50-fresh9-lai.jsonl`（500 ms 粒度，真实新档）逐帧对账：
+      //   · t=506 s 莱特拉解锁 → t=820 s 进佩勒，这一段 314 s 里本模块的 `hold` 一直为真
+      //     （`holdDeep=true / holdForV=false / laiHold=false`，来源唯一）；
+      //   · 每一次 `difficultyTier++` 之后，`entropy` 被 `laitelaRealityTick` 置 -1，
+      //     而**只有一次现实重置能把它清回 0**（reality.js:701），
+      //     ⇒ 每上一层都必须先让现实跑一次；
+      //   · 但 `hold` 把现实压住：实测 tier1→2 等了 40 s、tier2→3 等了 56 s、
+      //     tier3→4 等了 36 s，而现实在 hold 放手的 10 s 窗口里 4 s 内就能完成。
+      //
+      // 为什么这段压现实是**纯开销**：本模块压现实的唯一目的是让
+      //   ① `maxDT ≥ 1e30`（V 的 dilatedTime 判据）与 ② DS1/DS6 在位（IU25 的 checkRequirement）
+      //   在同一个现实内成立。而进入莱特拉阶段的前提是 IU15 已买（`Laitela.isUnlocked`），
+      //   IU15 在 `OrekiIu15Sprint` 里就要求 `VUnlocks.vAchievementUnlock` 已解锁
+      //   ⇒ **V 此时必然已经解锁**，`maxDT` 判据再也不会被读；而 IU25 只在 tier 8
+      //   才需要 DS6（`driveLaitela` 的 `ready = ds6 && im >= cost`）。
+      //   ⇒ tier 0~7 这一段里「压现实重建 EC 链 → 买 DS1 → 攒 maxDT」没有任何消费者，
+      //     却把现实节奏从 ~15 s 拉到 ~40 s，而莱特拉的每一层都靠现实推进。
+      //
+      // 有界性：判据只读三个原版位（V 解锁 / 莱特拉解锁 / `maxAllowedDimension !== 0`），
+      // 一旦 tier 到 8（`Laitela.isFullyDestabilized`）本分支自动失效，hold 立刻恢复，
+      // EC 链 → DS1 → DS6 照旧重建，`driveLaitela` 的 IU25 通路不受影响。
+      // 不会出现「放开了就再也压不回去」的活锁。
+      if (VUnlocks.vAchievementUnlock.isUnlocked && Laitela.isUnlocked && !Laitela.isFullyDestabilized) {
+        return this._release("laitela-tiers");
+      }
 
       const now = Date.now();
       if (this._cooldownUntilMs && now < this._cooldownUntilMs) return false;

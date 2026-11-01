@@ -1,3 +1,13 @@
+> **本仓库是部署副本，不是开发仓库。**
+>
+> 源码唯一开发地是 `web/AD-Oreki-Edition`（`github.com/OrekiDawson/AD-Oreki-Edition-Web`）。
+> 本仓库（`github.com/OrekiDawson/OrekiDawson.github.io`）只承载部署产物，由同步脚本从源码仓库
+> 逐文件复制生成，`CNAME` 指向 `oreki.net`。
+>
+> **禁止在本仓库直接修改功能代码**——下次同步会覆盖，且会让线上与源码悄然脱节。
+> 本文件后半部分是面向线上玩家的游戏说明（与源码仓库 README 用途不同），
+> 部署与维护细节见 **§8.5**。
+
 # AD: Oreki Edition（反物质维度 · Oreki 改版）
 
 **在线体验：<https://oreki.net>**
@@ -251,14 +261,73 @@ node _tools/verify-viewport-matrix.mjs AD-Oreki-Edition 8300
 ### 8.5 部署（GitHub Pages）
 
 线上站点是**独立仓库** `_deploy/site`（`origin = github.com/OrekiDawson/OrekiDawson.github.io`），
-不是本仓库的 `gh-pages` 分支。发布流程：
+不是本仓库的 `gh-pages` 分支。`CNAME` 指向 `oreki.net`。
 
-1. 本仓库改完并测试；
-2. 把改动同步到 `_deploy/site`（**逐文件保持原换行符**，否则会产生整文件 diff）；
-3. 在 `_deploy/site` 提交并推送 `main`；
-4. 打开 <https://oreki.net> 实际核对页面资源与本轮改动。
+#### 8.5.1 仓库职责边界
 
-`CNAME` 指向 `oreki.net`。未获授权不提交、不推送、不部署。
+| 项 | 说明 |
+| --- | --- |
+| 本仓库职责 | 只存放**部署产物**：可直接被静态托管服务的文件快照 |
+| 源码唯一源 | `web/AD-Oreki-Edition`（`OrekiDawson/AD-Oreki-Edition-Web`） |
+| 是否独立开发分支 | **否**。本仓库不是第二个代码源，不得在此单独开分支改功能 |
+| 允许的本地提交 | 仅限部署产物同步、`README.md` 维护、以及**确认会被下次同步覆盖**的临时修正 |
+
+> 任何功能改动只能发生在源码仓库；本仓库的代码修改一律视为可被覆盖的临时状态。
+
+#### 8.5.2 发布流程
+
+1. 源码仓库改完并测试通过；
+2. 执行同步：`python web/_deploy/deploy_pages.py`（脚本位于源码工作区 `web/_deploy/`）
+   —— 由 `git archive` 导出源码快照，按文件清单逐文件复制到本仓库工作区；
+3. 在本仓库 `git status` 核对变更范围，确认只包含本轮预期文件；
+4. 提交并推送 `main`；
+5. 打开 <https://oreki.net> 实际核对。
+
+**未获授权不提交、不推送、不部署。**
+
+#### 8.5.3 换行符与格式差异（避免假性整文件 diff）
+
+源码仓库与部署副本在不同工具链下可能产生 **CRLF / LF** 差异，直接 `diff` 会显示整文件变更，
+把真实改动淹没。处理办法：
+
+```bash
+# 比对单文件（行尾归一）
+diff <(tr -d '\r' < 源码文件) <(tr -d '\r' < 部署文件)
+```
+
+同步脚本本身应保持原换行符，**不要**在同步过程中做格式统一。
+
+#### 8.5.4 线上资源与部署版本核验
+
+不要只看 `git log` 就宣称"线上已是新版"。必须实际取回线上文件并比对哈希：
+
+```bash
+# 落盘到仓库内相对路径，不要写 /tmp
+curl -sL -m 20 -o reports/_deploy_check/<文件名> https://oreki.net/<路径>
+# 去 BOM + 行尾归一后比 SHA-256
+sha256sum <(tr -d '\r' < reports/_deploy_check/<文件名>) <(tr -d '\r' < <源码文件>)
+```
+
+> **坑**：Git Bash 下 `curl -o /tmp/xxx` 可能静默失败，得到空文件并算出
+> 空串 SHA `e3b0c442…`，从而误判"线上未部署"。**必须落到仓库内相对路径**并先确认文件大小非零。
+
+核验通过的标准是三处一致：**线上取回的文件 = 源码仓库文件 = 本仓库副本**。
+
+#### 8.5.5 部署失败与回滚
+
+- 推送失败：先确认是否为网络问题（本机直连 GitHub 常报 `Connection was reset`），
+  改用 `git -c http.proxy=http://127.0.0.1:7897 push`；仍失败则**明确标记为未同步，不得谎报成功**。
+- 线上异常需要回滚：在本仓库 `git revert <提交>` 后重新推送（**不使用 force push、不 reset --hard**），
+  或从源码仓库重新执行一次同步覆盖。
+- Pages 构建失败：检查 `CNAME`、仓库 Pages 设置与文件路径大小写，修复后重新推送触发构建。
+
+#### 8.5.6 需要明确授权的操作
+
+以下操作**必须获得用户明确授权**才能执行：提交并推送本仓库、触发 Pages 部署、
+修改 `CNAME`、删除线上文件、回滚线上版本。
+
+**README 或任务单的推送 ≠ 部署游戏**，两者必须分开授权。
+
 
 ---
 

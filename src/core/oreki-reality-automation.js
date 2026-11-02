@@ -642,6 +642,22 @@ export const OrekiRealityAutomation = {
         glyphs = this.satisfyGlyphRequirements();
       }
     }
+
+    // [R59] 现实刚发生的那一帧，立刻补装符文，不等下一个 %30 窗口。
+    //
+    // 事实：一次 Reality 会把 `Glyphs.active` 全部清空（符文进仓库），
+    // 而上面那条 `_frame % 30` 最多要等 29 帧才回补。空槽 = 零符文收益，
+    // 而现实后产量正是从零起步的那一段，白等 0.5 s 在 3 小时口径下是纯粹损失。
+    // 这里只在 `reality === true`（本帧真的重置过）时补一次，不是每帧多跑一趟。
+    if (reality) {
+      const glyphReqsDone = this._glyphReqsDone();
+      if (glyphReqsDone) {
+        this.manageGlyphs();
+        glyphs += this.equipGlyphs();
+      } else {
+        glyphs += this.satisfyGlyphRequirements();
+      }
+    }
     return { reality, upgrades, glyphs };
   },
 };

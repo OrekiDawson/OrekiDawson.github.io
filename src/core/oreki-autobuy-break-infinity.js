@@ -1,32 +1,68 @@
-// [Oreki AU6] Break Infinity 升级自动购买
+// [Oreki AU6 · R65 重写] Break Infinity 升级自动购买
 //
-// 背景（R5.13 实测）：Break Infinity 之后有一组**廉价**升级（1e4 ~ 1e7 IP），
-// 每条都给反物质维度乘数：基于总反物质 / 当前反物质 / 无限次数 / 成就数 / 星系等。
-// 定点快照显示停滞点在「反物质 1e885、下一次购买成本 1e886~1e907」，
-// 而这类乘数正是把产量抬过下一档成本的唯一通道，玩家却没有任何提示要买。
+// ── 一、R64 之前的事实（为什么这一轮必须重写）────────────────────────────
+// 旧版本这里是「遍历 → canBeBought → purchase，能买的全买」。函数本身没错，
+// 但两个问题让它实际上推不动进度：
+//   1) **一次节拍买光所有能买的**：`runCycle` 的语义是「一拍最多一个真动作」，
+//      一次买 N 条等于把 N 个决策压成 1 拍 —— 与其说是限流，不如说是失控；
+//      更糟的是它无法表达「先买哪条」，只能按 `BreakInfinityUpgrade.all` 的数组序。
+//   2) **没有预算概念**：数组序里靠后的 5e11 / 1e15 两条一旦买得起就会被买掉，
+//      而 ID1 的解锁门槛恰好是「IP 余额 ≥ 4e8」。把余额砸进 5e11 的升级，
+//      等于把关键成长节点往后推几十分钟。
 //
-// 设计原则：
-// 1. 只买**已经满足购买条件**的（走升级自身的 canBeBought，含价格/已购/解锁判定），不伪造任何状态；
-// 2. 受玩家既有的「自动购买器」总开关 player.auto.autobuyersOn 控制，不新增存档字段、不需要迁移；
-// 3. 只在 Break 之后尝试（未 Break 时这组升级本就不可购买）；
-// 4. 幂等：买不起就什么都不做，不写记录、不影响挑战/Doomed（由升级自身判定把关）。
-// 5. 不动 InfinityUpgrade 与 IP Mult 的购买节奏，避免与 AU4b 的坍缩策略互相干扰。
+// ── 二、现在的策略（与 Android `OrekiBreakShop` 逐条等价）────────────────
+//   · 候选 = `canBeBought` 为真 **且** `2 × 价格 ≤ 当前 IP`
+//   · 在候选里取**价格最低**的一条，一次调用只买一条
+//   · `2 × 价格 ≤ IP` 保证任何单笔购买都不会让 IP 腰斩：便宜的先吃完，
+//     贵的等余额涨上来自然进入候选。不写死价格表，版本更新后也不会失效。
+//
+// ── 三、边界 ─────────────────────────────────────────────────────────
+//   · `player.auto.autobuyersOn` 关 → 一律不动（玩家意愿优先，与 Android 调度器同语义）；
+//   · 未 Break → 直接返回 0（这组升级在 Break 之前本来就不存在）；
+//   · 买不起 / 已买完 → 返回 0，`runCycle` 视为 no-op，**不占节拍**，
+//     后面的 `breakGate` / `eternity` 等候选仍能在同一帧拿到机会；
+//   · 单条升级抛错只影响它自己（外层 for 内 try/catch），不会中断整个循环。
+//
+// 返回值：1 = 本拍真的买下一条（IP 已按原版成本扣除、位图已置）；
+//         0 = 没有任何真实动作。
 
 /**
- * 尝试买下所有当前可购买的 Break Infinity 升级。
- * @returns {number} 本次实际买下的条数（用于测试与调试）
+ * 尝试买下一条 Break Infinity 升级（最便宜且不伤预算的那条）。
+ * @returns {number} 1 = 真的买下了一条；0 = 没有动作
  */
 export function tryBuyBreakInfinityUpgrades() {
   if (!player.auto.autobuyersOn) return 0;
   if (!player.break) return 0;
-  let bought = 0;
+
+  const ip = Currency.infinityPoints.value;
+  let best = null;
+  let bestCost = null;
+
   for (const upgrade of BreakInfinityUpgrade.all) {
     try {
+      // 原版综合判定：未购买 && 买得起 && 未封顶（可重复升级另有上限）
       if (!upgrade.canBeBought) continue;
-      if (upgrade.purchase()) bought++;
+      // 成本类型两端不一致：一次性升级的 config.cost 是**普通 number**（1e4 …），
+      // 可重复升级走 RebuyableMechanicState 的 `config.cost()` 返回 **Decimal**。
+      // 直接 `.times()` 会在 number 上抛 TypeError（R65 实测踩到），必须先归一。
+      const raw = upgrade.cost;
+      const cost = raw && typeof raw.times === "function" ? raw : new Decimal(raw);
+      // 单笔不超过当前 IP 的一半 —— 绝不为了买升级把余额砸到 ID1 门槛以下
+      if (cost.times(2).gt(ip)) continue;
+      if (!bestCost || cost.lt(bestCost)) {
+        best = upgrade;
+        bestCost = cost;
+      }
     } catch (e) {
-      // 单条升级抛错不应影响主循环与其他升级
+      // 单条升级的成本函数抛错不应影响其他条目
     }
   }
-  return bought;
+
+  if (!best) return 0;
+  try {
+    // 走升级自身的 purchase()：内部再判一次 canBeBought → 扣 IP → 置已购 → onPurchased()
+    return best.purchase() ? 1 : 0;
+  } catch (e) {
+    return 0;
+  }
 }

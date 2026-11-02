@@ -104,7 +104,18 @@ export const OrekiRealityAutomation = {
       // 两处各写一套（其中一处多了 `TP > 0`）而互相锁死。
       // 用 globalThis 取而不是 import：本模块被 celestial-automation 反向依赖，
       // 直接 import 会成环；该对象在 celestial-automation 模块底部挂到 globalThis。
-      if (globalThis.OrekiCelestialAutomation?.holdReality === true) return false;
+      if (globalThis.OrekiCelestialAutomation?.holdReality === true) {
+        // [R58-2] 压制期间必须清掉 `_readySince`。
+        //
+        // 原实现只 `return false`，`_readySince` 保持压制前那一刻的时间戳。
+        // 后果：压制一旦解除，`now - _readySince` 早已远大于下一条里的 10000 ms，
+        // 于是「先给膨胀研究 1 一个 10 秒窗口」这段保护**在解除压制的第一帧就被跳过**，
+        // 直接触发现实 → 清空 `maxDT` / `eternityChalls` / 时间研究树，
+        // 正是下面那段注释所描述的病（DS1 拿不到 → RU18 拿不到 → Teresa 不出现）。
+        // 清零后，解除压制时窗口会重新计时，保护的语义才与注释一致。
+        this._readySince = 0;
+        return false;
+      }
       if (!this.realityReady) {
         this._readySince = 0;
         return false;

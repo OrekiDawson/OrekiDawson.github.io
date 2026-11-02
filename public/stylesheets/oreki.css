@@ -890,6 +890,18 @@
 .l-notification-container {
   max-height: 60vh;
   overflow: hidden;
+  /* [R51-WEB] 容器本身不拦截点击。
+     依据（2026年11月1日 16:44【实测】，reports/_r51/run.log）：
+     320×640 视口下 `.l-notification-container`（absolute/top:0/right:0/z-index:1000）
+     覆盖在「大坍缩」按钮之上，按钮点击命中率只剩 **44%**。
+     这是功能性遮挡——窄屏玩家点不到主线按钮，不只是美观问题。
+     修法：容器 pointer-events:none 让空白区域穿透，子项恢复 auto 保留通知本身可点。 */
+  pointer-events: none;
+}
+
+.l-notification-container > .o-notification,
+.l-notification-container > .o-notification--overflow {
+  pointer-events: auto;
 }
 
 .o-notification--overflow {

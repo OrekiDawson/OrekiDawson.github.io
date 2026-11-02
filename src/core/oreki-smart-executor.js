@@ -103,7 +103,13 @@ const AUTOMATION_INTERVAL_KEY = "oreki.automation.intervalSec";
 const AUTOMATION_STRICT_KEY = "oreki.automation.strictGlobal";
 const INTERVAL_MIN_SEC = 1;
 const INTERVAL_MAX_SEC = 60;
-const INTERVAL_DEFAULT_SEC = 3;
+// [R57-B] 默认间隔 3 → 1 秒，与 Android 对齐。
+// 为什么必须对齐：Android 的 `OrekiAutomationScheduler` 三处默认值（字段默认 /
+// <clinit> 初值 / SharedPreferences 缺省回退）在 R57-A 已统一改成 1 秒，
+// 并已由 `OREKI_SCHED: init 调度：已启用 · 间隔 1 秒` 运行期实测。
+// 两端若一个 1 秒一个 3 秒，同一个存档、同一阶段的选择节奏会差 3 倍，
+// 违反「双端行为等价」的验收口径。已存过值的玩家不受影响（readStoredAutomation 优先读存档）。
+const INTERVAL_DEFAULT_SEC = 1;
 /** 间隔钳制：非数字 / NaN / 越界一律落到边界值，绝不接受 0 或 Infinity */
 function clampIntervalSec(value) {
   const n = Number(value);

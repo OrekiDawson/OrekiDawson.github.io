@@ -19,10 +19,26 @@ export class BigCrunchAutobuyerState extends UpgradeableAutobuyerState {
     // [Oreki AU4b] 用默认策略（AMOUNT，amount = 1）开自动坍缩会把反物质永久卡在 1.8e308：
     // 实测 120 s 内 maxAM 恒为 1e25.7、Infinity Dimension 永远不可用，进度实际停滞。
     // 首次接管时换成「单次 IP ≥ 10× 历史最高才坍缩」，让反物质在两次坍缩之间继续成长。
-    // 只改策略默认值，不动坍缩条件、重置副作用与间隔。
-    if (unlocked && this.data.mode === AUTO_CRUNCH_MODE.AMOUNT && Decimal.lt(this.data.amount, 10)) {
-      this.data.mode = AUTO_CRUNCH_MODE.X_HIGHEST;
-      this.data.xHighest = new Decimal(10);
+    //
+    // [Oreki R71] **这段归一化以前写在 `isUnlocked` 里，是 R71 报的「第三种模式选不中」的根因。**
+    //
+    // `isUnlocked` 是一个**每帧都会被 UI 读取的 getter**（`AutobuyerBox.update()`、
+    // 自动器 tick、`hasMaxedInterval` 判定都会调）。只要玩家选了 AMOUNT 且 `amount < 10`，
+    // 下一次读取就会把它改回 X_HIGHEST —— 表现为「点下去立刻弹回另一个模式」，
+    // 玩家视角就是**这个选项点不动**。
+    //
+    // 归一化的真实意图只是「**首次接管时**给一个不会卡死的默认策略」，
+    // 所以它必须是**一次性迁移**，不能是每次读取都执行的副作用。
+    // 用实例标志（不写存档，避免改存档结构）保证每个会话只迁移一次；
+    // 迁移过之后玩家的任何选择都不再被覆盖。
+    // 迁移条件再加一条 `lastTick === 0`（**从未 tick 过**），使它在「重启并读取存档」之后
+    // 也不会重跑：只要自动坍缩跑过一次，`lastTick` 就永久 > 0，玩家的选择从此不再被覆盖。
+    if (unlocked && !this._au4bNormalized && this.data.lastTick === 0) {
+      this._au4bNormalized = true;
+      if (this.data.mode === AUTO_CRUNCH_MODE.AMOUNT && Decimal.lt(this.data.amount, 10)) {
+        this.data.mode = AUTO_CRUNCH_MODE.X_HIGHEST;
+        this.data.xHighest = new Decimal(10);
+      }
     }
     return unlocked;
   }

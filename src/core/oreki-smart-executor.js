@@ -284,6 +284,13 @@ const VERBS = {
 const REGISTRY = new Map();
 
 const STATE = {
+  /**
+   * [Oreki R67] 因策略层降级而整体停手的次数。
+   *
+   * 语义与 `beatSkips` 类似：只统计「本来可以动、但因为决策不可信而没动」的帧，
+   * 用于区分「玩家关掉了」与「策略层自我降级」。不参与任何判定。
+   */
+  degradedStops: 0,
   enabled: readStoredAutomation().enabled,
   /**
    * [Oreki R50 web · 九修] 用户可配的调度间隔（秒，1~60，默认 3）。
@@ -924,7 +931,11 @@ function tickUnsafe(observed) {
 
   const decision = OrekiSmartStrategy.evaluate();
   STATE.lastDecision = decision;
-  if (!decision || decision.ok !== true) return decision ?? null;
+  if (!decision || decision.ok !== true) {
+    // [Oreki R67] 只统计「真的因为降级而停手」的帧：启动瞬间还没决策时不算。
+    if (decision && decision.degraded === true) STATE.degradedStops += 1;
+    return decision ?? null;
+  }
 
   // 阶段/策略切换留痕（面板「最近切换」）
   const now = Date.now();
@@ -1117,6 +1128,15 @@ function debugState() {
     goal: decision ? { ...decision.goal, manualHold: hold } : null,
     strategy: decision?.strategy ?? null,
     degraded: decision?.degraded === true,
+    /**
+     * [Oreki R67] 降级必须能自我解释。
+     *
+     * `tick()` 在 `decision.ok !== true` 时**一条动作都不发**（fail-closed），
+     * 但面板此前只能看到一个 degraded=true，看不出「为什么不动、动了多少次」。
+     * 这里把累计次数与停手原因一并暴露，避免把「策略层降级」误读成「自动化坏了」。
+     */
+    degradedCount: OrekiSmartStrategy.debugState?.().degradedCount ?? 0,
+    degradedStops: decision?.ok === true ? 0 : STATE.degradedStops,
     error: decision?.error ?? STATE.lastError,
     // ④ 正在执行 ⑤ 下一步 ⑥ 阻塞 ⑦ 最近切换
     action: STATE.lastAction,

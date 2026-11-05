@@ -40,6 +40,9 @@
 
 // [Oreki R38-A] IU15 冲刺状态机必须**被 import 才会执行**（纯 globalThis 引用不会加载模块）
 import { OrekiIu15Sprint } from "./oreki-iu15-sprint.js";
+// [R82] 首次永恒前判定必须读真实进度标志，不能用 try/catch 兜住 ReferenceError
+// （历史上 `VUnlocks` 漏 import 就是被 catch 吞成「判据恒假」）。
+import { PlayerProgress } from "./player-progress.js";
 
 /** 每帧最多买几个无限升级（单次购买，不是 buyMax） */
 export const UPGRADES_PER_TICK = 1;
@@ -66,17 +69,22 @@ export const OrekiEarlyAutomation = {
 
   /**
    * 买无限维度（含 unlock）。走 Max All 的同一条路径。
-   * @returns {number} 本次实际买到的维度层数（用于诊断）
+   *
+   * [R82] 返回值改成**真实购买增量**：旧实现统计的是「调用前已解锁且买得起」的
+   * 层数，这一步发生在购买之前，既不等于真的买到，也会让调度器把空转当成动作、
+   * 占掉本拍名额并把后面的 ipMult / 一次性升级挤掉。`InfinityDimensions.buyMax()`
+   * 本身不返回结果，所以这里只在购买前后读原版 `purchases` 字段做差，
+   * 不写任何 player 字段、不改成本，也不改变 buyMax 的解锁与购买顺序。
+   *
+   * @returns {number} 本次实际买到的维度次数（>0 才算真动作）
    */
   buyInfinityDimensions() {
     try {
       if (!InfinityDimensions.canBuy()) return 0;
-      let bought = 0;
-      for (const dimension of InfinityDimensions.all) {
-        if (dimension.isUnlocked && dimension.isAvailableForPurchase) bought++;
-      }
+      const before = InfinityDimensions.all.reduce((sum, dimension) => sum + dimension.purchases, 0);
       InfinityDimensions.buyMax();
-      return bought;
+      const after = InfinityDimensions.all.reduce((sum, dimension) => sum + dimension.purchases, 0);
+      return Math.max(0, after - before);
     } catch (e) {
       return 0;
     }
@@ -84,21 +92,119 @@ export const OrekiEarlyAutomation = {
 
   /**
    * 买无限升级：每帧最多 UPGRADES_PER_TICK 个，单次购买。
+   *
+   * [Oreki R80] 修复两个真实缺陷（都在本函数内，都是「买不到但看不出为什么」）：
+   *
+   * 缺陷 1：`InfinityUpgrade.ipMult` 永远买不到。
+   *   `InfinityIPMultUpgrade` 继承的是 `GameMechanicState`（infinity-upgrades.js:136），
+   *   **不是** `SetPurchasableMechanicState` —— 它没有 `isAvailableForPurchase` 这个
+   *   getter（只有 `isRequirementSatisfied` / `canBeBought` / `isCapped`）。
+   *   于是这里 `!upgrade.isAvailableForPurchase` 恒为 `true`（undefined 取反），
+   *   每一帧都被 `continue` 跳过。IP 倍率是首次永恒前唯一的 ×2 IP 通道，
+   *   被跳过等于少一整个数量级的 IP 积累，直接拉长到首次永恒的时间。
+   *   修法：只在「该 getter 真的存在」时才用它做前置过滤；不存在就交给
+   *   `canBeBought`（`InfinityIPMultUpgrade` 自己实现了完整判据：未封顶 +
+   *   IP 够 + 成就 41）。不新增任何判定语义，纯粹不再误杀。
+   *
+   * 缺陷 2：单帧只买 1 个 → 前面 17 个一次性升级会把 ipMult 永久挤到队尾。
+   *   原逻辑 `if (bought >= UPGRADES_PER_TICK) break` 一买到就退出，
+   *   而 `InfinityUpgrade.all` 是数据库声明顺序（ipMult 在**最后一位**，
+   *   见 secret-formula/infinity/infinity-upgrades.js:334）。
+   *   一次性升级共 17 条，只要还有任意一条没买完，ipMult 就轮不到。
+   *   修法：把「一次性升级」与「可重复升级（ipMult）」分成两组，
+   *   每组每帧各给 1 个名额。可重复升级不会消耗一次性名额，
+   *   也不会一次性把 IP 花光（仍受 `canBeBought` 的真实成本约束）。
+   *
+   * 边界不变：不写 isBought / 不改价格 / 不改 div / 不动 totalIPMult。
    * @returns {boolean} 本次是否买到
+   */
+  /**
+   * 买无限升级：每帧最多 UPGRADES_PER_TICK 个，单次购买。
+   *
+   * [Oreki R82] 新增 ID1 资金预留：首次永恒前，ID1 的解锁同时要求
+   * `thisEternity.maxAM ≥ 1e1100` 与 `IP ≥ 1e8`（`infinity-dimension.js:87-101`）。
+   * 反物质峰值靠 holdCrunch 保护，IP 却会被无限升级持续吃掉 —— 只要
+   * 一次性升级或 ipMult 把余额压到门槛以下，ID1 就永远集不齐，而每个购买动作
+   * 又都要占一整个节拍名额，等于把唯一的成长入口拖死。
+   *
+   * 预留只影响「何时买」，不碰任何数值：余额仍在原版 `purchase()` 里真实扣除，
+   * 这里只决定本拍要不要动手；门槛从原版 `ipRequirement` 读取，不写死 1e8。
+   * 窗口收紧到「ID1 锁定 + IP 已达门槛」，解锁瞬间即恢复正常购买。
    */
   buyInfinityUpgrades() {
     try {
+      // 判定「可重复升级」不能读 `upgrade.isRebuyable`：`InfinityIPMultUpgrade` 继承的是
+      // `GameMechanicState`，同样没有这个 getter（返回 undefined）。用 id 精确判定 ——
+      // 无限升级里可重复的只有 ipMult 一条（secret-formula/infinity/infinity-upgrades.js:334）。
+      const isRepeatable = upgrade => upgrade.id === "ipMult";
+      // ID1 资金预留：只在「首次永恒前 + ID1 未解锁 + IP 已达到门槛」时生效。
+      const reserveId1Ip = this.shouldReserveIpForId1();
       let bought = 0;
+      // 第一轮：一次性升级（每帧最多 UPGRADES_PER_TICK 个）
       for (const upgrade of InfinityUpgrade.all) {
         if (bought >= UPGRADES_PER_TICK) break;
-        if (!upgrade.isAvailableForPurchase) continue;
+        if (isRepeatable(upgrade)) continue;   // 可重复升级留到第二轮，避免抢一次性名额
+        // `isAvailableForPurchase` 只在基类真的定义了它时才可作为前置条件（见上方缺陷 1）
+        if (upgrade.isAvailableForPurchase === false) continue;
         if (!upgrade.canBeBought) continue;
+        // 会吃掉预留资金的升级：本拍跳过，等 ID1 解锁后再买（价格与顺序都不变）。
+        if (reserveId1Ip && !this.leavesId1Reserve(upgrade.cost)) continue;
         upgrade.purchase();
         bought++;
       }
-      return bought > 0;
+      // 第二轮：可重复升级（ipMult）。独立名额，不受第一轮是否买到影响。
+      let rebought = 0;
+      for (const upgrade of InfinityUpgrade.all) {
+        if (rebought >= UPGRADES_PER_TICK) break;
+        if (!isRepeatable(upgrade)) continue;
+        if (upgrade.isAvailableForPurchase === false) continue;
+        if (!upgrade.canBeBought) continue;
+        if (reserveId1Ip && !this.leavesId1Reserve(upgrade.cost)) continue;
+        upgrade.purchase();
+        rebought++;
+      }
+      return bought > 0 || rebought > 0;
     } catch (e) {
       return false;
+    }
+  },
+
+  /**
+   * 是否需要为 ID1 预留 IP（R82）。只读，不改任何状态。
+   *
+   * 条件与原版 `canUnlock` 的 IP 分支同源：
+   *   · 未解锁永恒（`!PlayerProgress.eternityUnlocked()`，首次永恒前）；
+   *   · ID1 仍锁定；
+   *   · 当前 IP 已经达到 ID1 的真实 IP 门槛。
+   * 已达门槛才预留，所以不会阻碍「攒够门槛之前」的正常升级节奏。
+   */
+  shouldReserveIpForId1() {
+    try {
+      if (PlayerProgress.eternityUnlocked()) return false;
+      const id1 = InfinityDimension(1);
+      if (id1.isUnlocked) return false;
+      const requirement = id1.ipRequirement;
+      if (!requirement) return false;
+      return Currency.infinityPoints.value.gte(requirement);
+    } catch (e) {
+      return false;
+    }
+  },
+
+  /**
+   * 花掉 cost 之后是否仍能保住 ID1 的 IP 门槛（R82）。
+   *
+   * 只做纯算术预测，不扣款、不写余额：真正扣费永远在原版 `purchase()` 内完成。
+   * 读不到门槛时返回 true（不阻断原行为），避免反射/版本差异把购买永久卡死。
+   */
+  leavesId1Reserve(cost) {
+    try {
+      const requirement = InfinityDimension(1).ipRequirement;
+      if (!requirement) return true;
+      const remaining = Currency.infinityPoints.value.minus(cost);
+      return remaining.gte(requirement);
+    } catch (e) {
+      return true;
     }
   },
 

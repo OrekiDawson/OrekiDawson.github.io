@@ -317,6 +317,14 @@ const STATE = {
    * 由 `beginFrame()` 在每帧开头清，`markExecuted()` 置位。
    */
   frameActed: false,
+  /**
+   * [R82] 阶段优先提示：当前阶段唯一值得插队的任务 id，空串表示无提示。
+   *
+   * 只影响 `runCycle` 的尝试顺序，不绕过任何闸门（间隔 / 同帧单动作 / 关闭即停
+   * 全部照旧）。用于「首次永恒前 ID1 收购窗口」这类只有一个入口能把资源
+   * 转成成长的阶段，避免被固定调用顺序长期压住。
+   */
+  priorityHint: "",
   /** taskId → 最近一次实际执行的墙钟时刻（验证间隔合规用） */
   taskLastAct: Object.create(null),
   /** taskId → 被服务次数（公平轮转用，防止一个话痨任务饿死后面的任务） */
@@ -875,10 +883,7 @@ function runCycle(tasks) {
   //
   // 与用户令第 6 条一致：空转本来就不该被算成一次"执行"，它只影响该任务自己的 noop 冷却
   // （`noopUntil` / `noopStreak`，由执行层 verb 使用；阶段模块自身是幂等返回）。
-  const ordered = tasks
-    .map(t => ({ id: t[0], priority: Number(t[1]) || 0, fn: t[2], cls: t[3] || "" }))
-    .filter(t => typeof t.fn === "function")
-    .sort((a, b) => a.priority - b.priority);
+  // 排序在下方统一进行（[R82] 需要叠加阶段优先提示，见 `priorityHint`）。
 
   // ── [R78] 统一全局节拍：所有任务同一队列，无任何旁路 ──────────────────────
   //
@@ -900,6 +905,19 @@ function runCycle(tasks) {
   //   每分钟最多 60 个策略动作 —— 对通关速度的影响远小于「同帧 8 连买」的失控。
   //
   // 关闭语义：`STATE.enabled === false` 已在函数开头直接返回，队列里不会残留任务。
+  //
+  // [R82] 阶段优先提示：`priorityHint` 让调用方在当前阶段把某个任务临时提到最前。
+  // 历史教训是「纯轮询会拖慢前期」（见上），所以这里**不恢复轮询**：只在
+  // 「首次永恒前 ID1 收购窗口」等明确阶段提升单条任务的尝试顺序，窗口一结束即回落。
+  // 它只决定「先问谁」，不放宽任何闸门：被拒绝的任务照旧让位给下一个候选，
+  // 仍满足「同帧最多一个真动作」与「两次真执行 ≥ 设定间隔」。
+  const hint = typeof STATE.priorityHint === "string" ? STATE.priorityHint : "";
+  const priorityOf = task => (hint && task.id === hint ? Number.NEGATIVE_INFINITY : task.priority);
+  const ordered = tasks
+    .map(t => ({ id: t[0], priority: Number(t[1]) || 0, fn: t[2], cls: t[3] || "" }))
+    .filter(t => typeof t.fn === "function")
+    .sort((a, b) => priorityOf(a) - priorityOf(b));
+
   for (const task of ordered) {
     // 第一道：本帧名额（同帧最多 1 个真动作）
     if (!frameGateFree()) break;
@@ -1082,8 +1100,17 @@ function tickUnsafe(observed) {
   return { ...decision, executor: { acted: outcome.acted, verb: pick.verbId, detail: outcome.detail } };
 }
 
-function setEnabled(value) {
-  STATE.enabled = Boolean(value);
+/**
+ * [R82] 设置本拍的阶段优先任务。
+ *
+ * 只影响「先问谁」，不改变任何闸门语义：传空串即恢复默认优先级顺序。
+ * 关闭自动化时由 `setEnabled(false)` 清空，避免重开后继承旧窗口。
+ */
+function setPriorityHint(taskId) {
+  STATE.priorityHint = typeof taskId === "string" ? taskId : "";
+}
+
+function setEnabled(value) {  STATE.enabled = Boolean(value);
   // [九修·六次] 关闭即清场 —— 但**绝不能清时间戳**。
   //
   // 清 `lastBeatAt` 会开出一条绕过间隔的口子：关一下再开，节拍被重置为 0，
@@ -1100,6 +1127,8 @@ function setEnabled(value) {
     STATE.noopStreak = Object.create(null);
     STATE.served = Object.create(null);
     STATE.lastNoopReason = "";
+    // [R82] 关闭即清掉阶段优先提示：重新开启后不得带着旧窗口的插队状态恢复。
+    STATE.priorityHint = "";
     // ⚠️ 刻意不清：STATE.lastBeatAt / STATE.taskLastAct（间隔判定的唯一依据）
   }
   writeStoredAutomation(STATE.enabled, STATE.intervalSec, STATE.strictGlobal);
@@ -1220,6 +1249,7 @@ export const OrekiSmartExecutor = {
   observe,
   register,
   setEnabled,
+  setPriorityHint,
   setIntervalSec,
   setStrictGlobal,
   noteManual,

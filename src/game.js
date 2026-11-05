@@ -342,17 +342,53 @@ export function tryOrekiEarlyRoutine() {
 }
 
 /**
- * [Oreki AD3] 首次 ID1 的自动解锁/购买。只在阶段窗口内、且玩家开着自动购买器时执行。
- * 幂等：ID1 解锁后条件不再成立，不会重复调用。
+ * [R82] 是否处于「首次永恒前的 ID1 收购窗口」，用于给调度器一个阶段优先级提示。
+ *
+ * 只读、无副作用。条件全部来自原版真实状态：
+ *   · 已 Break 且永恒尚未解锁（首次永恒前）；
+ *   · ID1 仍锁定；
+ *   · 非普通/无限挑战、非毁灭（挑战内 `player.break` 本就不成立，这里再守一道）；
+ *   · IP 已达到 ID1 的真实 IP 门槛（`id1.ipRequirement`，不写死 1e8）。
+ * 反物质峰值由 `BigCrunchAutobuyer.waitingForId1Peak` 负责保护，本函数不重复判定。
+ *
+ * @returns {boolean} true = 本拍应优先尝试 `early` 入口
  */
-export function tryFirstId1AutoUnlock() {
+function shouldPrioritizeEarlyForId1() {
+  try {
+    if (!player.break || PlayerProgress.eternityUnlocked()) return false;
+    if (NormalChallenge.isRunning || InfinityChallenge.isRunning || Pelle.isDoomed) return false;
+    const id1 = InfinityDimension(1);
+    if (id1.isUnlocked) return false;
+    const requirement = id1.ipRequirement;
+    if (!requirement) return false;
+    return Currency.infinityPoints.value.gte(requirement);
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * [Oreki AD3 / R82 改造] 首次 ID1 窗口是否成立。**只读判定，不再直接购买。**
+ *
+ * R82 变更原因（生产缺陷）：旧实现被 `gameLoop` 每帧直接调用并执行
+ * `InfinityDimensions.buyMax()`，完全绕过 `OrekiSmartExecutor` 的统一节拍 ——
+ * 玩家把间隔设为 60 秒，它仍会每帧买一次，等于间隔配置对这条最花钱的路径无效，
+ * 同时把本拍名额之外的资源提前花掉，让调度器看到的余额与决策不一致。
+ *
+ * 现在它只回答「是不是处于首次 ID1 窗口」，真正的解锁与购买统一由
+ * `OrekiEarlyAutomation.tick()` → `buyInfinityDimensions()` 在原版节拍内完成；
+ * 同一路径、同样调用 `InfinityDimensions.buyMax()`，不写任何 player 字段。
+ *
+ * @returns {boolean} true = 处于首次 ID1 收购窗口
+ */
+export function isFirstId1Window() {
   try {
     if (!player.break || PlayerProgress.eternityUnlocked()) return false;
     if (!player.auto.autobuyersOn) return false;
     if (InfinityDimension(1).isUnlocked) return false;
     if (NormalChallenge.isRunning || InfinityChallenge.isRunning || Pelle.isDoomed) return false;
-    if (Currency.infinityPoints.value.lt(DC.E8)) return false;
-    InfinityDimensions.buyMax();
+    const requirement = InfinityDimension(1).ipRequirement;
+    if (requirement && Currency.infinityPoints.value.lt(requirement)) return false;
     return true;
   } catch (e) {
     return false;
@@ -891,8 +927,18 @@ export function gameLoop(passDiff, options = {}) {
   //     必须与 `EternityChallenge(12).tryFail()` 同帧同序（见其上方注释），节流会让 EC12 判失败；
   //   · `shouldHoldReset()` / `shouldHoldCrunch()`：只回答是/否，节流会让闸门失去时效性；
   //   · `OrekiSmartStrategy.evaluate()`：只读解释器，不按任何键。
-  const orekiCycle = OrekiSmartExecutor.runCycle([
-    // id            priority  action                                  类别
+  // [R82] 首次永恒前的 ID1 收购窗口：把 `early` 暂时提到最前。
+  //
+  // 为什么要提：`routine`(10) 固定排在 `early`(20) 之前，而后者才是买无限升级 /
+  // 无限维度的入口。ID1 解锁同时要求 `maxAM ≥ 1e1100` 与 `IP ≥ 1e8`，
+  // 这一步是首次永恒前唯一能把资源转成成长的环节；只要采集动作每拍都能成功，
+  // 单动作名额就会被一直占住，`early` 只能靠 no-op 顺延捡漏。
+  //
+  // 边界：只调尝试顺序，不放宽间隔、不多放动作；窗口一结束立即回落到默认顺序。
+  // 判定全部读原版真实状态（已 Break / 未解锁永恒 / ID1 仍锁定 / IP 已达门槛），
+  // 与 `InfinityDimension(1).canUnlock` 的 IP 分支同源，不写死数字、不改存档。
+  OrekiSmartExecutor.setPriorityHint(shouldPrioritizeEarlyForId1() ? "early" : "");
+  const orekiCycle = OrekiSmartExecutor.runCycle([    // id            priority  action                                  类别
     // 顺序即优先级（数字越小越先）。
     // `"cont"` = 连续购买路径（原版自动购买器等价物）：默认档不受节拍约束（否则首无限前停摆，
     // 三次实测见任务单 §八），严格模式下同样受限。其余任务一律走节拍。
@@ -964,11 +1010,9 @@ export function gameLoop(passDiff, options = {}) {
   updateTachyonGalaxies();
   Currency.timeTheorems.add(getTTPerSecond().times(diff / 1000));
   InfinityDimensions.tryAutoUnlock();
-  // [Oreki AD3] 首次 ID1 的自动解锁/购买：等价于玩家在 ID 页点「全部购买」。
-  // 只在「已 Break / 未解锁永恒 / ID1 未解锁 / 余额够 1e8 / 自动购买器总开关打开 /
-  // 非挑战 / 非毁灭现实」时执行一次；走原版 InfinityDimensions.buyMax()，
-  // 不直接写 isUnlocked，也不覆盖玩家的自动购买器开关。
-  tryFirstId1AutoUnlock();
+  // [R82] 首次 ID1 的自动购买已移出主循环：它原先是每帧直接调用
+  // `InfinityDimensions.buyMax()`，绕过 Oreki 统一节拍（用户设的 1~60 秒间隔
+  // 对这条路径无效）。现在统一由 `OrekiEarlyAutomation.tick()` 在节拍内完成。
 
   BlackHoles.updatePhases(blackHoleDiff);
 

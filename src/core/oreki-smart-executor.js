@@ -204,8 +204,10 @@ const VERBS = {
     policy: "delegated", label: "买膨胀升级",
     why: "OrekiDilationAutomation 独占（速子粒子播种与升级顺序耦合）"
   },
-  // 原版没有「买永恒升级」这个动作：EternityUpgrade 不存在，里程碑自动生效。
-  buyEternityUpgrade: { policy: "unsupported", label: "买永恒升级", why: "原版不存在永恒升级商店，里程碑自动生效" },
+  // R81：原版确有六项一次性永恒升级；复用永恒模块入口，不能把商店误当成自动里程碑。
+  buyEternityUpgrade: {
+    policy: "owned", source: "eternity", method: "buyEternityUpgrades", label: "买永恒升级"
+  },
   runChallengeIfRewardBlocks: {
     policy: "delegated", source: "eternity", label: "按需打挑战",
     why: "由 OrekiEternityAutomation.buyEcStudiesAndStart 与 oreki-instant-challenges.js 判定"
@@ -310,6 +312,11 @@ const STATE = {
    * 不存在「各模块自己计时」的第二套节拍。
    */
   lastBeatAt: 0,
+  /**
+   * [R78] 本帧是否已有一次真执行。同帧最多一个受控动作。
+   * 由 `beginFrame()` 在每帧开头清，`markExecuted()` 置位。
+   */
+  frameActed: false,
   /** taskId → 最近一次实际执行的墙钟时刻（验证间隔合规用） */
   taskLastAct: Object.create(null),
   /** taskId → 被服务次数（公平轮转用，防止一个话痨任务饿死后面的任务） */
@@ -757,7 +764,31 @@ function pickNext(priority) {
 }
 
 /**
- * [Oreki R50 web · 九修] 某个任务此刻是否已过自己的间隔闸（共用 `STATE.intervalSec`）。
+ * [R78] 单调时钟：间隔判定必须用 `performance.now()`，不能用 `Date.now()`。
+ *
+ * 为什么：`Date.now()` 受系统时间调整影响（NTP 校时、用户改时区/时间），
+ * 一次回拨就能让「距上次动作」变成负数或突增，间隔判定随之失真。
+ * `performance.now()` 是自页面加载起的单调毫秒数，永不回退。
+ *
+ * 极老浏览器无 performance 时退回 Date.now()（可接受：那种环境连
+ * 好一点的定时器都没有，此处不是瓶颈）。
+ */
+function nowMs() {
+  try {
+    if (typeof performance !== "undefined" && typeof performance.now === "function") {
+      return performance.now();
+    }
+  } catch (_e) {
+    /* fall through */
+  }
+  return Date.now();
+}
+
+/**
+ * [R78] 某个任务此刻是否已过自己的间隔闸（共用 `STATE.intervalSec`）。
+ *
+ * 注意：R78 起这条闸只是**第二道保险**。第一道永远是全局节拍 `beatGateFree()`，
+ * 见 `runCycle`。保留它是因为：即便全局时钟因异常被清零，同一任务也不会被连点。
  */
 function taskGateFree(taskId, now) {
   const last = STATE.taskLastAct[taskId] ?? 0;
@@ -773,6 +804,16 @@ function globalGateFree(now) {
   return now - STATE.lastBeatAt >= STATE.intervalSec * 1000;
 }
 
+/**
+ * [R78] 本帧是否还允许放行一个动作。
+ *
+ * 与 `globalGateFree` 的区别：本函数额外检查 `frameActed` ——
+ * 同一帧最多一个受控动作。这是「启动瞬间多任务同时放行」的直接防线。
+ */
+function frameGateFree() {
+  return !STATE.frameActed;
+}
+
 /** 记录一次实际执行：推进共享节拍 + 记账。 */
 function markExecuted(taskId, now) {
   const gap = STATE.lastBeatAt ? now - STATE.lastBeatAt : null;
@@ -782,6 +823,8 @@ function markExecuted(taskId, now) {
   const taskGapMs = prevSame ? now - prevSame : null;
   STATE.lastBeatAt = now;
   STATE.taskLastAct[taskId] = now;
+  // [R78] 封掉本帧名额：同一帧不再放行第二个受控动作。
+  STATE.frameActed = true;
   STATE.served[taskId] = (STATE.served[taskId] ?? 0) + 1;
   STATE.execLog.push({ task: taskId, at: now, gapMs: gap, taskGapMs });
   if (STATE.execLog.length > 64) STATE.execLog.shift();
@@ -807,7 +850,10 @@ function runCycle(tasks) {
   if (!Array.isArray(tasks) || tasks.length === 0) return out;
   // 4) 关闭：立即停，且不留待执行队列
   if (!STATE.enabled) return out;
-  const now = Date.now();
+  // [R78] 开帧：清掉「本帧已有一个真动作」的名额。
+  // 必须放在 enabled 检查之后 —— 关闭时不该留下任何待执行状态。
+  STATE.frameActed = false;
+  const now = nowMs();
 
   // ── [Oreki R50 web · 九修·二次] 全局串行 + no-op 不占节拍（主 Agent 2026-11-01 裁决）──
   //
@@ -834,50 +880,37 @@ function runCycle(tasks) {
     .filter(t => typeof t.fn === "function")
     .sort((a, b) => a.priority - b.priority);
 
-  // ── [九修·五次] 管辖范围：`cls === "cont"` 的 4 条**不属于间隔管辖对象** ─────────
+  // ── [R78] 统一全局节拍：所有任务同一队列，无任何旁路 ──────────────────────
   //
-  // 依据：用户执行令第 8 条 ——「原版游戏正常模拟 Tick 和**原版既有自动购买器不属于本规则
-  // 限制对象**，不得因此破坏原版机制」。
+  // 用户令（2026-11-04）：自动操作采用全局统一节拍，不能让每个自动购买器
+  // 各自计时；任意两次真执行之间 ≥ 设定间隔；同一时间最多一个受控操作。
   //
-  // `routine` / `early` / `eternity` / `eternityReset` 干的是**买反物质维度 / 买计数频率 /
-  // 维度提升 / 星系 / 献祭 / 重开 / 买无限维度 / 买无限升级 / 买时间研究** —— 这些正是
-  // **原版自动购买器的职责**，只是原版那批自动器锁在永恒里程碑之后，Oreki 把它们提前解锁了。
-  // 它们不是「Oreki 新增的智能决策」，所以**从一开始就不在管辖范围内**，不是"队列里的例外"。
+  // 与 R50「九修」的差别（这是一次**语义收紧**，不是回退）：
+  //   · 删除了 `cls === "cont"` 的连续型豁免。那 4 条（routine/early/eternity/
+  //     eternityReset）原本在闸门之前直接执行，既不过间隔也不占名额 ——
+  //     这正是「多任务同帧连买」的机制来源之一。
+  //   · 默认档不再只靠单任务计时：第一道闸恒为全局 `lastBeatAt`。
+  //   · 新增 `frameActed`：同一帧最多一个真执行。
   //
-  // 间隔约束的对象是「**策略决策周期**」——多久重新评估一次"当前该做什么"；
-  // 不约束的是「原版自动购买器等价物的购买执行」。
+  // 历史教训与本次取舍：
+  //   R50 实测「3 秒间隔让新档 146 秒仍 preInfinity」，当时的结论是「连续购买
+  //   路径不能限流」。但那次的问题是**把原版自动购买器等价物塞进了 1~60 秒限流**；
+  //   本次的做法是：**原版 tick 与原版自带自动购买器完全不经过本函数**，
+  //   本函数只管辖 Oreki 主动发起的策略动作。用户把间隔设成 1 秒时，
+  //   每分钟最多 60 个策略动作 —— 对通关速度的影响远小于「同帧 8 连买」的失控。
   //
-  // 实测依据（三次真实新档，见任务单 §八）：
-  //   A 全局串行 3 s（`r50-sched6`）：节拍 3000~3040 ms 完美合规，但 146 s 仍 preInfinity、
-  //     9 条任务零执行 ⇒ 不可用；
-  //   B 单任务 3 s（`r50-schedB`/`r50-schedC`）：14~15 s 才进 preInfinity、120 s 仍卡住、
-  //     106 s 阶段退回 early ⇒ 同样不可用。
-  //   ⇒ 3 s 间隔不能施加在连续购买路径上（首无限前需要 10~50 ms 一次，差两个数量级）。
-  //
-  // 严格模式下（strictGlobal=true）它们**同样进队列受约束** —— 这是给
-  // "我要字面意义上的任意两次操作 ≥ 间隔" 的用户准备的显式开关，默认关闭。
-  const continuous = STATE.strictGlobal ? [] : ordered.filter(t => t.cls === "cont");
-  const scheduled = ordered.filter(t => STATE.strictGlobal || t.cls !== "cont");
-  for (const task of continuous) {
-    let result;
-    try {
-      result = task.fn();
-    } catch (e) {
-      STATE.lastError = `runCycle ${task.id}: ${(e && e.message) || e}`;
-    }
-  }
+  // 关闭语义：`STATE.enabled === false` 已在函数开头直接返回，队列里不会残留任务。
+  for (const task of ordered) {
+    // 第一道：本帧名额（同帧最多 1 个真动作）
+    if (!frameGateFree()) break;
 
-  for (const task of scheduled) {
-    // 节拍闸：两种模式共用同一个 intervalSec 值、同一张 execLog、同一帧最多一个动作。
-    //   strictGlobal=true  → 全局闸：任意两次执行之间 ≥ intervalSec（命中即整帧停止）
-    //   strictGlobal=false → 单任务闸：每个任务自身两次执行之间 ≥ intervalSec（默认）
-    // no-op 一律不推进节拍、立即让位给下一个候选。
-    const gateNow = Date.now();
-    if (STATE.strictGlobal) {
-      if (!globalGateFree(gateNow)) break;
-    } else if (!taskGateFree(task.id, gateNow)) {
-      continue;
-    }
+    // 第二道：全局节拍（与档位无关，所有任务一律受约束）
+    const gateNow = nowMs();
+    if (!globalGateFree(gateNow)) break;
+
+    // 第三道：默认档的单任务二次闸（严格档的全局闸已蕴含）
+    if (!STATE.strictGlobal && !taskGateFree(task.id, gateNow)) continue;
+
     let result;
     try {
       result = task.fn();
@@ -887,8 +920,8 @@ function runCycle(tasks) {
     }
     out[task.id] = result;
     if (didAct(result)) {
-      markExecuted(task.id, Date.now());
-      break;              // 真执行 ⇒ 吃掉这一拍
+      markExecuted(task.id, nowMs());
+      break;              // 真执行 ⇒ 吃掉这一拍（markExecuted 已置 frameActed）
     }
     // no-op ⇒ 不推进节拍，继续试下一个候选
     STATE.noopSkips = (STATE.noopSkips ?? 0) + 1;

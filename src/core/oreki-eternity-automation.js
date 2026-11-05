@@ -835,9 +835,32 @@ export const OrekiEternityAutomation = {
     }
   },
 
+  /**
+   * R81：补齐原版永恒升级商店。先保留首个时间维度的购买机会，随后每拍最多
+   * 买一项未购升级；完全委托原版扣费与前置检查，不直接写升级或资源存档。
+   */
+  buyEternityUpgrades() {
+    if (!this.active) return false;
+    try {
+      // 时间维度是时间之理购买的前置，不能让 5 EP 升级抢走新永恒的启动资金。
+      if (!TimeDimension(1).bought) return false;
+      for (const upgrade of EternityUpgrade.all) {
+        if (upgrade.isBought || !upgrade.canBeBought) continue;
+        return upgrade.purchase() === true;
+      }
+      return false;
+    } catch (error) {
+      // 加载过程缺失游戏对象时保留原有自动化，不把异常误记为购买成功。
+      this._err("buyEternityUpgrades", error);
+      return false;
+    }
+  },
+
   tick() {
     if (!this.active) return { dims: false, tt: false, studies: 0, dilation: 0, ec: false };
     const dims = this.buyTimeDimensions();
+    // 先播种时间维度，再买一次性增益，最后将剩余资源交给时间之理。
+    const upgrades = this.buyEternityUpgrades();
     const tt = this.buyTimeTheorems();
     this._frame++;
     let studies = 0;
@@ -856,7 +879,7 @@ export const OrekiEternityAutomation = {
     this.tryReplicantiGalaxyForEc6();
     // EC 的进入会触发 eternity 重置，节流到每 20 帧才尝试一次
     if (this._frame % 20 === 0) ec = this.buyEcStudiesAndStart();
-    return { dims, tt, studies, dilation, ec };
+    return { dims, tt, upgrades, studies, dilation, ec };
   },
 };
 

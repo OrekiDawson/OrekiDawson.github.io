@@ -308,7 +308,7 @@ const STATE = {
    */
   strictGlobal: readStoredAutomation().strictGlobal,
   /**
-   * 共享节拍时钟：最近一次**实际执行**的墙钟时刻。
+   * 共享节拍时钟：最近一次**实际执行**的单调时钟时刻。
    * 所有 mod 主动动作（阶段模块 tick + 执行层 verb）共用这一个时钟，
    * 不存在「各模块自己计时」的第二套节拍。
    */
@@ -326,7 +326,7 @@ const STATE = {
    * 转成成长的阶段，避免被固定调用顺序长期压住。
    */
   priorityHint: "",
-  /** taskId → 最近一次实际执行的墙钟时刻（验证间隔合规用） */
+  /** taskId → 最近一次实际执行的单调时钟时刻（验证间隔合规用） */
   taskLastAct: Object.create(null),
   /** taskId → 被服务次数（公平轮转用，防止一个话痨任务饿死后面的任务） */
   served: Object.create(null),
@@ -1017,18 +1017,27 @@ function tickUnsafe(observed) {
   // [Oreki R50 web · 九修] 执行层自己也是一个受间隔约束的任务（与阶段模块同一个 intervalSec、
   // 同一个记录表 taskLastAct），语义与 runCycle 一致：本层两次实际执行之间 ≥ 间隔。
   // 放在策略求值之后，是为了让面板的「①~⑦」在等待期间仍然刷新（只读，不违反用户令）。
+  // R88：调度判定只使用单调时钟；Date.now() 仍仅服务手动保护、面板与冷却等纪元时间语义。
+  // executor 与阶段队列必须经过同一组 frame/global gate，不能在 runCycle 已动作后同帧再补一手。
+  const scheduleNow = nowMs();
   const execLast = STATE.taskLastAct.executor ?? 0;
-  const beatBlocked = STATE.strictGlobal
-    ? !globalGateFree(now)
-    : (execLast !== 0 && now - execLast < STATE.intervalSec * 1000);
-  if (beatBlocked) {
+  const frameBlocked = !frameGateFree();
+  const globalBlocked = !globalGateFree(scheduleNow);
+  const taskBlocked = !STATE.strictGlobal && !taskGateFree("executor", scheduleNow);
+  if (frameBlocked || globalBlocked || taskBlocked) {
+    const globalWaitMs = STATE.lastBeatAt
+      ? STATE.intervalSec * 1000 - (scheduleNow - STATE.lastBeatAt)
+      : 0;
+    const taskWaitMs = execLast
+      ? STATE.intervalSec * 1000 - (scheduleNow - execLast)
+      : 0;
     STATE.beatSkips++;
     return {
       ...decision,
       executor: {
         acted: false,
         reason: "interval-wait",
-        waitMs: Math.max(0, STATE.intervalSec * 1000 - (now - (STATE.strictGlobal ? STATE.lastBeatAt : execLast))),
+        waitMs: Math.max(0, globalWaitMs, STATE.strictGlobal ? 0 : taskWaitMs),
       },
     };
   }
@@ -1061,8 +1070,6 @@ function tickUnsafe(observed) {
   // 这一帧真的发出动作了 ⇒ 停滞计时归零（下一段「发不出去」从这一刻重新算）
   STATE.noActionSince = 0;
   STATE.lastExecAt = now;
-  // [Oreki R50 web · 九修] 执行层自己也是一条受节拍约束的任务
-  markExecuted("executor", now);
 
   const outcome = invoke(pick.verbId, pick.spec);
   STATE.takeovers++;
@@ -1076,7 +1083,11 @@ function tickUnsafe(observed) {
   }
   // actionCount 只算**真的买到了**；空转尝试记在 attemptCount。两者分开，
   // 否则面板上的「执行次数」会把每 250 ms 一次的空调用也算成动作，看着像在干活其实没有。
-  if (outcome.acted) STATE.actionCount++;
+  if (outcome.acted) {
+    // R88：空转只算尝试，不得占用共享节拍、任务间隔或本帧唯一动作名额。
+    markExecuted("executor", nowMs());
+    STATE.actionCount++;
+  }
   // 没买到就压 2 秒，把机会让给 priority 里后面的 verb（见 NOOP_COOLDOWN_MS 注释）
   if (outcome.acted) {
     delete STATE.noopUntil[pick.verbId];
@@ -1170,6 +1181,8 @@ function noteManual(goalId) {
 function debugState() {
   const decision = STATE.lastDecision;
   const now = Date.now();
+  // 节拍时间戳来自 performance.now()；面板的节拍倒计时必须沿用同一时钟域。
+  const scheduleNow = nowMs();
   const hold = decision?.manualHold && decision.manualHold.untilMs > now
     ? { goalId: decision.manualHold.goalId, remainSec: Math.ceil((decision.manualHold.untilMs - now) / 1000) }
     : null;
@@ -1184,7 +1197,9 @@ function debugState() {
     strictGlobal: STATE.strictGlobal,
     beat: {
       lastAt: STATE.lastBeatAt,
-      nextInMs: STATE.lastBeatAt ? Math.max(0, STATE.intervalSec * 1000 - (now - STATE.lastBeatAt)) : 0,
+      nextInMs: STATE.lastBeatAt
+        ? Math.max(0, STATE.intervalSec * 1000 - (scheduleNow - STATE.lastBeatAt))
+        : 0,
       skips: STATE.beatSkips,
       served: { ...STATE.served },
       log: STATE.execLog.slice(-12),

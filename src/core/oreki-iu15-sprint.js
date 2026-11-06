@@ -69,6 +69,13 @@ export const OrekiIu15Sprint = {
   _boughtAtMs: 0,
   _boughtAmE: 0,
   _boughtMaxID1: "",
+  /**
+   * 上一帧自动购买器总开关状态（[R83] 用于检测「刚被关闭」）。
+   *
+   * 必须是实例字段而不是 localStorage：它只在本次进程内有意义，
+   * 重开游戏时初始为 true，第一次 tick 就能正确同步，不会留下持久状态。
+   */
+  _wasAutobuyersOn: true,
 
   /** 现实不需要压住（见文件头 4)），保留 getter 供 holdReality 统一读取 */
   get holding() {
@@ -78,6 +85,21 @@ export const OrekiIu15Sprint = {
   /** 冲刺期间禁止进入 EC7（见文件头 2)） */
   get skipEc7() {
     return this._phase === "armed" || this._phase === "running";
+  },
+
+  /**
+   * 是否应该冻结重置类动作（永恒 / 现实）。
+   *
+   * [R83 修复] 此前 `oreki-eternity-automation.js` 两处读的是
+   * `globalThis.OrekiIu15Sprint?.freezeResets`，但本模块**从未定义**这个 getter
+   * —— `undefined === true` 恒 false，等于冻结逻辑从来没生效过。
+   *
+   * 语义上**不应该**冻结：文件头 3) 已用实测证明「冻结大坍缩/永恒会把反物质
+   * 指数卡死」；冲刺靠的正是永恒乘数累积。所以这里显式定义为 false，
+   * 并把原因写在代码里，避免下一轮又把它当成漏写的开关去「补上 true」。
+   */
+  get freezeResets() {
+    return false;
   },
 
   get active() {
@@ -102,10 +124,25 @@ export const OrekiIu15Sprint = {
       if (Pelle.isDoomed) return false;
       if (NormalChallenge.isRunning || InfinityChallenge.isRunning || EternityChallenge.isRunning) return false;
       if (!MachineHandler.isIMUnlocked) return false;
-      // V 前不动手：V 的六项前置需要正常的现实/EC/膨胀循环，封锁 ID 会拖慢它
-      if (VUnlocks?.vAchievementUnlock?.isUnlocked !== true) return false;
+      // [R83] 移除 V 门：`VUnlocks.vAchievementUnlock.requirement()` 要求六项
+      // 主解锁全部达标，其中 realities 需 10000 次、膨胀时间需 1e320 ——
+      // 本作 180 分钟目标内结构性不可达（见 secret-formula/celestials/v.js:17-27
+      // 的实测记录）。把它当门等于**永久禁用** IU15 冲刺，与「打通终局入口」直接冲突。
+      //
+      // 真正的安全条件保留在别处：IM 已解锁、IM 上限覆盖成本、非挑战、非毁灭、
+      // 干净现实（maxID1==0），这些才是「能不能买 IU15」的真实前置。
       // 攒够 IM 才有意义
       if (!(MachineHandler.currentIMCap >= ImaginaryUpgrade(15).cost)) return false;
+      // [R83 关键修复] 必须在**干净现实**里才开始接管。
+      //
+      // IU15 的硬性要求是 `player.requirementChecks.reality.maxID1 == 0`。
+      // 如果本现实已经买过 ID1，那么在等到下一次真实重置之前，无论怎么封锁都
+      // 已经注定失败 —— 提前接管只会白白禁掉 8 层 ID 购买、拖慢成长。
+      //
+      // 原实现只在 armed→running 的迁移里判断 maxID1，导致「脏现实」也会先
+      // `_applyLockdown()`，随后在 armed 里干等 10 分钟超时。现在提前到 arm 门槛，
+      // 干净现实才接管；脏现实就正常玩，等下一次现实重置后自然满足。
+      if (!player.requirementChecks.reality.maxID1.eq(0)) return false;
       return true;
     } catch (e) {
       return false;
@@ -115,6 +152,29 @@ export const OrekiIu15Sprint = {
   /** 主循环入口，由 `OrekiEarlyAutomation.tick()` 最先调用 */
   tick() {
     try {
+      // [R83 关键修复] 玩家关闭自动购买器总开关时必须**立即**解除接管。
+      //
+      // 原实现把整个 tick 挂在 `OrekiEarlyAutomation.tick()` 里，而那个入口在
+      // `autobuyersOn === false` 时**直接 return**（early-automation.js:54-65）
+      // ⇒ 本状态机再也收不到 tick ⇒ `_applyLockdown()` 设置的
+      // `setMechanicLock(true)`（写进 `player.reality.reqLock.imaginary`，**会存档**）
+      // 和 8 层 ID 购买拦截永久留了下来。
+      //
+      // 现在的规则：只要检测到「上一帧开着、这一帧关了」，无论处于哪个阶段都立刻
+      // `_restore()` 并回到 idle；仅在条件仍成立时才会重新 arm。
+      const autobuyersOn = (() => {
+        try { return player.auto.autobuyersOn === true; } catch (e) { return false; }
+      })();
+      if (this._wasAutobuyersOn && !autobuyersOn) {
+        this._restore("autobuyers-off");
+        this._phase = "idle";
+        this._fails = 0;
+        this._cooldownUntil = 0;
+        console.log("[R38-IU15] 自动购买器已关闭，临时接管立即解除");
+      }
+      this._wasAutobuyersOn = autobuyersOn;
+      if (!autobuyersOn) return;
+
       if (this.iu15Bought) {
         if (this.active) this._restore("iu15-bought");
         this._phase = "done";
@@ -268,6 +328,25 @@ export const OrekiIu15Sprint = {
     } catch (e) {
       this._lastError = String(e && e.message);
     }
+  },
+
+  /**
+   * 立即释放（幂等，供 UI 切开关时同步调用）。
+   *
+   * [R83] 只靠 `tick()` 检测「刚关闭」不够可靠：玩家关掉总开关后，
+   * `OrekiEarlyAutomation.active` 立刻为 false，某些路径可能整帧都不再进 tick；
+   * 而 `_applyLockdown()` 写的 `setMechanicLock(true)` 是**存进存档**的，
+   * 一旦残留就是永久锁。因此在玩家真正拨动开关的地方直接调用本方法兜底。
+   *
+   * @returns {boolean} 是否确实解除了一次接管
+   */
+  releaseIfTakenOver() {
+    if (!this._saved && !this.active) return false;
+    this._restore("manual-off");
+    this._phase = "idle";
+    this._fails = 0;
+    this._cooldownUntil = 0;
+    return true;
   },
 
   /** 只读观测，供探针使用 */

@@ -103,13 +103,8 @@ const AUTOMATION_INTERVAL_KEY = "oreki.automation.intervalSec";
 const AUTOMATION_STRICT_KEY = "oreki.automation.strictGlobal";
 const INTERVAL_MIN_SEC = 1;
 const INTERVAL_MAX_SEC = 60;
-// [R57-B] 默认间隔 3 → 1 秒，与 Android 对齐。
-// 为什么必须对齐：Android 的 `OrekiAutomationScheduler` 三处默认值（字段默认 /
-// <clinit> 初值 / SharedPreferences 缺省回退）在 R57-A 已统一改成 1 秒，
-// 并已由 `OREKI_SCHED: init 调度：已启用 · 间隔 1 秒` 运行期实测。
-// 两端若一个 1 秒一个 3 秒，同一个存档、同一阶段的选择节奏会差 3 倍，
-// 违反「双端行为等价」的验收口径。已存过值的玩家不受影响（readStoredAutomation 优先读存档）。
-const INTERVAL_DEFAULT_SEC = 1;
+// R85：双端新存档默认 10 秒；已有合法配置必须保留。
+const INTERVAL_DEFAULT_SEC = 10;
 /** 间隔钳制：非数字 / NaN / 越界一律落到边界值，绝不接受 0 或 Infinity */
 function clampIntervalSec(value) {
   const n = Number(value);
@@ -124,7 +119,13 @@ function readStoredAutomation() {
     // 只有明确的 "0"/"false" 才算关闭；键不存在时保持默认开启（用户令：默认启用）
     if (en === "0" || en === "false") out.enabled = false;
     const iv = localStorage.getItem(AUTOMATION_INTERVAL_KEY);
-    if (iv !== null) out.intervalSec = clampIntervalSec(iv);
+    if (iv !== null) {
+      const stored = Number(iv);
+      // 持久化值只有在完整落入 1～60 秒时才视为合法；损坏或越界值回退新存档默认值。
+      if (Number.isInteger(stored) && stored >= INTERVAL_MIN_SEC && stored <= INTERVAL_MAX_SEC) {
+        out.intervalSec = stored;
+      }
+    }
     const st = localStorage.getItem(AUTOMATION_STRICT_KEY);
     if (st === "1" || st === "true") out.strictGlobal = true;
   } catch (e) { /* 隐私模式等：退回内存默认值 */ }
@@ -1129,6 +1130,9 @@ function setEnabled(value) {  STATE.enabled = Boolean(value);
     STATE.lastNoopReason = "";
     // [R82] 关闭即清掉阶段优先提示：重新开启后不得带着旧窗口的插队状态恢复。
     STATE.priorityHint = "";
+    // R85：智能开关与原版总开关都必须释放临时接管。只清调度队列不会
+    // 恢复 IU15 对购买入口的封锁；同步释放且不改用户节拍时间戳。
+    globalThis.OrekiIu15Sprint?.releaseIfTakenOver?.();
     // ⚠️ 刻意不清：STATE.lastBeatAt / STATE.taskLastAct（间隔判定的唯一依据）
   }
   writeStoredAutomation(STATE.enabled, STATE.intervalSec, STATE.strictGlobal);

@@ -20,6 +20,8 @@ export default {
   watch: {
     autobuyersOn(newValue) {
       player.auto.autobuyersOn = newValue;
+      // [R83] 关闭总开关立即解除 IU15 冲刺接管（临时锁会进存档，必须兜底释放）。
+      if (!newValue) globalThis.OrekiIu15Sprint?.releaseIfTakenOver?.();
     },
     disableContinuum(newValue) {
       if (ImaginaryUpgrade(21).isLockingMechanics && !newValue) {

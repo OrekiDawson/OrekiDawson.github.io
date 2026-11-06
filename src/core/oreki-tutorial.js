@@ -221,7 +221,7 @@ export const TUTORIAL_SCHEMA_VERSION = tutorialData.schemaVersion;
 
 /**
  * 十个内容字段的中文名，只用于「本章还缺什么」的占位卡。
- * 顺序与 `docs/TUTORIAL_SCHEMA.md` 的表格一致。
+ * 顺序与 `docs/教程数据结构说明.md` 的表格一致。
  */
 export const TUTORIAL_FIELD_LABELS = [
   ["stageGoal", "阶段目标"],

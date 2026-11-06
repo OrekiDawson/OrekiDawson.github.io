@@ -239,14 +239,20 @@ export const OrekiEarlyAutomation = {
    * @returns {{ids: number, upgrades: boolean}} 本次动作摘要
    */
   tick() {
-    if (!this.active) return { ids: 0, upgrades: false };
-    // 【R38-A】IU15 冲刺状态机（新模块 oreki-iu15-sprint.js）。
-    // 为什么放在最前面：它必须在**任何 ID 购买之前**把 8 层无限维度的 buyMax/buySingle
-    // 换成 no-op。晚一帧都不行 —— ID2~ID8 会 produceDimensions 到 ID1
-    // （infinity-dimension.js:377-379），只要有一层被买过，maxID1 立刻 > 0，IU15 永久失败。
+    // [R83 关键修复] IU15 状态机必须在 `active` 判定**之前**推进。
+    //
+    // 原顺序是先 `if (!this.active) return`，而 `active` 在自动购买器关闭时为 false
+    // ⇒ 关闭总开关后再也不会调用 `OrekiIu15Sprint.tick()` ⇒ 已经施加的
+    //   `setMechanicLock(true)`（写 `player.reality.reqLock.imaginary`，**会存档**）
+    // 与 8 层 ID 购买拦截永久残留，玩家重开也解除不了。
+    //
+    // 状态机自己会检测「开关刚被关闭」并立即 `_restore()`；此处只负责**保证它被调用**。
+    // 没有接管时它的开销只是一次布尔比较，不产生任何游戏动作。
     try {
       OrekiIu15Sprint.tick();
     } catch (e) { /* 状态机异常不影响其它自动化 */ }
+
+    if (!this.active) return { ids: 0, upgrades: false };
     // 【R38-A】把 R36/R37 的旧「冲刺判定」降级为只读委托：
     // 真正的封锁/冻结/购买全部由 OrekiIu15Sprint 负责，这里只决定「还要不要买 ID」。
     const sprint = this.isIu15SprintActive();

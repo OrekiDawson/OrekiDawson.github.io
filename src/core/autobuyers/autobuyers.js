@@ -121,6 +121,10 @@ export const Autobuyers = (function() {
 
     toggle() {
       player.auto.autobuyersOn = !player.auto.autobuyersOn;
+      // [R83] 关闭总开关时立即解除 IU15 冲刺接管。
+      // 不能只等下一次 tick：接管期间写下的 `setMechanicLock(true)` 会进存档，
+      // 若此处不兜底，玩家关掉开关后可能再也走不到释放路径（永久锁）。
+      if (!player.auto.autobuyersOn) globalThis.OrekiIu15Sprint?.releaseIfTakenOver?.();
     },
 
     tick() {

@@ -288,13 +288,24 @@ export function orekiEc3CrunchHold() {
  * `resetInfinityRuns()` 清零，AU2 的维度自动器判据 `PlayerProgress.infinityUnlocked()`
  * 又变回 false，自动器再次失效 → 永恒后进度立刻停住（实测卡在 et=5、inf=0）。
  * 因此这里只在总开关和挑战上设门。
- * @returns {boolean} 本次是否执行
+ *
+ * [R90] 返回值改为**真实动作回执**：旧实现无论有没有买到东西都 `return true`。
+ * R78 起调度器把「一次真动作」当作全局节拍判据（no-op 才会顺延给下一个任务），
+ * 于是这条无条件 true 会让 `routine` 每拍都吃掉唯一名额，排在它后面的 `early`
+ * （无限维度 / 无限升级）永远轮不到 —— 首次无限之后 ID1 与无限升级全靠 early，
+ * 这条饿死链会直接把「首次无限 → 首次永恒」卡死。
+ * 现在只在「反物质 / 计数频率购买数 / 维度提升 / 星系 / 8 层维度数量」任一真的变化时
+ * 才算动作；不写任何字段、不改购买顺序与成本。
+ * @returns {boolean} 本次是否真的改变了游戏状态（供调度器判断是否占用本拍）
  */
 export function tryOrekiEarlyRoutine() {
   try {
     if (!player.auto.autobuyersOn) return false;
     if (NormalChallenge.isRunning || InfinityChallenge.isRunning || EternityChallenge.isRunning) return false;
     if (Pelle.isDoomed) return false;
+
+    // [R90] 动作前快照：用于判断本次调用是否真的买到了东西（见函数上方说明）。
+    const before = earlyRoutineSnapshot();
 
     // [Oreki AD16] 顺序很关键：**先做会重置维度的动作，再买维度**。
     // 维度提升 `requestDimensionBoost(true)` 与星系重置 `requestGalaxyReset(true)`
@@ -335,10 +346,41 @@ export function tryOrekiEarlyRoutine() {
     // 玩家此刻会直接点「大坍缩」按钮，这里把这一下自动化；Break 之后交给自动器按 10× 最高 IP 的节奏。
     if (!player.break && Player.canCrunch) bigCrunchResetRequest(true);
 
-    return true;
+    return earlyRoutineChanged(before);
   } catch (e) {
     return false;
   }
+}
+
+/**
+ * [R90] 早期例程的动作快照（只读）。
+ *
+ * 只取「本函数真的会改」的几项：反物质余额、计数频率购买数、维度提升数、星系数、
+ * 8 层反物质维度数量。任何一项变化都说明本次调用发出了真实动作；
+ * 全部不变则说明整段例行操作都是空转，必须把本拍让给后面的任务。
+ */
+function earlyRoutineSnapshot() {
+  const dimensions = [];
+  for (let tier = 1; tier <= 8; tier++) dimensions.push(AntimatterDimension(tier).amount);
+  return {
+    antimatter: Currency.antimatter.value,
+    tickBought: player.totalTickBought,
+    dimBoosts: player.dimBoosts,
+    galaxies: player.galaxies,
+    dimensions,
+  };
+}
+
+/** [R90] 对比快照，返回本次调用是否真的改变了游戏状态。 */
+function earlyRoutineChanged(before) {
+  if (!Currency.antimatter.value.eq(before.antimatter)) return true;
+  if (player.totalTickBought !== before.tickBought) return true;
+  if (player.dimBoosts !== before.dimBoosts) return true;
+  if (player.galaxies !== before.galaxies) return true;
+  for (let tier = 1; tier <= 8; tier++) {
+    if (!AntimatterDimension(tier).amount.eq(before.dimensions[tier - 1])) return true;
+  }
+  return false;
 }
 
 /**

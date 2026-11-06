@@ -121,6 +121,9 @@ export const OrekiIu15Sprint = {
       if (this._fails >= OREKI_IU15_MAX_FAILS) return false;
       if (Date.now() < this._cooldownUntil) return false;
       if (!player.auto.autobuyersOn) return false;
+      // R85：智能自动化关闭时不能重新接管；原版购买器开着不代表玩家
+      // 仍同意由本模块临时封锁购买与挑战入口。
+      if (globalThis.OrekiSmartExecutor?.enabled === false) return false;
       if (Pelle.isDoomed) return false;
       if (NormalChallenge.isRunning || InfinityChallenge.isRunning || EternityChallenge.isRunning) return false;
       if (!MachineHandler.isIMUnlocked) return false;
@@ -163,7 +166,9 @@ export const OrekiIu15Sprint = {
       // 现在的规则：只要检测到「上一帧开着、这一帧关了」，无论处于哪个阶段都立刻
       // `_restore()` 并回到 idle；仅在条件仍成立时才会重新 arm。
       const autobuyersOn = (() => {
-        try { return player.auto.autobuyersOn === true; } catch (e) { return false; }
+        try {
+          return player.auto.autobuyersOn === true && globalThis.OrekiSmartExecutor?.enabled !== false;
+        } catch (e) { return false; }
       })();
       if (this._wasAutobuyersOn && !autobuyersOn) {
         this._restore("autobuyers-off");

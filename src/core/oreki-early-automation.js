@@ -59,6 +59,8 @@ export const OrekiEarlyAutomation = {
       // 若此时停掉本模块，进度会立刻停住（实测卡在 et=5、inf=0、ID 全锁）。
       // 因此只在「自动购买器总开关」和挑战/毁灭现实上设门。
       if (!player.auto.autobuyersOn) return false;
+      // R85：Oreki 智能开关关闭后，前期自动购买入口也必须立即让路。
+      if (globalThis.OrekiSmartExecutor?.enabled === false) return false;
       if (NormalChallenge.isRunning || InfinityChallenge.isRunning || EternityChallenge.isRunning) return false;
       if (Pelle.isDoomed) return false;
       return true;

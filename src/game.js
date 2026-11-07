@@ -314,7 +314,17 @@ export function tryOrekiEarlyRoutine() {
     // 在同一帧就被清零，`AntimatterDimension(8).totalAmount` 永远停在 10（= 一次购买），
     // EC3 的 17300 门槛因此永远读不到 —— 这就是 R24 卡在 10/173 的直接原因。
     // 现在把重置类动作前置，买完的维度可以完整活到下一帧被采样。
-    buyMaxTickSpeed();
+    //
+    // [R93] 计数频率的购买同样必须**排在重置之后**（原来它在最前面）。
+    // 事实：`softReset()`（src/core/dimboost.js:200-206）在 `!canKeepDimensions` 时执行
+    //   `AntimatterDimensions.reset(); player.sacrificed = DC.D0; resetTickspeed();`，
+    // 而 `resetTickspeed()`（src/core/tickspeed.js:71-73）会 `player.totalTickBought = 0`。
+    // 本阶段 `canKeepDimensions` 依赖 `Perk.antimatterNoReset`（现实级 Perk，首次永恒前不存在），
+    // 所以**每一次维度提升 / 星系重置都会把计数频率彻底清零**。
+    // 旧顺序下：每次调用先 `buyMaxTickSpeed()`（真实扣反物质）→ 紧接着一次重置把它清零，
+    // 于是反物质白花、计数频率倍率在两次节拍之间永远是基础值 —— 这是纯浪费。
+    // 现在改为重置之后才买：买到的计数频率能一直生效到下一次重置。
+    // 注：AD4 的保留反物质只保留**反物质余额**，不保留维度与计数频率，所以两者并不冲突。
     // [R92] 维度提升 / 星系：一次调用买光「当前买得起的全部」，而不是每拍只买 1 个。
     //
     // ── 事实（源码逐行核对）────────────────────────────────────────────
@@ -344,6 +354,8 @@ export function tryOrekiEarlyRoutine() {
     // 顺序仍遵守 AD16：重置类动作在买反物质维度之前。
     buyAffordableDimensionBoosts();
     buyAffordableGalaxies();
+    // [R93] 重置之后才买计数频率（见上方说明）：否则会被本次重置清零。
+    buyMaxTickSpeed();
 
     // [Oreki R44] 维度献祭。原版的献祭自动器 `SacrificeAutobuyerState.isUnlocked`
     // 要求 `EternityMilestone.autoIC` 或 `InfinityChallenge(2).isCompleted`

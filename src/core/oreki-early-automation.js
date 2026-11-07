@@ -194,6 +194,82 @@ export const OrekiEarlyAutomation = {
   },
 
   /**
+   * [R91] 本模块此刻是否**真的有**可以买的东西。只读，无副作用。
+   *
+   * ── 为什么需要这个判据 ────────────────────────────────────────────────
+   * R78 起全系统只有一个共享节拍：任意两次真动作之间 ≥ 用户配置的间隔
+   * （默认 10 s），同一拍最多放行一个任务（`oreki-smart-executor.js::runCycle`）。
+   * 首次无限 → 首次永恒这一段里，能把资源转成成长的只有本模块
+   * （无限维度 `InfinityDimensions.buyMax()` + 无限升级 `purchase()`），但它排在
+   * `routine`（game.js 的 `tryOrekiEarlyRoutine`）之后；后者在反物质持续增长时
+   * **几乎每拍都能真的买到反物质维度**，于是唯一名额被它吃掉，本模块拿不到节拍。
+   *
+   * 旧实现（R82）只在「ID1 未解锁且 IP 已达门槛」时临时插队；ID1 一解锁
+   * 这个窗口就关闭，而**恰恰此后**才是 ID2~ID8 与无限升级必须连续购买的阶段
+   * （maxAM 要从 1e1100 推到首次永恒所需的 ~1e9262）。窗口一关，进度就慢下来。
+   *
+   * 但也不能无条件抢拍：ID1 峰值等待期间（`BigCrunchAutobuyer.waitingForId1Peak`）
+   * 余额必须留在 1e8 之上，此时本模块**一条都买不了**，抢拍只是把 routine 饿死。
+   * 所以插队的前置条件必须是「真的有可买项」，而不是「处于某个阶段」。
+   *
+   * 判据全部来自原版真实状态，不写任何字段：
+   *   · 任一已解锁无限维度 `isAvailableForPurchase`（含 canBuy/可负担/未封顶）；
+   *   · 任一未解锁无限维度 `canUnlock`（反物质门槛 + IP 门槛都满足）；
+   *   · 任一无限升级 `canBeBought` 且花掉后仍保住 ID1 预留（与购买路径同一判据）。
+   * @returns {boolean}
+   */
+  hasRealWork() {
+    try {
+      if (!InfinityDimensions.canBuy()) return false;
+      const reserve = this.shouldReserveIpForId1();
+      for (const dimension of InfinityDimensions.all) {
+        try {
+          if (dimension.isUnlocked) {
+            if (dimension.isAvailableForPurchase) return true;
+          } else if (dimension.canUnlock) {
+            return true;
+          }
+        } catch (e) { /* 单层状态异常不影响其它层 */ }
+      }
+      for (const upgrade of InfinityUpgrade.all) {
+        try {
+          if (upgrade.isAvailableForPurchase === false) continue;
+          if (!upgrade.canBeBought) continue;
+          if (reserve && !this.leavesId1Reserve(upgrade.cost)) continue;
+          return true;
+        } catch (e) { /* 单条升级异常不影响其它条 */ }
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  /**
+   * [R91] 是否应当在调度器里为本模块申请一个优先节拍。只读，无副作用。
+   *
+   * 窗口 = 「已 Break 且还没解锁永恒」的整个首次永恒前阶段（不再只看 ID1 未解锁），
+   * 且本模块**确实有可买项**（见 `hasRealWork()`）。两者缺一不可：
+   *   · 只有窗口没有可买项 ⇒ 抢到的节拍是空转，会饿死 routine 的维度/星系购买；
+   *   · 只有可买项不在窗口内 ⇒ 不该在后期阶段改变既有调度顺序。
+   *
+   * 调度器拿到的仍然只是「先问谁」的顺序提示：间隔、同帧单动作、关闭即停、
+   * 以及 R91 的「同一任务不得连续两拍优先」全部照旧生效。
+   * @returns {boolean}
+   */
+  shouldRequestBeat() {
+    try {
+      if (!player.break) return false;
+      if (PlayerProgress.eternityUnlocked()) return false;
+      if (NormalChallenge.isRunning || InfinityChallenge.isRunning || EternityChallenge.isRunning) return false;
+      if (Pelle.isDoomed) return false;
+      return this.hasRealWork();
+    } catch (e) {
+      return false;
+    }
+  },
+
+  /**
    * 花掉 cost 之后是否仍能保住 ID1 的 IP 门槛（R82）。
    *
    * 只做纯算术预测，不扣款、不写余额：真正扣费永远在原版 `purchase()` 内完成。

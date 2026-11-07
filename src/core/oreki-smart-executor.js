@@ -326,6 +326,19 @@ const STATE = {
    * 转成成长的阶段，避免被固定调用顺序长期压住。
    */
   priorityHint: "",
+  /**
+   * [R91] 上一拍真正动手的任务 id。
+   *
+   * 为什么需要：`priorityHint` 只回答「先问谁」，如果被提示的任务每拍都有动作，
+   * 它会**连续霸占**唯一名额，把本该并行推进的其它任务饿死。
+   * 首次无限→首次永恒这一段就是典型：`early`（无限维度/无限升级）与
+   * `routine`（反物质维度/星系）都必须持续拿节拍，谁独占都会让另一条链停摆。
+   *
+   * 语义：被提示的任务**不能连续两拍**优先；它上一拍已经动过手，这一拍就回到
+   * 自己原本的 priority，让其它任务先试。下一拍若还没轮到它，提示重新生效。
+   * 只影响尝试顺序，不放宽间隔 / 同帧单动作 / 关闭即停。
+   */
+  lastBeatTask: "",
   /** taskId → 最近一次实际执行的单调时钟时刻（验证间隔合规用） */
   taskLastAct: Object.create(null),
   /** taskId → 被服务次数（公平轮转用，防止一个话痨任务饿死后面的任务） */
@@ -832,6 +845,8 @@ function markExecuted(taskId, now) {
   const taskGapMs = prevSame ? now - prevSame : null;
   STATE.lastBeatAt = now;
   STATE.taskLastAct[taskId] = now;
+  // [R91] 记住上一拍是谁动的手，供 `runCycle` 的优先提示做「不得连续两拍」判定。
+  STATE.lastBeatTask = taskId;
   // [R78] 封掉本帧名额：同一帧不再放行第二个受控动作。
   STATE.frameActed = true;
   STATE.served[taskId] = (STATE.served[taskId] ?? 0) + 1;
@@ -913,7 +928,11 @@ function runCycle(tasks) {
   // 它只决定「先问谁」，不放宽任何闸门：被拒绝的任务照旧让位给下一个候选，
   // 仍满足「同帧最多一个真动作」与「两次真执行 ≥ 设定间隔」。
   const hint = typeof STATE.priorityHint === "string" ? STATE.priorityHint : "";
-  const priorityOf = task => (hint && task.id === hint ? Number.NEGATIVE_INFINITY : task.priority);
+  // [R91] 被提示的任务不得**连续两拍**优先：它上一拍已经动过手就退回原 priority，
+  // 让其它任务（典型是 `routine`）拿到这一拍，避免提示变成独占。见 `STATE.lastBeatTask`。
+  const priorityOf = task => (hint && task.id === hint && STATE.lastBeatTask !== hint
+    ? Number.NEGATIVE_INFINITY
+    : task.priority);
   const ordered = tasks
     .map(t => ({ id: t[0], priority: Number(t[1]) || 0, fn: t[2], cls: t[3] || "" }))
     .filter(t => typeof t.fn === "function")

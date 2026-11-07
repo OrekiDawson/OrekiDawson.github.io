@@ -396,14 +396,22 @@ function earlyRoutineChanged(before) {
  * @returns {boolean} true = 本拍应优先尝试 `early` 入口
  */
 function shouldPrioritizeEarlyForId1() {
+  // [R91] 窗口从「ID1 还未解锁」扩大到整个首次永恒前阶段，且判据改为
+  // 「early 真的有可买项」（`OrekiEarlyAutomation.shouldRequestBeat()`，只读）。
+  //
+  // 原因（生产缺陷）：旧判据在 ID1 解锁的那一瞬间就变 false，`early` 立刻回落到
+  // priority 20、排到 `routine`(10) 之后。而 R78 起全系统只有一个共享节拍
+  // （默认 10 s 一次真动作、同拍最多一个任务），`routine` 在反物质持续增长时几乎
+  // 每拍都能真的买到反物质维度 ⇒ 唯一名额长期被它吃掉 ⇒ ID2~ID8 与无限升级
+  // 买不动 ⇒ 无限力量上不去 ⇒ maxAM 卡在 1e1100 附近，摸不到首次永恒所需的
+  // ~1e9262（`gainedInfinityPoints()` 的 div=30 换算）。
+  //
+  // 反过来，ID1 峰值等待期间余额必须留在 1e8 之上，early 一条都买不了；
+  // 那时 `hasRealWork()` 为假、不抢拍，routine 照常拿节拍把反物质推过 1e1100。
+  //
+  // 这里只回答「先问谁」，不放宽任何闸门。
   try {
-    if (!player.break || PlayerProgress.eternityUnlocked()) return false;
-    if (NormalChallenge.isRunning || InfinityChallenge.isRunning || Pelle.isDoomed) return false;
-    const id1 = InfinityDimension(1);
-    if (id1.isUnlocked) return false;
-    const requirement = id1.ipRequirement;
-    if (!requirement) return false;
-    return Currency.infinityPoints.value.gte(requirement);
+    return OrekiEarlyAutomation.shouldRequestBeat();
   } catch (e) {
     return false;
   }

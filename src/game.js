@@ -315,8 +315,35 @@ export function tryOrekiEarlyRoutine() {
     // EC3 的 17300 门槛因此永远读不到 —— 这就是 R24 卡在 10/173 的直接原因。
     // 现在把重置类动作前置，买完的维度可以完整活到下一帧被采样。
     buyMaxTickSpeed();
-    if (DimBoost.canBeBought) requestDimensionBoost(true);
-    if (Galaxy.canBeBought) requestGalaxyReset(true);
+    // [R92] 维度提升 / 星系：一次调用买光「当前买得起的全部」，而不是每拍只买 1 个。
+    //
+    // ── 事实（源码逐行核对）────────────────────────────────────────────
+    // `requestDimensionBoost(bulk)`（src/core/dimboost.js:239-245）只有
+    //   `BreakInfinityUpgrade.autobuyMaxDimboosts.isBought && bulk` 时才走
+    //   `maxBuyDimBoosts()`，否则 `softReset(1)` —— **一次只买 1 个**。
+    // 而 `autobuyMaxDimboosts` 是 Break Infinity 升级（
+    //   src/core/secret-formula/infinity/break-infinity-upgrades.js，价格 5e9 IP），
+    //   **未 Break 之前根本不存在**，即首次无限之前 `bulk = true` 被静默忽略。
+    // 同理 `requestGalaxyReset(bulk)`（src/core/galaxy.js:151-158）只有
+    //   `EternityMilestone.autobuyMaxGalaxies.isReached`（需要 **9 次永恒**，
+    //   src/core/secret-formula/eternity/eternity-milestones.js）时才 `maxBuyGalaxies()`；
+    //   首次永恒之前同样一次只买 1 个。
+    //
+    // ── 后果 ─────────────────────────────────────────────────────────
+    // R78 起所有 mod 动作共用同一个节拍（默认 10 s 一次真动作），而 `routine`
+    // 每拍只买 1 个提升 + 1 个星系。FACTS 里 AD1 的记录显示干净驱动 150 s 就能到
+    // 「提升 32、星系 6」——按每拍各 1 个算，光把这两项买到同样数量就要 ~320 s，
+    // 而且提升/星系本身就是反物质产量的复利来源，被节拍稀释后整段前期都被拉长。
+    //
+    // ── 修法 ─────────────────────────────────────────────────────────
+    // 在**同一次调度动作内**把「当前买得起的次数」连续买掉：每次仍走原版
+    // `requestDimensionBoost` / `requestGalaxyReset`（真实 softReset / 真实成本 /
+    // 真实递增要求），不写任何字段、不改要求、不伪造次数。
+    // 两个循环都用「本次调用前后计数是否变化」做进度守卫，并加硬上限：
+    // 要求未满足时 `requestXxx` 会原地返回，没有守卫就会死循环。
+    // 顺序仍遵守 AD16：重置类动作在买反物质维度之前。
+    buyAffordableDimensionBoosts();
+    buyAffordableGalaxies();
 
     // [Oreki R44] 维度献祭。原版的献祭自动器 `SacrificeAutobuyerState.isUnlocked`
     // 要求 `EternityMilestone.autoIC` 或 `InfinityChallenge(2).isCompleted`
@@ -353,6 +380,59 @@ export function tryOrekiEarlyRoutine() {
 }
 
 /**
+ * [R92] 单次调度动作内最多连续购买多少次维度提升 / 反物质星系。
+ *
+ * 为什么需要上限：`DimBoost.canBeBought` / `Galaxy.canBeBought` **都不检查要求是否满足**
+ * （`canBeBought` 只看次数上限、反物质上限与挑战限制），要求由
+ * `requestDimensionBoost` / `requestGalaxyReset` 内部再判一次并原地返回。
+ * 所以「循环到 canBeBought 为假」在要求不满足时会变成死循环 ——
+ * 必须用「计数有没有真的变」做守卫，并加一个硬上限兜底。
+ *
+ * 100 这个数字远大于单次节拍内可能买到的数量（要求随次数单调抬升），
+ * 只在数值异常时才会被触发。
+ */
+const MAX_EARLY_RESET_BATCH = 100;
+
+/**
+ * [R92] 买光当前买得起的维度提升。走原版 `requestDimensionBoost(true)`。
+ * @returns {number} 本次实际买到的次数
+ */
+function buyAffordableDimensionBoosts() {
+  let bought = 0;
+  while (bought < MAX_EARLY_RESET_BATCH && DimBoost.canBeBought) {
+    const before = player.dimensionBoosts;
+    try {
+      requestDimensionBoost(true);
+    } catch (e) {
+      break;
+    }
+    // 要求未满足 / 反物质超上限时原版函数会原地返回：计数不变即退出，避免死循环。
+    if (player.dimensionBoosts === before) break;
+    bought++;
+  }
+  return bought;
+}
+
+/**
+ * [R92] 买光当前买得起的反物质星系。走原版 `requestGalaxyReset(true)`。
+ * @returns {number} 本次实际买到的次数
+ */
+function buyAffordableGalaxies() {
+  let bought = 0;
+  while (bought < MAX_EARLY_RESET_BATCH && Galaxy.canBeBought) {
+    const before = player.galaxies;
+    try {
+      requestGalaxyReset(true);
+    } catch (e) {
+      break;
+    }
+    if (player.galaxies === before) break;
+    bought++;
+  }
+  return bought;
+}
+
+/**
  * [R90] 早期例程的动作快照（只读）。
  *
  * 只取「本函数真的会改」的几项：反物质余额、计数频率购买数、维度提升数、星系数、
@@ -365,7 +445,7 @@ function earlyRoutineSnapshot() {
   return {
     antimatter: Currency.antimatter.value,
     tickBought: player.totalTickBought,
-    dimBoosts: player.dimBoosts,
+    dimBoosts: player.dimensionBoosts,
     galaxies: player.galaxies,
     dimensions,
   };
@@ -375,7 +455,7 @@ function earlyRoutineSnapshot() {
 function earlyRoutineChanged(before) {
   if (!Currency.antimatter.value.eq(before.antimatter)) return true;
   if (player.totalTickBought !== before.tickBought) return true;
-  if (player.dimBoosts !== before.dimBoosts) return true;
+  if (player.dimensionBoosts !== before.dimBoosts) return true;
   if (player.galaxies !== before.galaxies) return true;
   for (let tier = 1; tier <= 8; tier++) {
     if (!AntimatterDimension(tier).amount.eq(before.dimensions[tier - 1])) return true;

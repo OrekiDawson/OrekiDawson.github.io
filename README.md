@@ -1,227 +1,326 @@
-# OrekiDawson.github.io
+# 反物质维度 · Oreki Edition（Web）
 
-**线上地址：<https://oreki.net>**
+**在线游玩：<https://oreki.net>** —— 打开网页就能玩，无需安装、无需注册、无需登录。
 
-本仓库是 **Oreki Edition 的部署副本**，不是源码开发仓库。它只做一件事：把 Web 源码仓库的产物发布到 GitHub Pages。
+《Antimatter Dimensions》的网页改造版。原版以「慢」著称：一次无限要等几小时，一次现实要等几天。本作把重复等待与重复点击交给自动化，保留有意义的手动决策与阶段目标，目标是让**一个人在一个晚上真的看到终局**。
 
-**目标读者**：访问仓库想找游戏入口的普通用户 → 需要确认"线上跑的是哪一版"的维护者 → 需要同步或回滚部署内容的开发者。
+非官方、非商业。与原作者及任何发行方无隶属关系。
+
+> 同一玩法的 Android 版见 [AD-Oreki-Edition-Android](https://github.com/OrekiDawson/AD-Oreki-Edition-Android)：独立 APK、独立构建链、存档不通用。
+> 本仓库是 **Web 源码仓库**；线上站点由独立的[部署仓库](https://github.com/OrekiDawson/OrekiDawson.github.io)提供。
+
+**目标读者**：想直接在线体验的玩家 → 用手机浏览器玩的玩家 → 需要管理存档的玩家 → 想参与开发的贡献者。
 
 ---
 
-## 仓库职责
+## 在线开始游玩
 
-| 仓库 | 职责 | 谁改 |
-|---|---|---|
-| [`AD-Oreki-Edition-Web`](https://github.com/OrekiDawson/AD-Oreki-Edition-Web) | **源码唯一开发来源**：功能、测试、教程数据源、开发文档 | 开发时改这里 |
-| 本仓库（`OrekiDawson.github.io`） | **部署产物副本**：只放可从源码重建的文件 | 只由同步脚本写入 |
+1. 用浏览器打开 <https://oreki.net>。
+2. 直接开始点。**新档默认 ×10000 游戏速度**，不需要进设置调任何东西。
+3. 进度会自动存到浏览器本地。想备份，进 **选项 → 游戏玩法 → 存档工具 → 下载存档文件**。
 
-**禁止在本仓库开发游戏功能。** 任何直接修改都会被下一次同步覆盖，并让线上与源码悄然脱节。
+推荐浏览器：桌面 Chrome / Edge / Firefox，手机 Chrome / Edge。**iOS Safari 完全没有测试过**（无可用设备），无法承诺在 iPhone / iPad 上的表现。
 
-### 我想……
+## 这个 MOD 改了什么
 
-| 诉求 | 去哪里 |
+原版是纯放置游戏；本作在保留原版机制与数值公式的前提下，做了三类改动：
+
+| 类别 | 改动 |
 |---|---|
-| 在线玩这个游戏 | <https://oreki.net> |
-| 看玩法说明、存档管理、常见问题 | [Web 源码仓库 README](https://github.com/OrekiDawson/AD-Oreki-Edition-Web#readme) |
-| 报 bug / 提建议 | [Web 源码仓库 Issues](https://github.com/OrekiDawson/AD-Oreki-Edition-Web/issues) |
-| 改游戏逻辑或界面 | [Web 源码仓库](https://github.com/OrekiDawson/AD-Oreki-Edition-Web)，**不要在这里改** |
-| 发一版新的线上版本 | 见本文「同步与发布流程」 |
-| 把线上退回上一版 | 见本文「回滚」 |
+| **速度** | 新增全局速度倍率，默认 ×10000，可调 ×1 ~ ×100000；另有「自动动态速度」，进度指纹连续 4 秒不动就自动 ×2，最快每 5 秒升一档 |
+| **自动化** | 统一调度器接管阶段决策；自动购买器覆盖反物质维度、速度升级、维度提升、星系、大坍缩、无限维度、永恒、现实 |
+| **门槛缩放** | 十余处关键门槛 / 价格按比例下调（如终局目标从反物质指数 9e15 降到 1e3），让 180 分钟通关成为可能 |
 
-**本仓库不复制**产品说明、开发规则、测试文档与玩法介绍 —— 那些内容只在源码仓库维护，避免两处分叉。
+**没有改的**：维度产出公式、暗物质维度全部数值、奇点全部数值、膨胀研究 1 的 12900 门槛。把速度调回 ×1 就等于原版节奏。
 
-## 与 Web 源码仓库的关系
+完整的「改了什么 / 没改什么」逐条清单在游戏内教程 **附录 F**，这是唯一权威版本。
 
-```
-AD-Oreki-Edition-Web（源码仓库，main）
-        │  git archive HEAD（只取已提交内容）
-        ▼
-    按 filelist.txt 逐文件同步
-        │
-        ▼
-本仓库（部署副本，main）──push──▶ GitHub Pages ──▶ https://oreki.net
-```
+## 主要功能
 
-三条硬规则：
+- **全局速度倍率**：作用于每个 tick 的游戏时间差，因此维度生产、时间机制、自动购买器都按倍率推进；`realTimePlayed` 等现实时间字段独立累加，不受影响。
+- **智能自动化**：统一调度器按当前阶段与资源状态决定每个节拍做什么，含资源预留、挑战避让与失败冷却。不是固定轮询，也不会绕过节拍间隔。
+- **挑战自动化**：普通 / 无限 / 永恒挑战进入后按原版结算路径完成并发奖；自动启动永恒挑战默认关闭，需手动打开。
+- **IU15 冲刺**：接近「理想之构」条件时临时接管，锁住 ID1~ID8 购买并拦住 EC7，达标后走原版入口真实购买后立即释放。
+- **简体中文**：完整界面与 18 章教程 + 6 篇附录本地化，术语与官方简中一致。
+- **存档工具**：本地快照、复制存档文本、下载存档文件、导入、重置，全部只在本机进行。
+- **移动端适配**：手机浏览器直接可玩，900px 以下有专门的窄屏布局。
 
-1. **单向流动**：源码 → 部署副本。反向合并（把这里的改动搬回源码）不允许。
-2. **只发布已提交内容**：同步从 `git archive HEAD` 生成，工作区未提交改动**不会**进线上。
-3. **同一份清单**：同步范围由 `web/_deploy/filelist.txt` 决定，不整目录覆盖。
+## 基本使用
 
-## 部署产物的来源
+### 速度设置
+
+**选项 → 游戏玩法**，最上方「游戏速度」区块：
+
+- 自定义倍率输入框 + 「应用倍率」按钮
+- 预设按钮：×1 / ×10 / ×100 / ×1000 / ×10000 / ×100000
+- 「恢复默认」回到 ×10000
+- 「自动动态速度」开关（默认开启）
+- 两个独立开关：反物质维度自动购买器 / 计数频率自动购买器的间隔是否随倍率缩短（默认关闭）
+
+倍率独立保存在浏览器本地，**重置或导入存档不会改变倍率偏好**。
+
+### 智能自动化
+
+同在 **选项 → 游戏玩法** 的「智能自动操作」区块：
+
+- **总开关**：关闭后所有本作发起的自动动作立即停止，并清空待执行队列
+- **调度间隔**：1~60 秒，默认 10 秒（10000 毫秒）；已有合法设置保留，改完下一次调度立即生效
+- **严格模式**（默认不勾选）：不勾选时间隔只管辖策略决策（现实 / 天神 / 复兴 / 终局等），买维度、买无限维度、买时间研究仍按原版自动购买器节奏执行；勾选后这 4 类也纳入间隔管辖，**全系统任意两次自动操作之间都至少间隔该秒数，会显著变慢甚至停滞**
+
+手动操作永远优先，不受任何间隔限制。
+
+### 教程
+
+页面右下角有常驻的「教程」悬浮按钮，任何页签、任何滚动位置都点得到。也可以在 **选项 → 游戏玩法 → 内置教程** 打开。
+
+教程正文 18 章，附录 6 篇（术语表、隐藏成就速查、记数法、卡住时的症状对照、自动化总览、本作与原版差异清单）。
+
+### 挑战与重置
+
+普通 / 无限 / 永恒挑战可以自动进入并结算；重置类操作（大坍缩 / 永恒 / 现实）在满足条件时自动执行。挑战的解锁条件、奖励公式全部沿用原版，只缩短「完成要花多久」。
+
+## 存档：机制、导入导出与数据安全
+
+### 存在哪里
 
 | 项 | 值 |
 |---|---|
-| 源仓库 | `OrekiDawson/AD-Oreki-Edition-Web`，分支 `main` |
-| 同步清单 | `web/_deploy/filelist.txt`（864 项） |
-| 同步脚本 | `web/_deploy/deploy_pages.py`（按已提交快照生成）或 `web/sync_deploy.py`（按工作区生成） |
-| 目标 | 本仓库 `main` 分支根目录 |
-| 托管 | GitHub Pages（`.nojekyll` 关闭 Jekyll 处理） |
-| 域名 | `oreki.net`（`CNAME` 文件，仓库内手工维护，不由同步覆盖） |
+| 存储位置 | 浏览器 `localStorage`，键名 `dimensionSave` |
+| 备份槽 | 同域 `localStorage`，键名 `backupSave-<槽位>-<备份位>` |
+| 跨设备 | **不自动同步**。换浏览器、换设备必须手动导出再导入 |
+| 服务器 | **没有任何上传**。全部数据留在本机浏览器 |
 
-同步进来的内容：`index.html`、`src/`（707 个清单条目）、`public/`（124 个）、`modules/`（26 个）、`LICENSE`、`MOD-LICENSE`、`NOTICE.md`、`serve.mjs`、`启动游戏.bat`。
+### 会丢存档的操作
 
-> `src/` 下当前实际有 712 个文件，比清单多 5 个（`oreki-dilation-probe.js`、`oreki-ec-probe.js`、`oreki-route-model.json`、`oreki-smart-strategy.json`、`oreki-tutorial-data.json`）。这 5 个是历史同步留下的**残留**，不在清单内、不被任何模块 import，加 `--prune` 才会删除。它们不影响站点运行，但**不应被当作"线上一定有的文件"**。
+- 清除浏览器数据 / 清除站点数据
+- 使用隐私模式（关窗即清）
+- 换浏览器、换设备、换域名
+- 浏览器自动清理长期未访问站点的存储
 
-**不进同步的**：`README.md`（本文件）、`CNAME`、`Ads.txt`、`.nojekyll`、`.gitignore`。这些属于部署仓库自身，由维护者手工维护。
+**只要存档重要，就定期导出一次文件。**
 
-> `deploy_pages.py` 里有显式的 `DEPLOY_OWN_FILES = {"README.md"}`，即使 `filelist.txt` 列了 `README.md` 也会跳过。
-> 但 `sync_deploy.py` **没有**这条排除 —— 用它会用源码仓库的 README 覆盖本文件。**维护本仓库文档时只用 `deploy_pages.py`。**
+### 备份与恢复
 
-### ⚠ 已知风险：两个同步脚本的换行行为不一致
+进 **选项 → 游戏玩法 → 存档工具**（页面下方「存档工具」按钮）：
 
-两个脚本都声明「二进制复制、不做行尾转换」，但**源与目标的换行基线本身不同**：
+- **立即备份**：写一份本地快照
+- **恢复快照**：回到快照状态
+- **复制存档文本**：复制到剪贴板，可粘到任何地方保存
+- **下载存档文件**：存成文件，推荐用于长期备份
+- **导入存档**：粘贴文本导入。**导入前会自动备份当前存档**
+- **重置当前存档**：需点两次确认，重置前自动备份
 
-| 文件类别 | 源码仓库工作区 | 本仓库索引 | 直接同步的后果 |
+导入、还原、重置之前都会自动写一份本地快照；所有操作只在本机进行，不会上传到任何服务器。
+
+### 存档兼容性
+
+存档带版本号（当前 `version: 25`）。导入旧版本存档会自动迁移到当前版本；**导入比游戏更新的存档会被拒绝**，并给出明确提示。**Web 与 Android 的存档不通用**，两端不能互相导入。
+
+## 手机与桌面浏览器
+
+| 环境 | 状态 | 说明 |
+|---|---|---|
+| 桌面 Chrome / Edge | **实测可用** | 主要开发与验收环境 |
+| Android Chrome | **实测可用** | 在 Android 模拟器（Android 16 / API 36 / 1440×3200）用真实 Chrome `133.0.6943.137` 跑过 320 / 360 / 390 / 430 / 768 / 1280 六档宽度，全部无横向滚动（`reports/_r78/result.json`） |
+| Android Chrome（更新版） | 已加载验证 | 另有一次 Chrome `156.0.8078.47` 的原生 411×750 视口 + 七档宽度实测（含教程弹窗与正文滚动区），记录见 `docs/FACTS.md` C.84.3 |
+| Android Edge | 真机（Redmi 23113RKC6C / Android 16 / 1440×3200 @560dpi，Edge `156.0.4314.43`）做过视口参数采集、自动购买器六档矩阵与 980 布局视口检查 | 未逐页回归；「请求桌面网站」菜单路径未走 |
+| iOS Safari | **完全未测试**（无可用设备） | 不承诺可用 |
+| 其他浏览器 | **未验证** | 不保证可用 |
+
+**「实测」与「理论支持」的区别**：上表只有标注了具体设备与版本的行才算实测。窄屏布局在 900px 以下生效，但**桌面宽度下仍有部分小于 44×44 的控件**（已知项，未纳入桌面档验收）。
+
+手机游玩建议：横屏或全屏模式；长时间挂机时注意浏览器会降频后台标签页，实际推进速度可能低于前台。
+
+## 常见问题
+
+**打开是白屏 / 一直加载**
+确认用的是 `https://` 而不是本地 `file://`。本作使用 ES Module，**必须通过 HTTP 提供**，直接双击 `index.html` 打不开。
+
+**进度没保存**
+检查是否在隐私模式、是否禁用了 `localStorage`、是否开了"关闭时清除站点数据"。这类环境下游戏能跑但存不住。
+
+**换了设备进度没了**
+`localStorage` 不跨设备。旧设备上导出存档文件 → 新设备上导入。
+
+**挂机一晚回来发现只推进了一点**
+浏览器会降频后台标签页。这不是 bug。想稳定推进就保持标签页在前台。
+
+**速度显示 ×10000 但感觉没这么快**
+倍率压缩的是游戏内时间，界面数字刷新需要一两秒；另外「自动动态速度」会在进度停滞时自动升档，看到倍率变高是正常行为。
+
+**挑战点进去就完成了，是不是坏了**
+这是设计。挑战仍然要先真的启动（条件不满足点不进去），启动后下一帧按原版结算路径完成并发奖。解锁条件下放、奖励公式不变、只发一次。
+
+**自动化开着但不动**
+检查「智能自动操作」总开关是否被关掉；检查是否勾了严格模式（严格模式下开局会长时间停在首次无限之前）。
+
+**游戏内「有新版本」提示一直报错**
+这是已知问题：更新检查请求了一个不存在的路径且没有错误兜底，控制台会每 60 秒出现一条 `SyntaxError`。**不影响游戏运行**，忽略即可。
+
+**存档会不会被传到服务器**
+不会。全部逻辑在本机浏览器，没有后端。
+
+## 开发者快速开始
+
+### 环境要求
+
+- **Linux 优先**：当前主要环境为 KDE Plasma/Ubuntu 26.04.1 LTS；Windows 11 保留兼容性。脚本优先保证 Bash 可用，并明确两端的路径、权限、大小写和换行差异。
+- **Node.js**、npm、pnpm、TypeScript（当前 Linux 实测 Node 26.13.0 / npm 11.20.0 / pnpm 12.18.0 / TypeScript 7.0.2；依赖版本仍以 `package.json` 与 lockfile 为准）
+- 现代浏览器（Chrome / Edge / Firefox）
+- Python 3（仅部分校验脚本需要）
+
+**没有构建步骤**：源码即产物，浏览器直接加载 ES Module。改完刷新即可看到效果。
+
+### 本地运行
+
+```bash
+git clone https://github.com/OrekiDawson/AD-Oreki-Edition-Web.git
+cd AD-Oreki-Edition-Web
+node serve.mjs 8080
+# 打开 http://127.0.0.1:8080
+```
+
+Linux 和 Windows 都使用仓库相对路径；不要把个人绝对路径写入脚本。Linux 新建文本文件使用 UTF-8 无 BOM、LF；Windows 专用 `.bat` 文件继续保留，不得无理由删除。
+
+也可以用任意静态服务器，例如 `python -m http.server 8080 --bind 127.0.0.1`。**不能用 `file://` 直接打开**。
+
+### 目录结构
+
+```
+index.html                  入口（加载 src/main.js）
+serve.mjs                   零依赖本地静态服务器
+src/
+├── main.js                 启动装配
+├── game.js                 主循环与调度器接线
+├── env.js                  DEV / STEAM / MAC 开关
+├── core/
+│   ├── dimensions/          维度与无限维度
+│   ├── autobuyers/          各自动购买器
+│   ├── celestials/          天体（含莱特拉、佩勒）
+│   ├── secret-formula/      数值、升级、成就定义
+│   ├── storage/             存档读写与版本迁移
+│   ├── speed-config.js      全局速度倍率
+│   └── oreki-*.js           本作新增的模块（23 个 JS + 3 个 JSON 数据文件，含只读探针）
+├── components/              界面组件
+└── public/                  样式、字体、图片、音效
+scripts/                     定向测试与数据生成脚本
+docs/                        长期规则、事实台账、玩法标准、专项报告
+tasks/ reports/              任务记录与实测证据
+modules/                     第三方运行时依赖（break_infinity、Vue、CodeMirror 等）
+```
+
+### 教程数据的唯一来源
+
+`src/core/oreki-tutorial-data.json` 是教程正文的**唯一内容源**；`oreki-tutorial-data.gen.js` 由 `scripts/gen_tutorial_module.mjs` 生成，**不要手改生成物**。Android 端的教程资产也由同一份 JSON 生成。
+
+改完教程后跑：
+
+```bash
+node scripts/validate_tutorial.mjs      # 结构 + 术语 + 字符校验
+node scripts/gen_tutorial_module.mjs    # 重新生成 .gen.js
+```
+
+### 开发约定
+
+- 新增代码配必要的简体中文注释
+- 购买一律走原版入口（`Currency.purchase` 等价路径），不直接写存档字段
+- 自动化必须遵守统一节拍，不新增独立计时器
+- 改速度相关逻辑时同步检查 `docs/SHARED_GAMEPLAY_STANDARD.md`（双端硬链接共享）
+
+### 定向测试
+
+改哪里验哪里，不做无差别全量回归：
+
+```bash
+node scripts/test-r83-iu15-sprint.mjs    # IU15 冲刺状态机
+node scripts/test-scheduler-beat.mjs     # 调度节拍
+node scripts/validate_tutorial.mjs       # 教程数据完整性
+node scripts/check_eternity_gate.mjs     # 永恒入口闸门
+node scripts/check_stage_detect.mjs      # 阶段识别
+node scripts/verify-android-chrome.mjs   # Android 模拟器 Chrome 六档视口（需模拟器 + 本地服务）
+```
+
+### 移动端改动的验收要求
+
+涉及布局的改动必须：
+
+1. 在**真实 Android Chrome 默认视口**验证一次（不能用桌面仿真代替）
+2. 额外检查 360px 窄屏与横屏，确认无横向溢出与遮挡
+
+验收标准详见 `docs/移动端适配测试门禁.md`。
+
+## 项目结构与技术文档
+
+| 文档 | 内容 |
+|---|---|
+| [`docs/SHARED_GAMEPLAY_STANDARD.md`](docs/SHARED_GAMEPLAY_STANDARD.md) | 双端共享玩法标准（设计目标、加速语义、验收口径） |
+| [`docs/FACTS.md`](docs/FACTS.md) | 经核实的事实台账（机制、ABI、实测读数） |
+| [`docs/教程数据结构说明.md`](docs/教程数据结构说明.md) | 教程 JSON 的字段契约 |
+| [`docs/教程术语表.md`](docs/教程术语表.md) | 官方简中术语基准 |
+| [`docs/移动端适配测试门禁.md`](docs/移动端适配测试门禁.md) | 模拟器 Chrome 验收门禁 |
+| [`WEB_ANDROID_DIFFERENCES.md`](WEB_ANDROID_DIFFERENCES.md) | 双端实现差异表 |
+| [`docs/AGENTS_GLOBAL.md`](docs/AGENTS_GLOBAL.md) | 工作区级长期规则（权威源 = 工作区根 `AGENTS.md`） |
+| [`AGENTS.md`](AGENTS.md) | 本仓库开发约定 |
+| [`tasks/`](tasks/) / [`reports/`](reports/) | 各轮任务记录与实测证据 |
+
+## 部署
+
+线上站点**不由本仓库直接提供**。部署链路：
+
+```
+本仓库 main 分支（源码）
+  → 工作区内的同步脚本（web/_deploy/，不随本仓库分发）
+  → OrekiDawson.github.io 仓库（部署副本）
+  → GitHub Pages → https://oreki.net
+```
+
+同步脚本按 `web/_deploy/filelist.txt`（864 项）逐文件复制，不做整目录覆盖。发布只从**已提交的 commit** 生成（`git archive HEAD`），工作区未提交改动不会进线上。同步与回滚细节见[部署仓库 README](https://github.com/OrekiDawson/OrekiDawson.github.io)。
+
+> 克隆本仓库后**无法独立完成部署** —— 同步脚本与清单都在工作区层，不在仓库内。贡献代码只需提交 PR，部署由维护者执行。
+
+### 当前线上版本（R91，2026-11-07）
+
+- 源码提交 `0dda298`：R91 早期自动化调度修复，5 个源文件 + 1 个新增定向测试（`scripts/test-r91-early-beat-share.mjs`）。
+- Pages 部署提交 `945fed2` 已推送；线上 `https://oreki.net/src/core/oreki-early-automation.js` 返回 200，包含 `shouldRequestBeat`，SHA-256 `43D9C12062CB6C033A300D53915C43E1B4B4DD10AEFB4FDDE7716B4D3E24EBB4`。
+- 测试记录（R91 执行记录）：定向夹具 13/13、相关回归 74 项、教程校验 2189/2189 通过；本次 README 同步未重新运行浏览器/墙钟测试。
+
+## 通关目标与当前证据
+
+**目标**：全新存档在 180 分钟现实时间内抵达真实终局（`isGameEnd` 为真，而不是"到现实"）。
+
+**Web 端已有实测支撑**：多次用全新存档（`localStorage.clear()` + reload）、10000× 倍率跑到 `isGameEnd` 首次翻转，读数落在 **708 ~ 916 秒**区间（采样强度不同会有差异；最密采样的那次最慢）。线上 `oreki.net` 同款跑法实测 **742.1 秒**，相对 180 分钟约有 14 倍余量。
+
+**必须一起读的两个限定**：
+
+- 742 秒里前 733 秒是默认 10000×，最后 9 秒被动态速度抬到 2~4 万倍；全程固定 10000× 会略慢一点。
+- 这些是**Web 端**的读数。**Android 端尚未跑通完整通关**，不能据此宣称双端都达标。
+
+## Android 对应版本
+
+| 项目 | Web（本仓库） | Android |
+|---|---|---|
+| 运行形态 | 浏览器 | 独立 APK |
+| 玩法基底 | ADChinese（3.20 语义） | 原版 3.20 APK 反编译 + 补丁 |
+| 存档 | `localStorage` | 应用私有目录 |
+| 存档互通 | **不互通** | **不互通** |
+| 教程源 | 同一份 JSON（本仓库为源） | 构建期由同一份 JSON 生成 |
+| 使用说明 | 本文件 | [Android README](https://github.com/OrekiDawson/AD-Oreki-Edition-Android) |
+
+双端行为差异记录在 `WEB_ANDROID_DIFFERENCES.md`。
+
+## 许可证与上游来源
+
+本作是二次开发的个人非商业 Mod，不主张对上游代码或译文的所有权。
+
+| 上游 | 作者 | 许可 | 用途 |
 |---|---|---|---|
-| `src/**/*.js` 多数 | CRLF | CRLF | 一致 |
-| 部分 `src/**` 与 `index.html` | LF | LF | 一致 |
-| 少数文件（如 `src/game.js`） | CRLF（`.gitattributes` 的 `text=auto` 导致检出为 CRLF） | LF | **整文件 diff** |
+| [Antimatter Dimensions](https://github.com/IvarK/AntimatterDimensionsSourceCode) | Hevipelle（IvarK） | MIT | 游戏本体 |
+| [ADChinese](https://github.com/aquamarine309/ADChinese) | aquamarine309 | MIT + 见 `MOD-LICENSE` | 汉化基线与代码底座 |
+| [ADfaster](https://github.com/WYXkk/ADfaster) | WYXkk | MIT | 全局速度因子设计参考 |
 
-**实测（2026-11-06）**：在工作区对 `deploy_pages.py` 跑一次不做任何提交的同步，本仓库出现 **47 个文件的整文件 diff**（`src/game.js` 单文件 3108 行全变、`src/core/reality.js` 1688 行全变），全部是换行差异、无实质内容变化。已用 `git checkout -- index.html public src/` 完整还原，未提交。
-
-**同步前必做**：先 `python deploy_pages.py` 生成，再 `git diff --stat` 看一眼。如果出现成百上千行的整文件 diff，**先停下**，不要 `git add`。正确做法是逐文件按目标文件的现有换行写回，而不是整目录覆盖。
-
-这条风险属**部署工具缺陷**，本轮只如实登记，未修改脚本（改脚本属部署流程变更，需单独授权）。
-
-## 同步与发布流程概览
-
-在**工作区**（而不是本仓库）里执行。设 `SRC` = 源码仓库路径，`SITE` = 本仓库路径。
-
-### 1. 确认源码状态
-
-```bash
-cd "$SRC"
-git rev-parse --abbrev-ref HEAD    # 必须是 main
-git rev-parse --short HEAD         # 记下这次发布的是哪个 commit
-git status --porcelain             # 有未提交改动会列出来（不影响发布，但不会进线上）
-```
-
-`deploy_pages.py` 会打印 `[1] web 仓库 branch=... HEAD=...` 与未提交改动清单，可确认发布基线。
-
-### 2. 生成部署副本
-
-```bash
-cd <工作区>/web/_deploy
-python deploy_pages.py            # 生成 + 检查，不提交
-python deploy_pages.py --prune    # 额外删除 site/src 下不在清单里的陈旧残留
-```
-
-脚本会依次：导出 `HEAD` 快照 → 按 `filelist.txt` 逐文件复制 → 反向检查 `site/src` 残留 → 跑 import 闭包检查 → 打印本仓库的变更状态。
-
-**必须看输出里的三项**：
-
-- `[4] 已同步 N 个文件；快照中缺失 M 个` —— M 应为 0
-- `[5] site/src 下不在清单里的残留：K 个` —— K 应为 0（或确认后加 `--prune`）
-- `[6] import 闭包检查` —— 必须通过
-
-### 3. 核对差异
-
-```bash
-cd "$SITE"
-git status --porcelain
-git diff --stat
-```
-
-**只应该有本轮实际变更的文件**。出现大量无关文件的整文件 diff，几乎一定是换行符问题（见下节）。
-
-### 4. 提交并推送
-
-```bash
-git add <逐个文件>      # 不要 git add -A
-git commit -m "同步 Web 源 <短 SHA>：<一句话说明>"
-git push origin main
-```
-
-提交信息用简体中文，写明同步的是哪个源码 commit、改了哪些内容。
-
-### 5. 核验部署结果
-
-推送后等 Pages 构建完成（通常 30~60 秒），**回读线上文件做逐字节比对**：
-
-```bash
-curl -sL https://oreki.net/src/core/oreki-iu15-sprint.js -o /tmp/online.js
-diff <(tr -d '\r' < /tmp/online.js) <(tr -d '\r' < src/core/oreki-iu15-sprint.js) && echo MATCH
-```
-
-至少核对：
-
-- [ ] 本轮改动的那几个文件与本地一致
-- [ ] 首页 `index.html` 返回 200
-- [ ] `index.html` 里引用的入口模块能正常 fetch（不是 404）
-- [ ] 教程数据 `src/core/oreki-tutorial-data.gen.js` 与源码仓库一致
-
-### 换行符：最容易踩的坑
-
-**本仓库的文件换行风格是逐文件不同的**（例如 `serve.mjs` 是 CRLF，`index.html` 与 `src/**` 是 LF）。同步脚本只用 `rb`/`wb` 做二进制复制，不做任何行尾转换。
-
-- 不要用编辑器"另存为"或带 `autocrlf` 的工具改这些文件
-- 比对线上与本地时，**第一步是归一化行尾**，不是直接比。不归一化会得到"全部文件都不一样"的假警报
-
-## 部署结果核验
-
-判断"线上跑的是哪一版"，不能只看首页能不能打开。推荐流程：
-
-1. **取源码 HEAD 的完整文件清单**（`src/**` + `index.html`）
-2. **逐个从线上抓下来算 SHA-256**，与本地对比
-3. **先去掉 `\r` 再比哈希**（线上可能是 CRLF）
-4. 把差异分成三类：真实差异 / 线上 404（源码有线上无）/ 只在线上有
-
-只有"真实差异为 0"才算部署一致。历史上出现过两种误判：不归一化行尾导致误判"全站不同"，以及只看首页 200 就断定部署成功。
-
-## 回滚
-
-Pages 的发布就是 Git 提交，回滚等于恢复上一个可用提交。
-
-```bash
-git log --oneline -10          # 找到上一个可用提交
-git revert <bad-commit>        # 生成一个反向提交
-git push origin main
-```
-
-**优先用 `revert`，不要用 `reset --hard` + 强推**：本仓库是公开部署源，强推会让已经拉取过的副本无法快进。
-
-回滚只影响部署副本。**如果问题出在源码**，正确做法是修源码 → 重新同步 → 部署，而不是在这里长期打补丁。
-
-## 允许修改与禁止修改的文件范围
-
-### 允许手工修改（本仓库自身文件）
-
-| 文件 | 用途 |
-|---|---|
-| `README.md` | 本文件 |
-| `CNAME` | 自定义域名（当前 `oreki.net`） |
-| `Ads.txt` | 广告系统验证文件 |
-| `.nojekyll` | 关闭 Jekyll（Pages 直接按静态文件服务） |
-| `.gitignore` | 本仓库忽略规则 |
-
-### 禁止手工修改（同步覆盖范围）
-
-`index.html`、`src/**`、`public/**`、`modules/**`、`LICENSE`、`MOD-LICENSE`、`NOTICE.md`、`serve.mjs`、`启动游戏.bat`。
-
-这些文件**下一次同步就会被覆盖**。需要改它们时，改源码仓库，然后重新同步。
-
-## 相关仓库入口
-
-| 仓库 | 说明 |
-|---|---|
-| [AD-Oreki-Edition-Web](https://github.com/OrekiDawson/AD-Oreki-Edition-Web) | Web 源码（**游戏功能的唯一开发来源**） |
-| [AD-Oreki-Edition-Android](https://github.com/OrekiDawson/AD-Oreki-Edition-Android) | Android 版源码与构建脚本 |
-| [frame-observer](https://github.com/OrekiDawson/frame-observer) | Android 画面与事件观测工具（测试基础设施） |
-| **本仓库** | 部署副本 → <https://oreki.net> |
-
-游戏玩法、存档、开发环境、构建方式、测试规范等说明**全部以源码仓库为准**：
-
-- 玩法与使用：[`AD-Oreki-Edition-Web` 的 README](https://github.com/OrekiDawson/AD-Oreki-Edition-Web/blob/main/README.md)
-- 开发规则：[`AD-Oreki-Edition-Web` 的 AGENTS_GLOBAL](https://github.com/OrekiDawson/AD-Oreki-Edition-Web/blob/main/docs/AGENTS_GLOBAL.md)
-- 事实台账：[`AD-Oreki-Edition-Web` 的 FACTS](https://github.com/OrekiDawson/AD-Oreki-Edition-Web/blob/main/docs/FACTS.md)
-
-## 许可
-
-本仓库分发的游戏产物沿用上游许可：MIT（见 `LICENSE`）；汉化与 ESM 重构部分的著作权声明见 `MOD-LICENSE`；完整上游署名见 `NOTICE.md`。
-
-原版游戏 **Antimatter Dimensions** 版权归 Hevipelle（IvarK）所有。本仓库为个人非商业修改版的部署副本，与原作者无隶属关系。
+- 本项目整体以 MIT 分发（见 [`LICENSE`](LICENSE)）；汉化与 ESM 重构部分的著作权声明见 [`MOD-LICENSE`](MOD-LICENSE)；完整署名见 [`NOTICE.md`](NOTICE.md)。
+- 上游版权声明不得移除。请勿用于商业用途。
 
 ## 规则与文档标准
 
-本 README 的编写与维护遵循工作区长期规则 **R-README-01~10**，权威源见 [Web 源码仓库的 AGENTS_GLOBAL](https://github.com/OrekiDawson/AD-Oreki-Edition-Web/blob/main/docs/AGENTS_GLOBAL.md) §6.2.3.7（工作区根 `AGENTS.md`）。本仓库不复制规则正文。
+本 README 的编写与维护遵循工作区长期规则 **R-README-01~10**，权威源：`docs/AGENTS_GLOBAL.md` §6.2.3.7（工作区根 `AGENTS.md`）。本仓库不复制规则正文。

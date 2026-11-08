@@ -5,18 +5,21 @@
 // 固定节奏改成目标驱动；所有判据来自原版真实状态（挑战 / ID 解锁门槛 /
 // 永恒前判据 / 已 Break），不写游戏内时间点、不以重置次数作为性能依据。
 //
-// 规则优先级（与 Android OrekiCrunchPolicy 完全一致）：
-//   1. 挑战运行中             → 放行（挑战结算不能被普通收益策略拦截）
-//   2. 未 Break               → 放行（首次无限前 break 同样为 false，坍缩是攒 IP 的唯一入口）
-//   3. 已进入永恒层           → 放行（节奏交给阶段自动化）
-//   4. 本永恒 maxIP 已达永恒门槛（canEternity）→ 放行，让原版立刻结算永恒
-//   5. 下一个未解锁无限维度（tier 1..8）：
-//      a. 反物质峰值已达标   → 放行（解锁不会被坍缩破坏）
-//      b. IP 已够、只差峰值  → 等待（15 分钟上限，超时放行一次）
-//      c. 其余               → 放行（IP 还不够，坍缩是攒 IP 的唯一入口）
-//   6. 8 个维度全部解锁：一次坍缩至少让 IP 涨 10 倍 → 放行；
-//      否则等待反物质成长（3 分钟上限，超时放行一次）
-//   7. 任何判据读取异常 → fail-closed 阻止（reason 以 `exception:` 开头）
+// 规则优先级（与 Android OrekiCrunchPolicy 逐条同序，改顺序必须双端同步）：
+//   1. 挑战运行中             → 放行 challenge-running（挑战结算不能被收益策略拦截）
+//   2. 尚未完成首次无限        → 放行 pre-infinity（坍缩是进入无限层的唯一入口）
+//   3. 未 Break               → 放行 pre-break-ip（坍缩是攒 IP 的唯一入口）
+//   4. 已进入永恒层           → 放行 post-eternity（节奏交给阶段自动化）
+//   5. 本永恒 maxIP 已达永恒门槛（canEternity）→ 放行 eternity-ready
+//   6. 一次坍缩至少让 IP 涨 10 倍 → 放行 ip-jump
+//      **必须排在「等 ID 峰值」之前**：ID6→ID7 的峰值窗口实测要 1.7 小时，
+//      等峰值等于放弃这期间全部 IP 增长；而 ≥10 倍收益的循环约 4~10 分钟一轮。
+//   7. 下一个未解锁无限维度（tier 1..8）：
+//      a. 反物质峰值已达标   → 放行 id-peak-reached（解锁不会被坍缩破坏）
+//      b. IP 已够、只差峰值  → 等待 id-peak-wait（15 分钟上限，超时放行一次）
+//      c. 其余               → 放行 id-ip-farm（IP 还不够，坍缩是攒 IP 的唯一入口）
+//   8. 8 个维度全部解锁且收益不足 → 等待 gain-wait（3 分钟上限，超时放行一次）
+//   9. 任何判据读取异常 → fail-closed 阻止（reason 以 `exception:` 开头）
 //
 // 为什么等待必须带上限：目标驱动策略在「等峰值 / 等收益」时会暂停坍缩，
 // 判据一旦误判（门槛读错、阶段判断错），无限等待会把通关永久卡死
@@ -77,16 +80,25 @@ export class OrekiCrunchPolicy {
     if (NormalChallenge.isRunning || InfinityChallenge.isRunning) {
       return { allow: true, reason: "challenge-running" };
     }
-    // 2) 首次 Break 之前（含首次无限之前）：坍缩是攒 IP 的唯一入口。
+    // 2) 尚未完成首次无限（原版 hasInfinity 口径）：坍缩是进入无限层的唯一入口。
+    if (!PlayerProgress.infinityUnlocked()) return { allow: true, reason: "pre-infinity" };
+    // 3) 首次 Break 之前：坍缩是攒 IP 的唯一入口。
     if (!player.break) return { allow: true, reason: "pre-break-ip" };
-    // 3) 已进入永恒层：节奏交给阶段自动化，本策略不再拦截。
+    // 4) 已进入永恒层：节奏交给阶段自动化，本策略不再拦截。
     if (PlayerProgress.eternityUnlocked()) return { allow: true, reason: "post-eternity" };
 
-    // 4) 首次永恒前：本永恒 maxIP 已达到 `Player.eternityGoal`（= Player.canEternity）
+    // 5) 首次永恒前：本永恒 maxIP 已达到 `Player.eternityGoal`（= Player.canEternity）
     //    → 立刻放行，让原版 canEternity + 自动永恒结算接手。
     if (Player.canEternity) return { allow: true, reason: "eternity-ready" };
 
-    // 5) 下一个未解锁的无限维度：按「峰值 → IP → 生长」排序。
+    // 6) 一次坍缩至少让 IP 涨一个数量级 → 立刻结算，保持 IP 增长循环。
+    //    **必须排在「等 ID 峰值」之前**（与 Android 同序）：ID6→ID7 的反物质峰值窗口
+    //    实测要 1.7 小时（AM 增长约 1.3 指数/秒），等峰值会把 IP 增长掐死在窗口里；
+    //    而「收益 ≥ 10 倍 IP」循环约 4~10 分钟就能让 IP 涨一个量级。
+    const leap = this.gainVersusIp();
+    if (leap !== null && leap >= 1) return { allow: true, reason: "ip-jump" };
+
+    // 7) 下一个未解锁的无限维度：按「峰值 → IP → 生长」排序。
     const pending = this.nextLockedDimension();
     if (pending !== null) {
       const maxAM = player.records.thisEternity.maxAM;
@@ -102,9 +114,7 @@ export class OrekiCrunchPolicy {
       return { allow: true, reason: "id-ip-farm" };
     }
 
-    // 6) 8 个维度全部解锁：只在这拍坍缩至少让 IP 涨一个数量级时结算。
-    const leap = this.gainVersusIp();
-    if (leap !== null && leap >= 1) return { allow: true, reason: "ip-jump" };
+    // 8) 8 个维度全部解锁、收益还不够：让反物质继续成长（带上限）。
     return this.waitWithin("gain-wait", GAIN_WAIT_LIMIT_MS);
   }
 

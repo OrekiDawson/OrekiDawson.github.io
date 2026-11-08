@@ -208,8 +208,9 @@ export const OrekiEternityAutomation = {
           return "为拿现实升级 10 暂压本现实里的第一次永恒（IP 指数需 ≥400），最多压 10 秒";
         }
         if (this.ecEntryPending()) return "正在等 EC 入口（主研究已买、只差资源），先不重置";
-        if (gainedEternityPoints().lt(Currency.eternityPoints.value.times(10))) {
-          return "本次永恒收益不足现有 EP 的 10 倍，等涨起来再重置";
+        // 与 tickEternity() 同一门槛（×1）：收益不足当前 EP 就不重置，面板文案同步。
+        if (gainedEternityPoints().lt(Currency.eternityPoints.value.times(1))) {
+          return "本次永恒收益不足当前 EP（没让 EP 翻倍），等涨起来再重置";
         }
         return "";
       }
@@ -660,7 +661,14 @@ export const OrekiEternityAutomation = {
       if (this.holdForRealityUpgrade10()) return false;
       // 入口保护：只在「主研究已买、只差资源」时生效，不拖慢 EC1/EC2 的永恒次数增长
       if (this.ecEntryPending()) return false;
-      if (gainedEternityPoints().lt(Currency.eternityPoints.value.times(10))) return false;
+      // [R96 第五轮] 永恒结算门槛 ×10 → ×1：收益只要让 EP 翻倍（gained ≥ 当前 EP）就结算。
+      //
+      // 实测缺陷（平台期 bigE=3、EP=2.16、maxIP 1e593、maxAM 1e124044）：×10 门槛要求
+      // maxIP 达 1e804（gainedEP=23），而当时 gainedEP 只有 7 ⇒ **EP 永不增长**。
+      // 而 EP 是中期唯一引擎燃料：时间维度用 EP 买（TD1=1 / TD2=5 / TD3=100）、
+      // 永恒升级首档 5 EP ⇒ EP 卡住 ⇒ 时间维度只有 1 层、永恒升级 0 个 ⇒ 乘数停滞。
+      // Android 同口径实机效果（同一存档 6 分钟）：bigE 3→7、EP 2.16→5.4、首个永恒升级买到。
+      if (gainedEternityPoints().lt(Currency.eternityPoints.value.times(1))) return false;
       return eternity(false, true) === true;
     } catch (e) {
       this._err("tickEternity", e);

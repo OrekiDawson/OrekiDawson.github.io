@@ -9,18 +9,21 @@
 //   1. 挑战运行中             → 放行 challenge-running（挑战结算不能被收益策略拦截）
 //   2. 尚未完成首次无限        → 放行 pre-infinity（坍缩是进入无限层的唯一入口）
 //   3. 未 Break               → 放行 pre-break-ip（坍缩是攒 IP 的唯一入口）
-//   4. 已进入永恒层（首次永恒后、膨胀前）→ **收益驱动，不再无条件放行**：
+//   4. 已进入永恒层（首次永恒后、膨胀前）→ **收益驱动 + 周期结算**：
 //      a. 一次坍缩至少让 IP 涨 10 倍 → 放行 eternity-ip-jump
-//      b. 其余                      → 等待 eternity-grow（10 分钟上限，超时放行一次）
+//      b. 距上次结算满 30 秒墙钟      → 放行 eternity-cycle（保证 IP→ID 购买链不断）
+//      c. 其余                       → 等待 eternity-grow（10 分钟上限，超时放行一次）
 //      **刻意不用 canEternity 放行**：永恒层里 maxIP 长期 ≥ 1.797e308、canEternity
 //      几乎恒真，用它放行等价于回到无条件坍缩（实测 maxIP 平台 1e593 依旧）；
-//      真正决定能否结算永恒的是 `OrekiEternity` 的「gainedEP ≥ 10×EP」门槛，
-//      与坍缩无关，所以永恒层只按「这次坍缩值不值得」判断。
+//      能否结算永恒由 `OrekiEternity` 自己的收益门槛判断，与坍缩无关。
+//      **为什么要周期结算**：纯等待（只剩 10 分钟上限）时 maxAM 指数只有 ~87/min
+//      —— 因为坍缩产出的 IP 是「无限维度」购买链的燃料，完全按住会让 ID 等级停摆；
+//      持续结算时实测 327~755/min。30 秒一次既保留「不要每帧坍缩」的初衷，又不断链。
 //      **为什么不能再无条件放行**：实测（bigE=3、EP=2.16）无条件 allow ⇒ 坍缩按
 //      TIME 节奏持续重置维度，高倍速下几乎每帧一次（infinities 达 1e7.85）⇒
 //      第八维度的「数量」永远长不起来 ⇒ 星系/维度提升这些「按维度数量递增」的
-//      门槛永远达不到 ⇒ 生产乘数停滞：maxIP 平台 1e593（10× ET 门槛要 1e804）、
-//      maxAM 平台 1e124044、星系 111 与维度提升 1253 十分钟零增长、首个永恒升级买不起。
+//      门槛永远达不到 ⇒ 生产乘数停滞：maxIP 平台 1e593、maxAM 平台 1e124044、
+//      星系 111 与维度提升 1253 十分钟零增长、首个永恒升级买不起。
 //   5. 首次永恒前：本永恒 maxIP 已达永恒门槛（canEternity）→ 放行 eternity-ready
 //   6. 一次坍缩至少让 IP 涨 10 倍 → 放行 ip-jump
 //      **必须排在「等 ID 峰值」之前**：ID6→ID7 的峰值窗口实测要 1.7 小时，
@@ -40,7 +43,8 @@
 // 为什么等待必须带上限：目标驱动策略在「等峰值 / 等收益」时会暂停坍缩，
 // 判据一旦误判（门槛读错、阶段判断错），无限等待会把通关永久卡死
 // （R96 实测 Android 端 IP 冻结 46 分钟）。上限用真实墙钟累计，不用帧数或
-// 游戏内时间（帧率与倍速都会变）。数值与 Android 一致：15 / 10 / 3 分钟。
+// 游戏内时间（帧率与倍速都会变）。数值与 Android 一致：15 / 10 / 3 分钟，另加
+// 永恒层 30 秒周期结算（只用于「保证 IP→ID 购买链不断」，不是放宽等待上限）。
 //
 // 只读，不修改玩家设置、不写存档字段；节奏仍由原版自动器执行。
 // ---------------------------------------------------------------------------
@@ -60,11 +64,22 @@ const GAIN_WAIT_LIMIT_MS = 180000;
  */
 const ETERNITY_GROW_WAIT_LIMIT_MS = 600000;
 
+/**
+ * 永恒层周期结算间隔：30 秒
+ * （与 Android `ETERNITY_CYCLE_NS` 的 30000 ms 一致）。
+ * 坍缩产出 IP 是无限维度购买链的燃料；完全按住会让 ID 等级停摆、maxAM 增长
+ * 从持续结算的 327~755 指数/分钟掉到 ~87 指数/分钟。每 30 秒强制结算一次。
+ */
+const ETERNITY_CYCLE_MS = 30000;
+
 /** 上一次打印的决策（只用于节流日志：状态翻转才打印）。 */
 let lastKey = null;
 
 /** 当前连续等待的开始时刻（单调时钟毫秒）；null 表示没有在等待。 */
 let waitStartedAt = null;
+
+/** 永恒层上一次「周期结算」的时刻（单调时钟毫秒）；null 表示本周期尚未起算。 */
+let lastEternityCycleAt = null;
 
 function throttleLog(decision) {
   const key = `${decision.allow}:${decision.reason}`;
@@ -119,7 +134,19 @@ export class OrekiCrunchPolicy {
     if (this.isInEternityLayer()) {
       const leapEternity = this.gainVersusIp();
       if (leapEternity !== null && leapEternity >= 1) {
+        // 收益够一个数量级：立刻结算，并把周期计时重新起算（与 Android 同序）。
+        lastEternityCycleAt = monotonicNowMs();
         return { allow: true, reason: "eternity-ip-jump" };
+      }
+      // 周期结算：每 30 秒墙钟放行一次。
+      // 实测对比（同一存档）：纯等待时 maxAM 指数只有 ~87/min，而持续结算时
+      // 327~755/min —— 坍缩产出的 IP 是「无限维度」购买链的燃料，完全按住会让
+      // ID 等级停摆。30 秒一次既保留「不要每帧坍缩」的初衷，又保证 IP→ID 链不断。
+      const now = monotonicNowMs();
+      if (lastEternityCycleAt === null) lastEternityCycleAt = now;
+      if (now - lastEternityCycleAt >= ETERNITY_CYCLE_MS) {
+        lastEternityCycleAt = now;
+        return { allow: true, reason: "eternity-cycle" };
       }
       return this.waitWithin("eternity-grow", ETERNITY_GROW_WAIT_LIMIT_MS);
     }

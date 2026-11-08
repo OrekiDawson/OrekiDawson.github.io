@@ -10,9 +10,12 @@
 //   2. 尚未完成首次无限        → 放行 pre-infinity（坍缩是进入无限层的唯一入口）
 //   3. 未 Break               → 放行 pre-break-ip（坍缩是攒 IP 的唯一入口）
 //   4. 已进入永恒层（首次永恒后、膨胀前）→ **收益驱动，不再无条件放行**：
-//      a. 本永恒 maxIP 已达永恒门槛（canEternity）→ 放行 eternity-ready
-//      b. 一次坍缩至少让 IP 涨 10 倍             → 放行 eternity-ip-jump
-//      c. 其余                                  → 等待 eternity-grow（10 分钟上限，超时放行一次）
+//      a. 一次坍缩至少让 IP 涨 10 倍 → 放行 eternity-ip-jump
+//      b. 其余                      → 等待 eternity-grow（10 分钟上限，超时放行一次）
+//      **刻意不用 canEternity 放行**：永恒层里 maxIP 长期 ≥ 1.797e308、canEternity
+//      几乎恒真，用它放行等价于回到无条件坍缩（实测 maxIP 平台 1e593 依旧）；
+//      真正决定能否结算永恒的是 `OrekiEternity` 的「gainedEP ≥ 10×EP」门槛，
+//      与坍缩无关，所以永恒层只按「这次坍缩值不值得」判断。
 //      **为什么不能再无条件放行**：实测（bigE=3、EP=2.16）无条件 allow ⇒ 坍缩按
 //      TIME 节奏持续重置维度，高倍速下几乎每帧一次（infinities 达 1e7.85）⇒
 //      第八维度的「数量」永远长不起来 ⇒ 星系/维度提升这些「按维度数量递增」的
@@ -105,10 +108,15 @@ export class OrekiCrunchPolicy {
     // 3) 首次 Break 之前：坍缩是攒 IP 的唯一入口。
     if (!player.break) return { allow: true, reason: "pre-break-ip" };
     // 4) [R96 第四轮] 永恒层（首次永恒后、膨胀前）**不再无条件放行**：
-    //    与首次永恒前共用同一套收益驱动，只有「一次坍缩至少让 IP 涨 10 倍」才结算，
-    //    否则按住让维度 / 星系长起来；永恒门槛达标时也放行一次，保证 EP 循环不断。
+    //    只按「这一次坍缩值不值得」判断：收益 ≥ 10× 当前 IP 才结算，否则按住让
+    //    维度 / 星系长起来。
+    //
+    //    **刻意不在这里用 canEternity 放行**（Android 实机 A/B 教训）：永恒层里
+    //    maxIP 早已 ≥ 1.797e308，canEternity 长期为真，用它放行等于又回到无条件
+    //    坍缩（实测日志第一帧就是 `allow=true reason=eternity-ready`，maxIP 平台
+    //    1e593 依旧、galaxies/dimensionBoosts 依旧不涨）。真正决定能否结算永恒的是
+    //    `OrekiEternity` 的「gainedEP ≥ 10×EP」门槛，与坍缩无关，交给它自己判断。
     if (this.isInEternityLayer()) {
-      if (Player.canEternity) return { allow: true, reason: "eternity-ready" };
       const leapEternity = this.gainVersusIp();
       if (leapEternity !== null && leapEternity >= 1) {
         return { allow: true, reason: "eternity-ip-jump" };

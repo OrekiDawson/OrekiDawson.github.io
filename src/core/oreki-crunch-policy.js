@@ -9,8 +9,16 @@
 //   1. 挑战运行中             → 放行 challenge-running（挑战结算不能被收益策略拦截）
 //   2. 尚未完成首次无限        → 放行 pre-infinity（坍缩是进入无限层的唯一入口）
 //   3. 未 Break               → 放行 pre-break-ip（坍缩是攒 IP 的唯一入口）
-//   4. 已进入永恒层           → 放行 post-eternity（节奏交给阶段自动化）
-//   5. 本永恒 maxIP 已达永恒门槛（canEternity）→ 放行 eternity-ready
+//   4. 已进入永恒层（首次永恒后、膨胀前）→ **收益驱动，不再无条件放行**：
+//      a. 本永恒 maxIP 已达永恒门槛（canEternity）→ 放行 eternity-ready
+//      b. 一次坍缩至少让 IP 涨 10 倍             → 放行 eternity-ip-jump
+//      c. 其余                                  → 等待 eternity-grow（10 分钟上限，超时放行一次）
+//      **为什么不能再无条件放行**：实测（bigE=3、EP=2.16）无条件 allow ⇒ 坍缩按
+//      TIME 节奏持续重置维度，高倍速下几乎每帧一次（infinities 达 1e7.85）⇒
+//      第八维度的「数量」永远长不起来 ⇒ 星系/维度提升这些「按维度数量递增」的
+//      门槛永远达不到 ⇒ 生产乘数停滞：maxIP 平台 1e593（10× ET 门槛要 1e804）、
+//      maxAM 平台 1e124044、星系 111 与维度提升 1253 十分钟零增长、首个永恒升级买不起。
+//   5. 首次永恒前：本永恒 maxIP 已达永恒门槛（canEternity）→ 放行 eternity-ready
 //   6. 一次坍缩至少让 IP 涨 10 倍 → 放行 ip-jump
 //      **必须排在「等 ID 峰值」之前**：ID6→ID7 的峰值窗口实测要 1.7 小时，
 //      等峰值等于放弃这期间全部 IP 增长；而 ≥10 倍收益的循环约 4~10 分钟一轮。
@@ -21,10 +29,15 @@
 //   8. 8 个维度全部解锁且收益不足 → 等待 gain-wait（3 分钟上限，超时放行一次）
 //   9. 任何判据读取异常 → fail-closed 阻止（reason 以 `exception:` 开头）
 //
+// 「永恒层」判定与 Android 的 `OrekiStageAuto.eternitiesZero()` 同口径（见
+// `isInEternityLayer()` 注释），不能用 `PlayerProgress.eternityUnlocked()`：
+// 后者在现实重置后仍恒为 true，而现实会把 EP / 永恒次数 / 已购永恒升级全部清零
+// —— 那时玩家实际是在重爬首次永恒，必须继续走「首次永恒前」分支。
+//
 // 为什么等待必须带上限：目标驱动策略在「等峰值 / 等收益」时会暂停坍缩，
 // 判据一旦误判（门槛读错、阶段判断错），无限等待会把通关永久卡死
 // （R96 实测 Android 端 IP 冻结 46 分钟）。上限用真实墙钟累计，不用帧数或
-// 游戏内时间（帧率与倍速都会变）。数值与 Android 一致：15 分钟 / 3 分钟。
+// 游戏内时间（帧率与倍速都会变）。数值与 Android 一致：15 / 10 / 3 分钟。
 //
 // 只读，不修改玩家设置、不写存档字段；节奏仍由原版自动器执行。
 // ---------------------------------------------------------------------------
@@ -36,6 +49,13 @@ const PEAK_WAIT_LIMIT_MS = 900000;
 
 /** 收益等待上限：3 分钟（与 Android `GAIN_WAIT_LIMIT_NS` 的 180000 ms 一致）。 */
 const GAIN_WAIT_LIMIT_MS = 180000;
+
+/**
+ * 永恒层「让维度长起来」的等待上限：10 分钟
+ * （与 Android `ETERNITY_GROW_WAIT_LIMIT_NS` 的 600000 ms 一致）。
+ * 到点仍放行一次，避免判据误判或真的卡住时把 IP / EP 循环永久按住。
+ */
+const ETERNITY_GROW_WAIT_LIMIT_MS = 600000;
 
 /** 上一次打印的决策（只用于节流日志：状态翻转才打印）。 */
 let lastKey = null;
@@ -84,8 +104,17 @@ export class OrekiCrunchPolicy {
     if (!PlayerProgress.infinityUnlocked()) return { allow: true, reason: "pre-infinity" };
     // 3) 首次 Break 之前：坍缩是攒 IP 的唯一入口。
     if (!player.break) return { allow: true, reason: "pre-break-ip" };
-    // 4) 已进入永恒层：节奏交给阶段自动化，本策略不再拦截。
-    if (PlayerProgress.eternityUnlocked()) return { allow: true, reason: "post-eternity" };
+    // 4) [R96 第四轮] 永恒层（首次永恒后、膨胀前）**不再无条件放行**：
+    //    与首次永恒前共用同一套收益驱动，只有「一次坍缩至少让 IP 涨 10 倍」才结算，
+    //    否则按住让维度 / 星系长起来；永恒门槛达标时也放行一次，保证 EP 循环不断。
+    if (this.isInEternityLayer()) {
+      if (Player.canEternity) return { allow: true, reason: "eternity-ready" };
+      const leapEternity = this.gainVersusIp();
+      if (leapEternity !== null && leapEternity >= 1) {
+        return { allow: true, reason: "eternity-ip-jump" };
+      }
+      return this.waitWithin("eternity-grow", ETERNITY_GROW_WAIT_LIMIT_MS);
+    }
 
     // 5) 首次永恒前：本永恒 maxIP 已达到 `Player.eternityGoal`（= Player.canEternity）
     //    → 立刻放行，让原版 canEternity + 自动永恒结算接手。
@@ -116,6 +145,25 @@ export class OrekiCrunchPolicy {
 
     // 8) 8 个维度全部解锁、收益还不够：让反物质继续成长（带上限）。
     return this.waitWithin("gain-wait", GAIN_WAIT_LIMIT_MS);
+  }
+
+  /**
+   * 是否已进入永恒层（= Android `OrekiStageAuto.eternitiesZero()` 取反同口径）。
+   *
+   * Android 的 `eternitiesZero()`（R94 起）判的是「永恒点数 == 0 且已购永恒升级 == 0
+   * 且大永恒 == 0」，三项全零才算「还在首次永恒前」。这里逐项同口径：
+   *   · `player.eternities`      —— 大永恒次数（现实重置会清零）
+   *   · `player.eternityPoints`  —— 当前 EP（现实重置会清零）
+   *   · `player.eternityUpgrades` —— 已购永恒升级（现实重置会 clear）
+   *
+   * 不能用 `PlayerProgress.eternityUnlocked()`：它把 `realities > 0` 也算「已解锁」，
+   * 现实重置后恒为 true，会让玩家在重爬首次永恒时错误进入永恒层分支（Android 不会）。
+   * 任一项读取异常按 fail-closed 交给 decide() 的异常分支处理。
+   */
+  static isInEternityLayer() {
+    if (player.eternities.gt(0)) return true;
+    if (player.eternityPoints.gt(0)) return true;
+    return player.eternityUpgrades.size > 0;
   }
 
   /**

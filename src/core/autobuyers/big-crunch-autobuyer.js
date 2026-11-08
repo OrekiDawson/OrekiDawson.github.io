@@ -1,6 +1,7 @@
 import { UpgradeableAutobuyerState } from "./autobuyer.js";
 import { PlayerProgress } from "../player-progress.js";
 import { DC } from "../constants.js";
+import { OrekiCrunchPolicy } from "../oreki-crunch-policy.js";
 
 export class BigCrunchAutobuyerState extends UpgradeableAutobuyerState {
   get data() {
@@ -141,7 +142,9 @@ export class BigCrunchAutobuyerState extends UpgradeableAutobuyerState {
     // 让 thisEternity.maxAM 一路爬过 ID1 的反物质门槛（1e1100）。
     // 否则「每轮坍缩把反物质打回低位」会让 maxAM 永远停在 1e3xx，
     // 而 ID1 的 canUnlock 要求 maxAM ≥ 1e1100 —— 与 IP 无关，所以只补 IP 永远解锁不了。
-    if (this.waitingForId1Peak) return false;
+    // [R96] 目标驱动按需结算（与 Android OrekiCrunchPolicy 等价）：
+    // 挑战运行中一律放行；永恒前为「IP 已够、只差反物质峰值」的下一个 ID 保护窗口。
+    if (!OrekiCrunchPolicy.decide().allow) return false;
     // [Oreki AD14 已回退] 曾在这里挂「仅 EC3 时暂停坍缩」的窄保护。
     // 实测证明这条路是死锁：不坍缩就没有 IP → 没有无限维度乘数 → 反物质上不去 →
     // 第八反物质维度根本买不起。加保护后 40~100 秒整局冻结（et 恒 388、AD8 恒 0）。

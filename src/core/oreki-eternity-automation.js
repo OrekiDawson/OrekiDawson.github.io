@@ -53,6 +53,22 @@ const STUDY_TICK_INTERVAL = 30;
 const RESERVE_REACHABLE_LOG10 = 2.0;
 
 /**
+ * [R96] MOD 平衡参数「TT 购买收益 ×500」（用户 2026-11-09 正式裁决）。
+ *
+ * 原版每次成功购买给 1 TT；这里按 500 发放，但**成本曲线、购买资格、资源扣费
+ * 与真实购买结算全部沿用原版**。实现方式是对账：
+ *   · 每帧读 `TimeTheorems.totalPurchased()`（= amBought + ipBought + epBought 之和）；
+ *   · 与上一次基线比较，增量 Δ 就是「本帧真实发生的购买次数」；
+ *   · 补发 Δ×(500−1) TT 走原版 `Currency.timeTheorems.add`，随后立刻推进基线。
+ * 这样手动点击、原版自动购买、MOD 自动购买、单次/批量购买**全部覆盖**，
+ * 且同一笔购买不可能被发两次（基线在发奖后立即前进）。
+ */
+const TT_REWARD_MULTIPLIER = 500;
+
+/** 单帧购买次数合理上限：超过即判定为切换存档，只重设基线、不发奖。 */
+const TT_REWARD_MAX_DELTA_PER_TICK = 50;
+
+/**
  * 普通时间研究 id 列表：直接从数据库取，不再手写区间。
  *
  * [Oreki R25] 原来手写的是「11~73 + 每组 x01~x03」，漏掉了所有 x04：214 / 224 / 234
@@ -201,18 +217,37 @@ export const OrekiEternityAutomation = {
 
   buyTimeDimensions() {
     try {
-      // [R96] EP 预留闸门：余额仍处在「为下一项永恒升级预留」的区间内时，
-      // 本轮不买时间维度，否则 TD1 会把 EP 吃干、永恒升级永远买不起。
-      // 注：闸门是「EP ≥ 预留量」而非「EP ≥ 预留量 + 成本」，
-      // 所以 EP 一到 5 就会先买 TD1（首层需要它解锁商店），随后余额正好够买升级。
-      if (!this.isEternityPointsBeyondReserve()) return false;
+      // [R96] EP 预留闸门（修正版）。
+      //
+      // 旧实现有两个真缺陷（独立审查指出，已复核）：
+      //   a) 只要 `EP ≥ 预留量` 就放行**全部** TD，会把「刚好够买升级」的钱花掉；
+      //   b) `buyMaxTimeDimension(...)` 返回 false 时仍然置 `bought = true`，属于假成功。
+      //
+      // 现在的规则：
+      //   1) 唯一例外是「播种首个 TD1」——它未解锁时允许花掉 EP 解锁/购买它
+      //      （永恒升级商店的前置就是 TD1 已买）。
+      //   2) TD1 已买之后，**先让调用方买永恒升级**（tick 已改为 upgrades 先于 dims），
+      //      这里只在「超出预留区」时才继续买 TD。
+      //   3) 每次购买都用返回值判定，绝不假装成功。
+      const firstTd = TimeDimension(1);
+      const needsFirstSeed = !firstTd.bought;
+      if (!needsFirstSeed && !this.isEternityPointsBeyondReserve()) return false;
+
       let bought = false;
+      if (needsFirstSeed) {
+        // 只播种第一层：买 1 次就够解锁商店，不做 8 层轮转（避免把预留花光）。
+        if (firstTd.isUnlocked && firstTd.isAffordable) {
+          bought = buyMaxTimeDimension(1, 0.5) === true;
+        }
+        return bought;
+      }
+
       for (let tier = 8; tier >= 1; tier--) {
         const td = TimeDimension(tier);
         if (!td.isUnlocked) continue;
         if (!td.isAffordable) continue;
-        buyMaxTimeDimension(tier, 0.5);
-        bought = true;
+        // 只认真实返回值；失败不计入 bought，避免「假成功」掩盖没买到。
+        if (buyMaxTimeDimension(tier, 0.5) === true) bought = true;
       }
       return bought;
     } catch (e) {
@@ -232,6 +267,58 @@ export const OrekiEternityAutomation = {
     } catch (e) {
       this._err("buyTimeTheorems", e);
       return false;
+    }
+  },
+
+  /**
+   * [R96] TT 购买收益 ×500 的唯一发奖点（每帧调用，幂等）。
+   *
+   * 边界：
+   *   · 首次调用只建立基线（`_ttSettled === null`），不为历史购买补发；
+   *   · Δ = 0（余额不足 / 购买失败 / 恰好不够）→ 不发奖；
+   *   · Δ < 0（读档回退、永恒重置清空计数）→ 只重置基线；
+   *   · 补发抛错 → 记录错误并推进基线，避免每帧重试风暴（不静默：走 `_err`）。
+   */
+  settleTimeTheoremReward() {
+    try {
+      // 注意：`TimeTheorems.totalPurchased()` 在 3.21 里是
+      // `am.amount + ip.amount + ep.amount`，返回**原生 number**（不是 Decimal）。
+      // 之前写成 `total.toNumber()` 会抛 TypeError，被 catch 后又调一次同样抛错，
+      // 结果是 Web 端一次都不会发奖（测试替身带 toNumber 才假绿）。这里按真实类型取。
+      const raw = TimeTheorems.totalPurchased();
+      const totalNum = typeof raw === "number" ? raw : raw.toNumber();
+      if (!Number.isFinite(totalNum)) return 0;
+
+      // 基线在**购买之前**建立：tick 里先调本方法再买，首帧那笔购买才不会被当成历史。
+      if (this._ttSettled === null || this._ttSettled === undefined) {
+        this._ttSettled = totalNum;
+        return 0;
+      }
+      if (totalNum < this._ttSettled) {
+        // 读档回退 / 永恒重置清空计数：只重置基线
+        this._ttSettled = totalNum;
+        return 0;
+      }
+      const delta = totalNum - this._ttSettled;
+      if (delta <= 0) return 0;
+
+      // 切档保护：单帧正常最多买几十次，出现巨大跳变说明换了存档（购买计数更高），
+      // 绝不能把别人的历史购买当成新购发奖 —— 只重设基线。
+      if (delta > TT_REWARD_MAX_DELTA_PER_TICK) {
+        this._err("settleTimeTheoremReward", new Error(
+          `delta ${delta} 超出单帧上限 ${TT_REWARD_MAX_DELTA_PER_TICK}，按切档处理只重设基线`));
+        this._ttSettled = totalNum;
+        return 0;
+      }
+
+      const extra = delta * (TT_REWARD_MULTIPLIER - 1);
+      Currency.timeTheorems.add(new Decimal(extra));
+      this._ttSettled = totalNum;
+      return extra;
+    } catch (e) {
+      this._err("settleTimeTheoremReward", e);
+      // 失败**不推进基线**：下一帧重试，避免这笔奖励被永久吞掉。
+      return 0;
     }
   },
 
@@ -916,10 +1003,18 @@ export const OrekiEternityAutomation = {
   },
 
   tick() {
+    // [R96] TT ×500：**先**对账（建基线/结算上一帧的真实购买），**再**买。
+    // 顺序反了会让首帧的购买被当成历史购买而漏发。
+    // 且这一步与 `active` 无关：玩家关掉自动后手动买同样要按 ×500 结算 ——
+    // 它是「真实购买后的奖励口径」，不是自动动作。
+    this.settleTimeTheoremReward();
+
     if (!this.active) return { dims: false, tt: false, studies: 0, dilation: 0, ec: false };
-    const dims = this.buyTimeDimensions();
-    // 先播种时间维度，再买一次性增益，最后将剩余资源交给时间之理。
+    // [R96] 顺序修正：TD1 已买时**先买永恒升级**（乘数优先），再考虑时间维度；
+    // TD1 尚未存在时只能先播种它（升级商店前置）。旧顺序先放行全部 TD，
+    // 会把刚够升级的 EP 花掉（审查指出的 P1）。
     const upgrades = this.buyEternityUpgrades();
+    const dims = this.buyTimeDimensions();
     const tt = this.buyTimeTheorems();
     this._frame++;
     let studies = 0;

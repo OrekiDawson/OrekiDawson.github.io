@@ -42,6 +42,17 @@ import { PlayerProgress } from "./player-progress.js";
 const STUDY_TICK_INTERVAL = 30;
 
 /**
+ * [R96] 永恒升级 EP 预留的「遥不可及」判定（数量级差）。
+ *
+ * 原版真实成本序列：5 → 10 → 5e4 → 1e16（`eternity-upgrades.js`）。
+ *   · 第一档：刚进永恒层 EP 常低到 0.3~0.5，与 5 EP 差 1.0~1.2 个数量级；
+ *     阈值若取 1.0（10 倍）会被误判成遥不可及而放弃预留 ⇒ TD1 把 EP 吃干。
+ *   · 第三档 5e4：阈值若放大到 6（1e6 倍），EP≈20 时就会为它预留 ⇒ TD 被长期锁死。
+ * 取 2.0（100 倍）：第一档能预留，第三档在 EP≈20 时正确跳过。
+ */
+const RESERVE_REACHABLE_LOG10 = 2.0;
+
+/**
  * 普通时间研究 id 列表：直接从数据库取，不再手写区间。
  *
  * [Oreki R25] 原来手写的是「11~73 + 每组 x01~x03」，漏掉了所有 x04：214 / 224 / 234
@@ -153,8 +164,48 @@ export const OrekiEternityAutomation = {
    * 这里按 `isUnlocked` 自己判定（8→1 顺序，高级维度对 DD 的加成最大），
    * 只买得起才买，成本与扣费全走原版 `buyMaxTimeDimension`。
    */
+  /**
+   * [R96] 当前应保留的 EP（Decimal）；null 表示无需预留、EP 可自由花。
+   *
+   * 为什么需要：实测 Android 侧 `bigE=8、EP=0、eupBits=0`，34 分钟一次永恒升级都没买到 ——
+   * 时间维度 TD1（成本 1/3/9/27…）每次永恒重置后立刻把个位数 EP 吃干。
+   * 永恒升级给的是**乘数**（idMultEP / idMultEternities / tdMultAchs…），
+   * TD 给的是**层数**，早期乘数收益远高于多买一层 TD。
+   *
+   * 预留量 = 「尚未购买的永恒升级里最便宜那一项」的**真实成本**（`EternityUpgrade.cost`
+   * 来自原版 config，不是常量），因此买到一档后自动抬到下一档；
+   * 全部买完或最便宜项遥不可及时返回 null（死锁保护）。
+   */
+  eternityUpgradeReserve() {
+    if (Currency.eternities.value.lt(1)) return null;
+    let cheapest = null;
+    for (const upgrade of EternityUpgrade.all) {
+      if (upgrade.isBought) continue;
+      const cost = upgrade.cost;
+      if (cost === null || cost === undefined) continue;
+      if (cheapest === null || cost.lt(cheapest)) cheapest = cost;
+    }
+    if (cheapest === null) return null;
+    const ep = Currency.eternityPoints.value;
+    if (ep.lte(0)) return cheapest;
+    if (cheapest.log10() - ep.log10() > RESERVE_REACHABLE_LOG10) return null;
+    return cheapest;
+  },
+
+  /** EP 是否已超出预留区（可自由花）。 */
+  isEternityPointsBeyondReserve() {
+    const reserve = this.eternityUpgradeReserve();
+    if (reserve === null) return true;
+    return Currency.eternityPoints.value.gte(reserve);
+  },
+
   buyTimeDimensions() {
     try {
+      // [R96] EP 预留闸门：余额仍处在「为下一项永恒升级预留」的区间内时，
+      // 本轮不买时间维度，否则 TD1 会把 EP 吃干、永恒升级永远买不起。
+      // 注：闸门是「EP ≥ 预留量」而非「EP ≥ 预留量 + 成本」，
+      // 所以 EP 一到 5 就会先买 TD1（首层需要它解锁商店），随后余额正好够买升级。
+      if (!this.isEternityPointsBeyondReserve()) return false;
       let bought = false;
       for (let tier = 8; tier >= 1; tier--) {
         const td = TimeDimension(tier);

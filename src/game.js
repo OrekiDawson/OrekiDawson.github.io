@@ -4,6 +4,7 @@ import { ElectronRuntime, SteamRuntime } from "./steam/index.js";
 
 import { DC } from "./core/constants.js";
 import { tryInstantCompleteChallenges } from "./core/oreki-instant-challenges.js";
+import { OrekiManagedCrunchInterval } from "./core/oreki-managed-crunch-interval.js";
 import { tryBuyBreakInfinityUpgrades } from "./core/oreki-autobuy-break-infinity.js";
 import { OrekiBreakInfinityGate } from "./core/oreki-break-infinity-gate.js";
 import { OrekiEarlyAutomation } from "./core/oreki-early-automation.js";
@@ -1079,6 +1080,16 @@ export function gameLoop(passDiff, options = {}) {
   // 边界：只调尝试顺序，不放宽间隔、不多放动作；窗口一结束立即回落到默认顺序。
   // 判定全部读原版真实状态（已 Break / 未解锁永恒 / ID1 仍锁定 / IP 已达门槛），
   // 与 `InfinityDimension(1).canUnlock` 的 IP 分支同源，不写死数字、不改存档。
+  // ── [R96 第三十四轮] 大坍缩「受管节拍」配置优化（**不**进 runCycle）───────────────
+  // 归属 §80.2 / §81：这是目标驱动型智能自动购买器的受管参数，必须独立于
+  // MOD 全局 1～60 秒行动节拍；原版 `Autobuyers.tick()` 仍按自身间隔自行购买/坍缩。
+  // 每帧调用一次即可：内部读实际值、相等不写、玩家手改则让路并在下一策略 tick 恢复。
+  try {
+    OrekiManagedCrunchInterval.applyFromPolicy();
+  } catch (e) {
+    // 不能让配置优化异常打断主循环
+  }
+
   OrekiSmartExecutor.setPriorityHint(shouldPrioritizeEarlyForId1() ? "early" : "");
   const orekiCycle = OrekiSmartExecutor.runCycle([    // id            priority  action                                  类别
     // 顺序即优先级（数字越小越先）。

@@ -779,6 +779,27 @@ export const OrekiEternityAutomation = {
     }
   },
 
+  /**
+   * [R97 P0 对齐 Android] 同帧大坍缩观测：用 `Currency.infinities` 的整数令牌变化
+   * 识别「刚刚发生过一次大坍缩」，并只跳过该帧一次。Android 侧对应
+   * `detectResetGenerations()` + `crunchSkipFrames`；Web 长期缺失此保护，
+   * 会出现「大坍缩后同帧立刻永恒」。
+   */
+  _justCrunchedFrame() {
+    try {
+      const now = Currency.infinities.value.toNumber();
+      if (!Number.isFinite(now)) return false;
+      const prev = this._lastInfinitiesToken;
+      this._lastInfinitiesToken = now;
+      if (prev === undefined || prev === null) return false;
+      if (now > prev) { this._crunchSkipFrames = 1; return true; }
+      if (this._crunchSkipFrames > 0) { this._crunchSkipFrames -= 1; return true; }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  },
+
   tickEternity() {
     try {
       if (!this.active) return false;
@@ -787,6 +808,16 @@ export const OrekiEternityAutomation = {
       try {
         if (globalThis.OrekiIu15Sprint?.freezeResets === true) return false;
       } catch (e) { /* 读取失败不改变既有行为 */ }
+      // [R97 P0 对齐 Android] 真实 Break 前置：未打破无限不得进入永恒。
+      // Android 侧同序门禁为 automation-off → doomed → not-broken → same-frame-crunch
+      // → cannot-eternity → ep-gain-too-low；此处补上 Web 长期缺失的两条。
+      // 依据：`oreki-smart-executor.js:470` 明确 `player.break === true` 对应
+      // Android 的 `GameApi.isBroken()`（同源于原版真实存档字段）。此前误写
+      // 不存在的 `PlayerProgress.breakInfinityUnlocked()` 会永久阻断永恒，已修正。
+      if (player.break !== true) return false;
+      // [R97 P0 对齐 Android] 同帧大坍缩保护：原版自动购买器在同一 tick 内于本函数
+      // **之后**执行大坍缩，因此「刚观测到坍缩」的这一帧必须先跳过，下一帧再判定。
+      if (this._justCrunchedFrame()) return false;
       if (!Player.canEternity) return false;
       // [Oreki R26] 现实升级 10「生存延续」的解锁条件是
       //   `Currency.infinityPoints.exponent >= 400 && player.requirementChecks.reality.noEternities`

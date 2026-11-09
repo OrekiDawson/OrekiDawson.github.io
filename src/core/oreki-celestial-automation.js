@@ -5,7 +5,7 @@
 //    `timePoured += diff`，公式 `(poured+1e6)*0.01*timePoured²`）。全仓**唯一调用点**
 //    是 `TeresaTab.js` 的「按住」按钮——纯 UI 驱动。不自动化则 `pouredAmount` 永远 0，
 //    于是 `TeresaUnlocks.effarig`（鹿颈长解锁位）永远不亮 → 整条天神链（鹿颈长/无名氏/
-//    V/Ra/莱特拉/Pelle）全断。
+//    V/Ra/莱特拉/佩勒）全断。
 // 2. 天神 run 入口 `X.initializeRun()`（teresa.js:28、effarig.js:17、enslaved.js:148、
 //    v.js:182）全仓唯一调用点是 `EnterCelestialsModal.js:81-86`（6 个天神）。不自动化
 //    则天神现实永远进不去。
@@ -698,7 +698,7 @@ export const OrekiCelestialAutomation = {
       // 3.5) [Oreki R30] 买鹿颈长解锁位（遗迹碎片，按 cost 升序）。
       //      `run`（5e11）是进入鹿颈长现实的入场券，必须在第 4 步之前买到。
       //      买不起就跳过；`infinity / eternity / reality` 三个阶段位不在购买列表里，
-      //      只能由真实的 Big Crunch / Eternity / Reality 触发。
+      //      只能由真实的大坍缩 / 永恒 / 现实触发。
       try {
         result.unlocks = this.buyEffarigUnlocks();
       } catch (e) { /* 单点异常不击穿主循环 */ }

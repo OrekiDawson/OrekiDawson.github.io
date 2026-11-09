@@ -5,6 +5,8 @@ import { ElectronRuntime, SteamRuntime } from "./steam/index.js";
 import { DC } from "./core/constants.js";
 import { tryInstantCompleteChallenges } from "./core/oreki-instant-challenges.js";
 import { OrekiManagedCrunchInterval } from "./core/oreki-managed-crunch-interval.js";
+import { OrekiCrunchPolicy } from "./core/oreki-crunch-policy.js";
+import * as OrekiManagedAutobuyerState from "./core/oreki-managed-autobuyer-state.js";
 import { tryBuyBreakInfinityUpgrades } from "./core/oreki-autobuy-break-infinity.js";
 import { OrekiBreakInfinityGate } from "./core/oreki-break-infinity-gate.js";
 import { OrekiEarlyAutomation } from "./core/oreki-early-automation.js";
@@ -183,7 +185,7 @@ export function gainedInfinityPoints() {
     // 做法：把顶抬到 DC.E1E6（与仓库内 `Effarig.eternityCap ?? DC.E1E6` 同一口径，等价于不设顶），
     // 让 `maxAM` 的真实换算结果（实测 1e1101657 反物质 → 约 1e36721 IP）直接入场。
     // 边界：只在**鹿颈长阶段 2**生效；不改 IP 公式、不改 `Player.eternityGoal`、
-    // 不写任何阶段标志，Eternity 仍必须真实达成并由 `eternity.js:58` 真实解锁。
+    // 不写任何阶段标志，永恒仍必须真实达成并由 `eternity.js:58` 真实解锁。
     ip = ip.min(DC.E1E6);
   }
   ip = ip.times(GameCache.totalIPMult.value);
@@ -585,9 +587,9 @@ export function gainedEternityPoints() {
   // 原版：EP = 5^(maxIP.log10()/308 - 0.7) × totalEPMult。
   // Reality 的第 7 时间研究需要 1e4000 EP，反解需要 maxIP ≈ 1e1.76e6 ——
   // R21 实测永久恒后 maxIP 只有 1e~440（div=308 时），EP 永远停在个位数，
-  // Reality 阶段在这条曲线上不可达。
-  // 做法：Reality 解锁之前把换算尺度从 308 收到 30（与 AD8 的 IP 尺度一致），
-  // Reality 之后恢复原版 308。同样是数值平衡改动，不伪造解锁标志。
+  // 现实阶段在这条曲线上不可达。
+  // 做法：现实解锁之前把换算尺度从 308 收到 30（与 AD8 的 IP 尺度一致），
+  // 现实之后恢复原版 308。同样是数值平衡改动，不伪造解锁标志。
   const epDivisor = isOrekiBootstrapRun() ? OREKI_PRE_REALITY_EP_DIVISOR : 308;
   let ep = DC.D5.pow(player.records.thisEternity.maxIP.plus(
     gainedInfinityPoints()).log10() / (epDivisor - PelleRifts.recursion.effectValue.toNumber()) - 0.7).times(totalEPMult());
@@ -1084,13 +1086,50 @@ export function gameLoop(passDiff, options = {}) {
   // 归属 §80.2 / §81：这是目标驱动型智能自动购买器的受管参数，必须独立于
   // MOD 全局 1～60 秒行动节拍；原版 `Autobuyers.tick()` 仍按自身间隔自行购买/坍缩。
   // 每帧调用一次即可：内部读实际值、相等不写、玩家手改则让路并在下一策略 tick 恢复。
+  //
+  // ── [R97] 受托管原版自动器「启用状态」统一管理（同样**不**进 runCycle）───────────
+  // 与受管间隔同属目标驱动型智能自动购买器的配置优化路径：每帧读真实 isActive，
+  // 玩家刚关只登记、下一策略 tick 恢复一次；两个总开关任一关闭即整体不接管。
+  // `OrekiCrunchPolicy.decide()` 内部会推进等待计时，**本帧只算一次**并同时喂给
+  // 受管间隔与受管启用状态，避免 R96 已记录的 same-tick resume/pause 互相覆盖。
+  let orekiCrunchDecision = null;
   try {
-    OrekiManagedCrunchInterval.applyFromPolicy();
+    orekiCrunchDecision = OrekiCrunchPolicy.decide();
+  } catch (e) {
+    orekiCrunchDecision = null;
+  }
+  try {
+    OrekiManagedCrunchInterval.applyFromPolicy(orekiCrunchDecision);
   } catch (e) {
     // 不能让配置优化异常打断主循环
   }
+  try {
+    OrekiManagedAutobuyerState.applyAll({
+      wantCrunch: orekiCrunchDecision ? orekiCrunchDecision.allow === true : false,
+      autobuyers: Autobuyer,
+    });
+  } catch (e) {
+    // 同上：自动器启用状态维护失败时保持原状，不影响主循环
+  }
 
   OrekiSmartExecutor.setPriorityHint(shouldPrioritizeEarlyForId1() ? "early" : "");
+  // ── [R97 P0] 永恒层阶段门禁（与 Android `OrekiStageAuto.onAutoBuyerTick()` 逐条等价）──
+  //
+  // 真机根因（Android 4bf947f）：首次无限后、打破无限未完成时就被驱动了
+  // 「买永恒升级 + 原版 `Eternity.tick()` + EC 推进」，导致提前点亮时间研究并卡死。
+  // 这里用**原版真实 Break 状态**（`player.break`，不是自造标志）做同一道闸门：
+  //   · 未首次无限（`PlayerProgress.infinityUnlocked()` 为假）→ 不动作；
+  //   · 已首次无限但 Break=false → 不买永恒升级、不跑永恒 tick、不推进 EC；
+  //   · Break=true → 原路径照常，**不反向阻断首次永恒**（首次永恒本就以 Break 为前提）。
+  // 判据只有一份实现：`OrekiSmartExecutor.eternityStageAllowed()`；执行层兜底路径
+  // （`invoke()` 里的 eternity verbs）用同一个函数，不会从别处绕回来越阶段。
+  // 注意：这只是「何时允许驱动」，不放宽任何节拍、不写任何存档字段。
+  const orekiEternityTick = () => (OrekiSmartExecutor.eternityStageAllowed()
+    ? OrekiEternityAutomation.tick()
+    : false);
+  const orekiEternityResetTick = () => (OrekiSmartExecutor.eternityStageAllowed()
+    ? OrekiEternityAutomation.tickEternity()
+    : false);
   const orekiCycle = OrekiSmartExecutor.runCycle([    // id            priority  action                                  类别
     // 顺序即优先级（数字越小越先）。
     // `"cont"` = 连续购买路径（原版自动购买器等价物）：默认档不受节拍约束（否则首无限前停摆，
@@ -1100,8 +1139,8 @@ export function gameLoop(passDiff, options = {}) {
     // 离散决策：守节拍（两种模式都受限）
     ["breakUpgrades", 5, () => tryBuyBreakInfinityUpgrades()],
     ["breakGate", 6, () => tryOpenBreakInfinityGate()],
-    ["eternity", 30, () => OrekiEternityAutomation.tick(), "cont"],
-    ["eternityReset", 31, () => OrekiEternityAutomation.tickEternity(), "cont"],
+    ["eternity", 30, orekiEternityTick, "cont"],
+    ["eternityReset", 31, orekiEternityResetTick, "cont"],
     ["reality", 40, () => OrekiRealityAutomation.tick()],
     ["celestial", 50, () => OrekiCelestialAutomation.tick()],
     ["perk", 60, () => OrekiPerkAutomation.tick()],

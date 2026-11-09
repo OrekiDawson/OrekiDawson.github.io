@@ -172,7 +172,7 @@ export const OrekiPerkAutomation = {
 
     let target = targets[0] || null;
     if (!target) {
-      // 自动机节点买完（或全被 Pelle 屏蔽）：买离最近自动机节点最近的相邻节点。
+      // 自动机节点买完（或全被佩勒屏蔽）：买离最近自动机节点最近的相邻节点。
       const remaining = unbought
         .filter(p => (p.automatorPoints || 0) === 0)
         .sort((a, b) => dist.get(a.id) - dist.get(b.id) || a.id - b.id);

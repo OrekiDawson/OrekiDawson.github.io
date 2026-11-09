@@ -1,4 +1,4 @@
-// [Oreki R26] Reality 层自动化：首次现实 → 现实循环 → 现实升级 / 符文装备
+// [Oreki R26] 现实层自动化：首次现实 → 现实循环 → 现实升级 / 符文装备
 //
 // ── 为什么需要（R26 实测）────────────────────────────────────────────
 // R25 已能真实满足 `maxEP.exponent >= 4000 && TimeStudy.reality.isBought`，但**没有人按下
@@ -19,7 +19,7 @@
 // 是原版自动现实用的同一条带奖励路径，不需要 RealityUpgrade(25)。
 //
 // ── 边界 ─────────────────────────────────────────────────────────────
-// · 受「自动购买器总开关」控制；毁灭现实（Pelle）与天神现实中不生效。
+// · 受「自动购买器总开关」控制；毁灭现实（佩勒）与天神现实中不生效。
 // · 只在 `isRealityAvailable()` 为真时动手，不伪造 EP / 不伪造时间研究。
 // · 现实重置会清空 EC 完成记录（reality.js:651）与时间研究，所以现实后必须靠
 //   oreki-eternity-automation 再把 EC 1~12 打回 5 次 —— 那条链的 `active` 已放开到现实之后。
@@ -66,7 +66,7 @@ export const OrekiRealityAutomation = {
       if (Pelle.isDoomed) return false;
       // [Oreki R27] 允许在天神现实（teresa/effarig/enslaved/v 等）中继续现实：
       // 进入天神 run 后需要一次「带奖励」的现实来结算该 run（拿奖励并清 run），
-      // 否则会永久卡在天神削弱态、现实循环停摆。Pelle 有独立的毁灭现实流程，仍禁用。
+      // 否则会永久卡在天神削弱态、现实循环停摆。佩勒有独立的毁灭现实流程，仍禁用。
       // 符文选择弹窗打开时不重置，否则会打断玩家的选择
       if (GlyphSelection.active) return false;
       return true;
@@ -651,7 +651,7 @@ export const OrekiRealityAutomation = {
 
     // [R59] 现实刚发生的那一帧，立刻补装符文，不等下一个 %30 窗口。
     //
-    // 事实：一次 Reality 会把 `Glyphs.active` 全部清空（符文进仓库），
+    // 事实：一次现实会把 `Glyphs.active` 全部清空（符文进仓库），
     // 而上面那条 `_frame % 30` 最多要等 29 帧才回补。空槽 = 零符文收益，
     // 而现实后产量正是从零起步的那一段，白等 0.5 s 在 3 小时口径下是纯粹损失。
     // 这里只在 `reality === true`（本帧真的重置过）时补一次，不是每帧多跑一趟。

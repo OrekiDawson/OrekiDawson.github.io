@@ -1,7 +1,7 @@
-// [Oreki AD10] Eternity 阶段的通路自动化：时间维度 → 时间定理 → 时间研究
+// [Oreki AD10] 永恒阶段的通路自动化：时间维度 → 时间定理 → 时间研究
 //
 // ── 为什么需要（R21 实测 + 源码逐行核对）────────────────────────────
-// 首次永恒只需 15 秒（AD4～AD9 已解决），但 Reality 一直不可达。真实原因链：
+// 首次永恒只需 15 秒（AD4～AD9 已解决），但现实一直不可达。真实原因链：
 //   1. `isRealityAvailable()`（src/core/reality.js:119）要求
 //        `player.records.thisReality.maxEP.exponent >= 4000` **且** `TimeStudy.reality.isBought`
 //      EP 早已满足（实测 1e694437），所以唯一闸门是那个时间研究。
@@ -15,7 +15,7 @@
 //   4. 而时间维度 1~4 的解锁条件是 `this._tier < 5`（src/core/dimensions/time-dimension.js:186），
 //      只要花 EP 就能买；到 5~8 才需要时间研究。
 //
-// 也就是说，从「已经能无限次永恒」到「Reality」之间，玩家必须手动完成一连串
+// 也就是说，从「已经能无限次永恒」到「现实」之间，玩家必须手动完成一连串
 // 机械操作：买时间维度 → 用 EP 买几百上千次 TT → 逐个点亮时间研究。
 // 10000× 速度下这套点击根本跟不上，进度就死在这里（实测 EP 涨到 1e694437 却
 // 一个时间研究都没买上）。
@@ -29,10 +29,10 @@
 //    为了控制开销，这一项每 30 帧才跑一轮。
 //
 // ── 边界 ─────────────────────────────────────────────────────────────
-// · 只在 `!PlayerProgress.realityUnlocked()` 时生效；Reality 之后完全交给原版后期内容。
+// · 只在 `!PlayerProgress.realityUnlocked()` 时生效；现实之后完全交给原版后期内容。
 // · 受玩家既有的「自动购买器」总开关控制，关掉即完全停止。
 // · 任意挑战中、毁灭现实中不生效（避免干扰挑战内的资源约束）。
-// · 不伪造解锁标志、不写历史记录、不跳阶段；Reality 仍须真实满足
+// · 不伪造解锁标志、不写历史记录、不跳阶段；现实仍须真实满足
 //   `maxEP.exponent >= 4000 && TimeStudy.reality.isBought`。
 // · 不碰 `gainedInfinityPoints` / `gainedEternityPoints` 的公式。
 
@@ -158,7 +158,7 @@ export const OrekiEternityAutomation = {
       // ── 为什么放开是安全的 ──────────────────────────────────────────
       // 天神现实里本模块买的仍然是**原版允许买的东西**（时间维度 / TT / 时间研究 /
       // 膨胀研究），全部走 `purchase()` 系列真实路径、真实扣费、真实前置判定；
-      // 买不上就返回 false，不存在伪造。Pelle 毁灭态仍由下面的 `Pelle.isDoomed` 排除。
+      // 买不上就返回 false，不存在伪造。佩勒毁灭态仍由下面的 `Pelle.isDoomed` 排除。
       // 唯一的变化是：不再因为「处于天神 run」而整套停摆。
       if (!player.auto.autobuyersOn) return false;
       if (NormalChallenge.isRunning || InfinityChallenge.isRunning || EternityChallenge.isRunning) return false;

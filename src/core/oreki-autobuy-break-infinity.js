@@ -1,4 +1,4 @@
-// [Oreki AU6 · R65 重写] Break Infinity 升级自动购买
+// [Oreki AU6 · R65 重写] 打破无限升级自动购买
 //
 // [Oreki R87] 引入 `OrekiEarlyAutomation` 的同一份 ID1 预留判据（见下方「二·补」）。
 // 该模块由 `game.js` 同时加载，不构成循环依赖。

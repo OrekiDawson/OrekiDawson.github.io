@@ -65,12 +65,31 @@ const GAIN_WAIT_LIMIT_MS = 180000;
 const ETERNITY_GROW_WAIT_LIMIT_MS = 600000;
 
 /**
- * 永恒层周期结算间隔：30 秒
- * （与 Android `ETERNITY_CYCLE_NS` 的 30000 ms 一致）。
- * 坍缩产出 IP 是无限维度购买链的燃料；完全按住会让 ID 等级停摆、maxAM 增长
- * 从持续结算的 327~755 指数/分钟掉到 ~87 指数/分钟。每 30 秒强制结算一次。
+ * [R99] 永恒层「成长窗口」自适应起点（毫秒），与 Android
+ * `OrekiCrunchPolicy.ETERNITY_GROW_START_SECONDS` 的 60000 ms 一致。
+ *
+ * 实测缺陷（R99 接手存档 bigE=1 / EP=6 / IP≈6.5e157）：固定 30 秒窗口下
+ * `thisInfinity.maxAM` 只能长到 e24321 就被清空，单次坍缩收益恒定
+ * ⇒ `thisEternity.maxIP` 永久停在 6.4e157，而第 2 次永恒要求 1.797e308。
+ * 窗口必须随「没长起来」而扩张：60→120→240→480→960→1800 秒，
+ * 某次结算让 IP 翻倍以上就回落到起点。
  */
-const ETERNITY_CYCLE_MS = 30000;
+const ETERNITY_GROW_START_MS = 60000;
+
+/** 成长窗口上限（毫秒）：30 分钟，与 Android `ETERNITY_GROW_MAX_SECONDS=1800` 一致。 */
+const ETERNITY_GROW_MAX_MS = 1800000;
+
+/** IP 翻倍判据（log10(2)）。 */
+const IP_DOUBLE_LOG10 = 0.3010299956639812;
+
+/** 当前成长窗口（毫秒）；跨帧保留，成功跃升后回落起点。 */
+let eternityGrowMs = ETERNITY_GROW_START_MS;
+
+/** 上一次窗口结算时的 IP log10；用于判断这一窗口是否值得。 */
+let lastCycleIpLog10 = null;
+
+/** [R99] 当前永恒层成长窗口（毫秒），供托管间隔写入方使用。 */
+export function eternityWaitMs() { return eternityGrowMs; }
 
 /** 上一次打印的决策（只用于节流日志：状态翻转才打印）。 */
 let lastKey = null;
@@ -136,16 +155,27 @@ export class OrekiCrunchPolicy {
       if (leapEternity !== null && leapEternity >= 1) {
         // 收益够一个数量级：立刻结算，并把周期计时重新起算（与 Android 同序）。
         lastEternityCycleAt = monotonicNowMs();
+        // [R99] 真正的大跃升：窗口回落到起点，重新按需扩张。
+        if (eternityGrowMs > ETERNITY_GROW_START_MS) eternityGrowMs = ETERNITY_GROW_START_MS;
         return { allow: true, reason: "eternity-ip-jump" };
       }
-      // 周期结算：每 30 秒墙钟放行一次。
-      // 实测对比（同一存档）：纯等待时 maxAM 指数只有 ~87/min，而持续结算时
-      // 327~755/min —— 坍缩产出的 IP 是「无限维度」购买链的燃料，完全按住会让
-      // ID 等级停摆。30 秒一次既保留「不要每帧坍缩」的初衷，又保证 IP→ID 链不断。
+      // [R99] 自适应成长窗口（替代固定 30 秒周期）：固定窗口会让反物质每次都在
+      // 同一量级被清空 ⇒ 单次坍缩收益恒定 ⇒ maxIP 永远到不了 1.797e308。
       const now = monotonicNowMs();
       if (lastEternityCycleAt === null) lastEternityCycleAt = now;
-      if (now - lastEternityCycleAt >= ETERNITY_CYCLE_MS) {
+      if (now - lastEternityCycleAt >= eternityGrowMs) {
+        const ipNow = Player.infinityPoints;
+        const ipLog = (ipNow === undefined || ipNow === null) ? null : ipNow.log10();
+        const previous = lastCycleIpLog10;
+        lastCycleIpLog10 = ipLog;
         lastEternityCycleAt = now;
+        const doubled = previous !== null && ipLog !== null && (ipLog - previous) >= IP_DOUBLE_LOG10;
+        if (doubled) {
+          if (eternityGrowMs > ETERNITY_GROW_START_MS) eternityGrowMs = ETERNITY_GROW_START_MS;
+        } else if (eternityGrowMs < ETERNITY_GROW_MAX_MS) {
+          eternityGrowMs = Math.min(eternityGrowMs * 2, ETERNITY_GROW_MAX_MS);
+        }
+        console.info(`[${TAG}] eternity window settle ipLog=${ipLog} prev=${previous} doubled=${doubled} next=${eternityGrowMs}ms`);
         return { allow: true, reason: "eternity-cycle" };
       }
       return this.waitWithin("eternity-grow", ETERNITY_GROW_WAIT_LIMIT_MS);

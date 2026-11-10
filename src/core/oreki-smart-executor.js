@@ -457,12 +457,58 @@ function observe(source, result) {
   return acted;
 }
 
+/**
+ * [R97 P0 阶段越界] 永恒层阶段门禁：**必须先完成首次无限，再真正 Break Infinity**。
+ *
+ * 与 Android `OrekiStageAuto.onAutoBuyerTick()` 的两道前置逐条等价
+ * （提交 4bf947f）：
+ *   ```
+ *   if (!GameApi.hasInfinity()) { enableEarly(); return }   // ① 还没首次无限
+ *   if (!GameApi.isBroken()) return                          // ② 首次无限后、Break 未完成
+ *   ```
+ * 本函数同时承担这两条：`PlayerProgress.infinityUnlocked()` 对应 `hasInfinity()`，
+ * `player.break === true` 对应 `GameApi.isBroken()`（同一来源：原版真实存档字段
+ * `player.break`，不是自造标志、不写任何存档）。
+ *
+ * 为什么 Web 端必须在这里也守一道（而不是只守 `game.js` 的任务队列）：
+ * 任务队列被门禁挡住时，`runCycle()` 会把 `eternity` 记成 no-op 喂给 `observe()`，
+ * 连续 3 帧后 `sourceReady("eternity")` 成立，本文件下面 `invoke()` 的兜底路径就会
+ * 「替模块动手」—— 直接调 `buyEternityUpgrades` / `tickEternity` / `buyTimeTheorems`。
+ * 只守队列等于给兜底留了一条绕过门禁的路。这里与 Android 给 `OrekiEcAutomation.runOnce()`
+ * 加同源保护是同一个思路：纵深防御，不依赖调用方守规矩。
+ *
+ * 极性（双向验证见 `scripts/check_stage_gate.mjs`）：
+ *   · 未首次无限（hasInfinity=false）→ false，任何永恒动作都不许发；
+ *   · 已首次无限、Break=false（含永恒/现实重置后原版把 break 置回 false 的正常路径）→ false；
+ *   · 已首次无限、Break=true → true，原路径照常，**不反向阻断首次永恒**
+ *     （首次永恒本来就以 Break 完成为前提：`Player.canEternity` 要求 IP ≥ 1.797e308，
+ *      而 Break 前每次坍缩只能拿固定小额 IP）。
+ *
+ * @returns {boolean} true = 允许驱动永恒层自动化
+ */
+function eternityStageAllowed() {
+  try {
+    if (typeof player === "undefined" || !player) return false;
+    if (typeof PlayerProgress === "undefined" || !PlayerProgress) return false;
+    if (typeof PlayerProgress.infinityUnlocked !== "function") return false;
+    return PlayerProgress.infinityUnlocked() === true && player.break === true;
+  } catch (e) {
+    // 判据取不到一律按「不许动」处理（fail-closed），并把原因留给面板
+    STATE.lastError = `eternityStageAllowed: ${(e && e.message) || e}`;
+    return false;
+  }
+}
+
 /** 执行一个 verb。返回 {acted, detail}。只走已注册的阶段模块 / 例程。 */
 function invoke(verbId, spec) {
   const now = Date.now();
   try {
     const target = REGISTRY.get(spec.source);
     if (target === undefined) return { acted: false, detail: "未注册" };
+    // [R97 P0] 永恒层动作（买永恒升级 / 买时间之理 / 永恒重置）统一过阶段门禁。
+    if (spec.source === "eternity" && !eternityStageAllowed()) {
+      return { acted: false, detail: "阶段门禁：尚未完成 Break Infinity" };
+    }
     STATE.attemptCount++;
     STATE.lastActionBySource[spec.source] = now;
     if (typeof target === "function") {
@@ -1279,6 +1325,11 @@ function debugState() {
     lastConflict: STATE.lastConflict,
     threshold: IDLE_FRAMES_BEFORE_ACT,
     registered: [...REGISTRY.keys()],
+    /**
+     * [R97 P0] 永恒层阶段门禁当前值（只读，供面板/探针核对）。
+     * 写面板时不要把 false 解释成「卡住」：未 Break 时它本来就该是 false。
+     */
+    eternityStageAllowed: eternityStageAllowed(),
   };
 }
 
@@ -1294,6 +1345,11 @@ export const OrekiSmartExecutor = {
   debugState,
   /** [Oreki R50 web · 九修] 统一调度入口：阶段模块的动作排同一条队 */
   runCycle,
+  /**
+   * [R97 P0] 阶段门禁判据（唯一实现）。`game.js` 的任务队列与 `invoke()` 兜底路径
+   * 共用它，避免两处各写一份 `player.break` 判断而漂移。
+   */
+  eternityStageAllowed,
   get enabled() {
     return STATE.enabled;
   },

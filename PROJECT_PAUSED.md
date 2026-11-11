@@ -4,7 +4,7 @@
 - 项目状态：PAUSED（随 AD Mod 项目一并暂停；本仓库是 Web 部署副本，不是源码源）
 - 当前轮次：R101（未宣称完成）
 - 封存前 HEAD：bdb9db030861beb62209fbb1fa62e95a82cdf63d
-- 封存提交：本文件所在提交（`chore: 封存当前开发成果，暂停项目开发`）
+- 封存提交：`251d7d6d71050295736268b96ecf91cc3dfaa810`（2026-11-11 首次封存）；本文件已在同日规则重建提交中更新。
 - 分支 / 远程：main → <https://github.com/OrekiDawson/OrekiDawson.github.io.git>
 
 ## 当前开发状态
@@ -32,7 +32,7 @@
 ## 未来恢复方式
 
 1. `git checkout main && git pull --ff-only`
-2. 先读 Web 源码仓库的 `README.md`、`docs/RULES_INDEX.md`、`docs/FACTS.md`；本仓库不作为源码入口。
+2. 先读 Web 源码仓库的 `README.md`、`AGENTS.md`、`docs/FACTS.md`；本仓库不作为源码入口。
 3. 从 Web 源码重新同步部署副本，按 `web/_deploy` 现有流程发布并验证 `https://oreki.net` 可访问。
-4. 恢复开发时重新设计极简开发规则；现有规则、历史报告与证据原样保留。
+4. 恢复开发按新 `AGENTS.md` 执行；旧规则只在 `archive/rules-pre-reset-2026-11-11/` 追溯，不自动恢复效力。
 5. 本封存提交不代表线上已更新，也不构成稳定版声明。

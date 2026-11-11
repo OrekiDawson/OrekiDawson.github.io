@@ -49,7 +49,8 @@ node serve.mjs 8080
 
 ## 6. 规则、许可证与安全
 
-- Web 规则入口：[Web 规则索引](../../AD-Oreki-Edition/docs/RULES_INDEX.md)
+- Web 规则入口：[Web AGENTS.md](../../AD-Oreki-Edition/AGENTS.md)
+- 当前部署规则：[AGENTS.md](AGENTS.md)
 - 上游来源：[NOTICE.md](NOTICE.md)
 - 许可证：[LICENSE](LICENSE) · [MOD-LICENSE](MOD-LICENSE)
 

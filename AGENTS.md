@@ -28,8 +28,10 @@
 - 部署或线上页面异常时，先自行检查部署提交、资源加载和浏览器控制台，再定位根因。
 - 授权范围内做最小修复并复验；无法验证时如实说明，不把未检查写成 PASS。
 
-## 5. Python 严格禁增
+## 5. Python 合理使用原则
 
-- 禁止新增或扩展任何 Python 文件、代码、依赖或工具链。
-- 现有 Python 只允许保留、删除、缩减、停用或迁移；部署与检查使用现有非 Python 工具。
-- 每轮检查 Python 禁增门禁，违反即 FAIL。
+- Python 可用于构建辅助、自动化测试、存档分析、调试及数据处理；优先复用现有工具，避免无必要的依赖和脚本膨胀。
+- Android 新增或修改的游戏业务逻辑仍必须使用 Kotlin；禁止新增 Java/Smali 游戏业务实现。Python 不得替代 Android Kotlin 业务代码。
+- 既有 Python 构建脚本允许必要的维护和 Bug 修复；迁移到 Gradle/Kotlin/Rust 应以实际收益和风险为依据，不强制为迁移而迁移。
+- GitHub 语言统计由 .gitattributes 的 Linguist 属性独立管理；只排除真实的生成或第三方内容，不伪装文件语言，不影响 Git 跟踪与构建。
+- 此规则取代 Python 严格禁增；旧版见 [归档](archive/rules-pre-reset-2026-11-11/python-strict-ban-2026-11-11.md)。

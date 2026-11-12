@@ -1,0 +1,85 @@
+name: Pages static file integrity
+
+'on':
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oreki-pages-source-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integrity:
+    name: CNAME, entrypoint and local assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require custom domain and known site entrypoints
+        run: |
+          set -euo pipefail
+          test -f .nojekyll
+          test -s index.html
+          test -s src/main.js
+          test -s public/icon.png
+          test -d modules
+          test -d public
+          test -d src
+          test -f CNAME
+          grep -Fxq 'oreki.net' CNAME
+      - name: Check local HTML links exist in the deployment tree
+        run: |
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          from urllib.parse import urlsplit, unquote
+          import sys
+
+          root = Path.cwd().resolve()
+
+          class Links(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.urls = []
+
+              def handle_starttag(self, tag, attrs):
+                  attrs = dict(attrs)
+                  if tag == "link" and attrs.get("href"):
+                      self.urls.append(attrs["href"])
+                  elif tag in {"script", "source", "img"} and attrs.get("src"):
+                      self.urls.append(attrs["src"])
+
+          parser = Links()
+          parser.feed(Path("index.html").read_text(encoding="utf-8"))
+          checked, missing = 0, []
+          for raw in parser.urls:
+              url = urlsplit(raw)
+              if url.scheme or url.netloc or not url.path:
+                  continue
+              path = unquote(url.path).lstrip("/")
+              asset = (root / path).resolve()
+              try:
+                  asset.relative_to(root)
+              except ValueError:
+                  missing.append(f"{raw}: path escapes site root")
+                  continue
+              checked += 1
+              if not asset.is_file():
+                  missing.append(f"{raw}: missing file")
+          if missing:
+              for item in missing:
+                  print("FAIL:", item)
+              sys.exit(1)
+          print(f"PASS: oreki.net static entrypoint references {checked} existing local assets")
+          PY
+      - name: State validation limits
+        run: |
+          echo "::notice::This is a static repository integrity check only. Live oreki.net and mobile Chromium gameplay still require separate verification."

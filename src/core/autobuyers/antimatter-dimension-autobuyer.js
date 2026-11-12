@@ -1,6 +1,5 @@
 import { DC } from "../constants.js";
 
-import { PlayerProgress } from "../player-progress.js";
 
 import { UpgradeableAutobuyerState } from "./autobuyer.js";
 
@@ -33,9 +32,12 @@ export class AntimatterDimensionAutobuyerState extends UpgradeableAutobuyerState
 
   get isUnlocked() {
     if (Pelle.isDisabled(`antimatterDimAutobuyer${this.tier}`)) return false;
-    // [Oreki AU2] 完成过首次无限后即解锁：开局仍然全手动，
-    // 第一次无限之后自动化接管重复购买。不写 isBought，不绕过任何成本。
-    return this.data.isBought || this.canBeUpgraded || PlayerProgress.infinityUnlocked();
+    // [Oreki AU2] 完成过首次无限后即解锁（历史实现）。
+    // [R100 P1] 方案 B：新档立即解锁反物质维度 1～8 自动购买器。
+    // 只放宽「解锁」判据，不写 isBought、不改挑战完成位/成就/资源/购买记录；
+    // 真实执行仍走原版 `Autobuyers.tick()` 与各自 interval、真实成本。
+    // `canBeUpgraded` 保留给「购买间隔升级」的界面与逻辑，不受本改动影响。
+    return true;
   }
 
   get isBought() {

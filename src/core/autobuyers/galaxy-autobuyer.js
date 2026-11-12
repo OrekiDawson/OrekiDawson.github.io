@@ -1,5 +1,4 @@
 import { UpgradeableAutobuyerState } from "./autobuyer.js";
-import { PlayerProgress } from "../player-progress.js";
 
 export class GalaxyAutobuyerState extends UpgradeableAutobuyerState {
   get data() {
@@ -12,8 +11,10 @@ export class GalaxyAutobuyerState extends UpgradeableAutobuyerState {
 
   get isUnlocked() {
     if (Pelle.isDisabled("galaxyAutobuyer")) return false;
-    // [Oreki AU3] 完成过首次无限后即可运行（与维度提升同一条规则）
-    return this.canBeUpgraded || PlayerProgress.infinityUnlocked();
+    // [Oreki AU3] 完成过首次无限后即可运行（历史实现，与维度提升同一条规则）。
+    // [R100 P1] 方案 B：新档立即解锁反物质星系自动购买器。
+    // 只放宽「解锁」判据，不写 isBought、不改挑战完成位/成就/资源/购买记录。
+    return true;
   }
 
   get canBeUpgraded() {

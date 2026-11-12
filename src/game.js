@@ -229,6 +229,11 @@ export function tryOpenBreakInfinityGate() {
   try {
     if (!player.break &&
       player.auto.autobuyersOn &&
+      // [R99 P0-B] 首次大坍缩后禁止立即自动 Break：与 Android
+      // OrekiStageAuto.MIN_INFINITIES_BEFORE_AUTO_BREAK 对齐，要求已完成至少 2 次大坍缩。
+      // 首次坍缩只进入 Infinity；必须再真实经历一轮完整无限循环（IP 积累、
+      // 无限升级购买、间隔升级）才允许自动化接管 Break。判据读真实计数，不用固定等待。
+      player.infinities.gte(2) &&
       Autobuyer.bigCrunch.hasMaxedInterval &&
       !NormalChallenge.isRunning && !InfinityChallenge.isRunning && !EternityChallenge.isRunning &&
       !Pelle.isDoomed) {

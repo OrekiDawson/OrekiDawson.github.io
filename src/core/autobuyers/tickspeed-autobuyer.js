@@ -1,6 +1,5 @@
 import { DC } from "../constants.js";
 
-import { PlayerProgress } from "../player-progress.js";
 
 import { UpgradeableAutobuyerState } from "./autobuyer.js";
 
@@ -15,8 +14,11 @@ export class TickspeedAutobuyerState extends UpgradeableAutobuyerState {
 
   get isUnlocked() {
     if (Pelle.isDisabled("tickspeedAutobuyer")) return false;
-    // [Oreki AU2] 完成过首次无限后即解锁（与维度自动购买器同一条规则）
-    return this.canBeUpgraded || PlayerProgress.infinityUnlocked();
+    // [Oreki AU2] 完成过首次无限后即解锁（历史实现）。
+    // [R100 P1] 方案 B：新档立即解锁计数频率自动购买器。
+    // 只放宽「解锁」判据，不写 isBought、不改挑战完成位/成就/资源/购买记录；
+    // 真实执行仍走原版 tick 与原版 interval，`canBeUpgraded` 仅用于间隔升级界面。
+    return true;
   }
 
   get canBeUpgraded() {

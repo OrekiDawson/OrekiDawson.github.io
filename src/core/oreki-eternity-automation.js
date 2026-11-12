@@ -37,6 +37,10 @@
 // · 不碰 `gainedInfinityPoints` / `gainedEternityPoints` 的公式。
 
 import { PlayerProgress } from "./player-progress.js";
+// [R101 P0] 原版「自动永恒」开关直接读存档数据 player.auto.eternity.isActive
+// （= Autobuyer.eternity.isActive 的 getter 数据源），避免为一行判据引入
+// autobuyers 模块的整条导入链（那会让 scripts/check_eternity_gate.mjs 这类
+// 纯 Node 回归脚本在 import 期就撞上浏览器全局 window）。
 
 /** 每多少帧跑一次「买时间研究」（233 次尝试比较重，不宜每帧跑） */
 const STUDY_TICK_INTERVAL = 30;
@@ -666,6 +670,17 @@ export const OrekiEternityAutomation = {
         respecTimeStudies(true);
         return false;
       }
+      // [R101 P0 对齐 Android] 原版「进入永恒挑战」在 Player.canEternity 为真时
+      // 会先执行一次真实永恒（eternity-challenge.js:209
+      // `if (Player.canEternity) eternity(false, auto, { enteringEC: true })`）。
+      // 因此 autoEternity 关闭且此刻 canEternity 为真时，自动进入 EC == 自动永恒。
+      // 该窗口内不自动进入；canEternity 为假时 EC 进入不会结算，自动化照常推进。
+      // Android 同源门禁：OrekiAutoEternityGate.challengeAutoStartAllowed()。
+      try {
+        if (player.auto.eternity.isActive !== true && Player.canEternity) return false;
+      } catch (e) {
+        return false;
+      }
       return challenge.start(true) === true;
     } catch (e) {
       this._err("buyEcStudiesAndStart", e);
@@ -803,6 +818,18 @@ export const OrekiEternityAutomation = {
   tickEternity() {
     try {
       if (!this.active) return false;
+      // [R101 P0 对齐 Android] 原版「自动永恒」单项开关关闭时，MOD 不得主动永恒。
+      //
+      // 缺陷背景：本函数直接调用原版「无确认永恒」入口，历史上只受 MOD 总开关
+      // （this.active）约束，完全不看玩家存档里的 auto.eternity.isActive。
+      // Android 同缺陷由 OrekiAutoEternityGate 收敛修复（单一 Kotlin 门禁）；
+      // Web 这里补同一条判据。读不到开关时 fail-closed（宁可不自动，也不误结算）。
+      // 玩家手动点击永恒按钮走原版 UI 入口（eternity.js），不经过本函数。
+      try {
+        if (player.auto.eternity.isActive !== true) return false;
+      } catch (e) {
+        return false;
+      }
       // [Oreki R38-A] IU15 冲刺期间禁止永恒：永恒会把反物质指数打回 0，
       // 而 IU15 要求 `antimatter.exponent >= 1.5e12`，只能在同一个大坍缩周期内连续增长。
       try {

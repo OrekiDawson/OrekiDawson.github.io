@@ -155,10 +155,20 @@ jobs:
             ~/.cache/ms-playwright
             ~/.npm
           key: pages-live-chromium-${{ runner.os }}-${{ runner.arch }}-1.65.0-v1
-      - name: Install pinned live browser smoke runner
+      - name: Cache pinned live Playwright modules
+        id: live-playwright-modules
+        uses: actions/cache@v4
+        with:
+          path: web-source/node_modules
+          key: pages-live-modules-${{ runner.os }}-${{ runner.arch }}-node26-v1.65.0-v1
+      - name: Install pinned live browser smoke runner on cache miss
+        if: steps.live-playwright-modules.outputs.cache-hit != 'true'
+        working-directory: web-source
+        run: npm install --no-save --no-package-lock @playwright/test@1.65.0
+      - name: Verify pinned Playwright modules and Chromium dependencies
         working-directory: web-source
         run: |
-          npm install --no-save --no-package-lock @playwright/test@1.65.0
+          node --input-type=module -e "import fs from 'node:fs'; const p=JSON.parse(fs.readFileSync('node_modules/@playwright/test/package.json','utf8')); if(p.version!=='1.65.0') process.exit(1)"
           npx playwright install --with-deps chromium
       - name: Smoke-test the live page in an Android Chrome viewport
         working-directory: web-source

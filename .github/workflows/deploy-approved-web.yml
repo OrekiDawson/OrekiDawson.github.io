@@ -1,0 +1,145 @@
+name: Deploy approved AD Web artifact
+
+'on':
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Exact immutable Web main commit SHA
+        type: string
+        required: true
+      web_ci_run_id:
+        description: Successful Web CI push run for that exact SHA
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: oreki-pages-production
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Validate the approved Web CI run
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      source_sha: ${{ steps.verify.outputs.sha }}
+      ci_run_id: ${{ steps.verify.outputs.ci_run_id }}
+    steps:
+      - name: Check immutable Web SHA and successful real CI jobs
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.approved_sha }}
+          CI_RUN: ${{ inputs.web_ci_run_id }}
+          SOURCE: OrekiDawson/AD-Oreki-Edition-Web
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid source SHA"; exit 1; }
+          [[ "$CI_RUN" =~ ^[0-9]+$ ]] || { echo "::error::Invalid CI run"; exit 1; }
+          actual="$(gh api "repos/$SOURCE/commits/$SHA" --jq '.sha')"
+          [[ "$actual" == "$SHA" ]] || exit 1
+          status="$(gh api "repos/$SOURCE/compare/main...$SHA" --jq '.status')"
+          [[ "$status" == identical || "$status" == behind ]] || { echo "::error::SHA not on Web main"; exit 1; }
+          details="$(gh api "repos/$SOURCE/actions/runs/$CI_RUN")"
+          echo "$details" | jq -e --arg sha "$SHA" '
+            .head_sha == $sha and .head_branch == "main" and .event == "push"
+            and .status == "completed" and .conclusion == "success"
+            and .path == ".github/workflows/ci.yml"
+          ' >/dev/null || { echo "::error::CI run does not match exact approved source"; exit 1; }
+          jobs="$(gh api "repos/$SOURCE/actions/runs/$CI_RUN/jobs?per_page=100")"
+          echo "$jobs" | jq -e '
+            [.jobs[] | select(.name == "Node checks" and .conclusion == "success")] | length == 1
+          ' >/dev/null || { echo "::error::Node checks not PASS"; exit 1; }
+          echo "$jobs" | jq -e '
+            [.jobs[] | select(.name == "Mobile Chromium smoke" and .conclusion == "success")] | length == 1
+          ' >/dev/null || { echo "::error::Mobile Chromium not PASS"; exit 1; }
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "ci_run_id=$CI_RUN" >> "$GITHUB_OUTPUT"
+          echo "::notice::Gate PASS for $SHA / Web CI $CI_RUN"
+
+  deploy:
+    name: Stage, verify and deploy the immutable Pages artifact
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: github-pages
+      url: ${{ steps.publish.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - name: Checkout Pages-managed metadata
+        uses: actions/checkout@v4
+        with:
+          path: pages-source
+          persist-credentials: false
+      - name: Checkout exact approved Web commit
+        uses: actions/checkout@v4
+        with:
+          repository: OrekiDawson/AD-Oreki-Edition-Web
+          ref: ${{ needs.gate.outputs.source_sha }}
+          path: web-source
+          persist-credentials: false
+      - name: Assemble site without modifying Pages main
+        env:
+          SHA: ${{ needs.gate.outputs.source_sha }}
+          CI_RUN: ${{ needs.gate.outputs.ci_run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git -C web-source rev-parse HEAD)" == "$SHA" ]] || exit 1
+          mkdir -p _site
+          rsync -a --exclude='.git' --exclude='.github' --exclude='_site' pages-source/ _site/
+          for dir in src modules public; do
+            test -d "web-source/$dir"
+            mkdir -p "_site/$dir"
+            rsync -a --delete "web-source/$dir/" "_site/$dir/"
+          done
+          for file in index.html .nojekyll LICENSE MOD-LICENSE NOTICE.md; do
+            test -f "web-source/$file"
+            cp "web-source/$file" "_site/$file"
+          done
+          test -f _site/CNAME
+          grep -Fxq 'oreki.net' _site/CNAME
+          jq -nc --arg sha "$SHA" --argjson run "$CI_RUN" \
+            '{web_sha:$sha,web_ci_run_id:$run}' > _site/deployment.json
+          python3 web-source/scripts/check_pages_staging.py _site
+          node --check _site/src/main.js
+          node --check _site/src/game.js
+          echo "Prepared immutable Pages artifact from Web $SHA"
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload validated site as Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+      - name: Deploy through official GitHub Pages API
+        id: publish
+        uses: actions/deploy-pages@v4
+      - name: Verify live deployment points at the approved Web SHA
+        env:
+          SHA: ${{ needs.gate.outputs.source_sha }}
+          CI_RUN: ${{ needs.gate.outputs.ci_run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5 6 7 8; do
+            if curl --fail --silent --show-error --max-time 15 \
+              "https://oreki.net/deployment.json?run=$GITHUB_RUN_ID" \
+              | jq -e --arg sha "$SHA" --argjson ci "$CI_RUN" \
+                '.web_sha == $sha and .web_ci_run_id == $ci' >/dev/null; then
+              curl --fail --silent --show-error --max-time 15 https://oreki.net/src/main.js >/dev/null
+              echo "PASS: live oreki.net serves approved Web $SHA"
+              exit 0
+            fi
+            sleep 8
+          done
+          echo "::error::Deployment not verified at oreki.net; do not claim production PASS"
+          exit 1

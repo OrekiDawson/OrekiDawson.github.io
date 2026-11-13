@@ -80,6 +80,71 @@ jobs:
               sys.exit(1)
           print(f"PASS: oreki.net static entrypoint references {checked} existing local assets")
           PY
+      - name: Check deployed JavaScript entrypoint syntax
+        run: |
+          set -euo pipefail
+          node --check src/main.js
+          node --check src/game.js
+          node --check src/env.js
+          node --check src/merge-globals.js
+          node --check src/shims.js
+          node --check src/supported-browsers.js
+      - name: Reject newly added credentials and Windows line endings
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            echo "::notice::Manual dispatch has no trusted diff base; incremental guard skipped"
+            exit 0
+          fi
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ && ! "$BASE_SHA" =~ ^0+$ ]] || {
+            echo "::error::Missing trusted comparison base"
+            exit 1
+          }
+          git fetch --no-tags --filter=blob:none --depth=1 origin "$BASE_SHA"
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+          import subprocess
+          import sys
+
+          base = os.environ["BASE_SHA"]
+          changes = subprocess.check_output(
+              ["git", "diff", "--name-status", "-z", "--diff-filter=ACMR", base, "HEAD"]
+          ).split(bytes([0]))
+          failures = []
+          index = 0
+          while index < len(changes) and changes[index]:
+              status = changes[index].decode()
+              index += 1
+              if status.startswith(("R", "C")):
+                  index += 1
+              if index >= len(changes):
+                  break
+              name = os.fsdecode(changes[index])
+              index += 1
+              path = pathlib.Path(name)
+              if not path.is_file():
+                  continue
+              lower = name.lower()
+              if (path.suffix.lower() in {".pem", ".p12", ".pfx", ".key", ".keystore", ".jks"}
+                  or path.name.lower() in {".env", "id_rsa", "id_ed25519"}
+                  or re.search(r"(^|/)(credentials|secrets)[.]json$", lower)):
+                  failures.append(f"credential-like file: {name}")
+                  continue
+              if path.stat().st_size > 4_000_000:
+                  continue
+              data = path.read_bytes()
+              if bytes([13, 10]) in data and bytes([0]) not in data:
+                  failures.append(f"CRLF line endings: {name}")
+          if failures:
+              for failure in failures:
+                  print("FAIL:", failure)
+              sys.exit(1)
+          print("PASS: changed site files have no blocked credentials or CRLF")
+          PY
       - name: State validation limits
         run: |
           echo "::notice::This is a static repository integrity check only. Live oreki.net and mobile Chromium gameplay still require separate verification."

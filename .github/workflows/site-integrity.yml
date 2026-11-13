@@ -113,7 +113,7 @@ jobs:
           base = os.environ["BASE_SHA"]
           changes = subprocess.check_output(
               ["git", "diff", "--name-status", "-z", "--diff-filter=ACMR", base, "HEAD"]
-          ).split(b"\\0")
+          ).split(bytes([0]))
           failures = []
           index = 0
           while index < len(changes) and changes[index]:
@@ -131,13 +131,13 @@ jobs:
               lower = name.lower()
               if (path.suffix.lower() in {".pem", ".p12", ".pfx", ".key", ".keystore", ".jks"}
                   or path.name.lower() in {".env", "id_rsa", "id_ed25519"}
-                  or re.search(r"(^|/)(credentials|secrets)\\.json$", lower)):
+                  or re.search(r"(^|/)(credentials|secrets)[.]json$", lower)):
                   failures.append(f"credential-like file: {name}")
                   continue
               if path.stat().st_size > 4_000_000:
                   continue
               data = path.read_bytes()
-              if b"\\r\\n" in data and b"\\0" not in data:
+              if bytes([13, 10]) in data and bytes([0]) not in data:
                   failures.append(f"CRLF line endings: {name}")
           if failures:
               for failure in failures:

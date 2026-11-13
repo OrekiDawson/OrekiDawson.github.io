@@ -131,6 +131,7 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in 1 2 3 4 5 6 7 8; do
+            echo "::notice::Checking deployed version, attempt $attempt"
             if curl --fail --silent --show-error --max-time 15 \
               "https://oreki.net/deployment.json?run=$GITHUB_RUN_ID" \
               | jq -e --arg sha "$SHA" --argjson ci "$CI_RUN" \

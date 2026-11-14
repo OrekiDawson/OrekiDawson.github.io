@@ -46,3 +46,10 @@
 - **低谷恢复同一轮**：高峰结束后从已保存的恢复点继续原轮次，不重复 `/goal`、不改任务编号或重置计时。只有用户明确暂停、客观安全限制或高峰窗口才能暂停整体执行；局部阻塞不构成自动停工理由。
 - **优先级**：用户明确暂停或安全限制 ＞ 高峰全员停工 ＞ 低谷期 Lead 持续推进 ＞ 两小时合格稳定版节奏目标。原规则中仅停 DeepSeek API 而允许换模型继续开发、或强制将未完成 Goal 标为 `complete` 的表述，自本条生效起不再适用。
 
+## 7. CI/CD 自主管理与受控 Pages 部署协作（长期强制，2026-11-14）
+
+- **职责分工**：本仓仍是 `oreki.net` 部署副本，游戏源码只在 Web 仓。DeepSeek Lead 可在已有授权轮次与非高峰时段主动检查 Pages Actions、诊断工作流/资源/CSP/验证失败、修复和优化独立 CI、创建 PR 并在 Required Checks 通过后按 Ruleset 合规合并；**Pages 生产部署由用户指定的 ChatGPT 管理职责与现有批准流程共同约束**，此规则不授予绕开部署审批的权力。
+- **唯一生产入口**：仅允许现有受控 `deploy-approved-web.yml` 基于获批准的 Web `main` SHA、对应成功 Node/移动 Chromium CI Run 和不可变 Artifact 部署；部署后核对线上 `deployment.json` 源 SHA、资源和移动端真实游戏行为。普通 Pages `main` Push 不能绕过批准流程直接覆盖线上站点。
+- **故障自愈**：精确 Run/Job/部署 SHA → 根因分类（环境/权限/令牌状态/脚本/资源/页面）→ 最小 PR → CI → 实际恢复验证；重复平台故障有限重试，不删测试、不吞未知页面错误、不把静态检查或部署命令退出码称为线上验收 PASS。缺少真实权限、人工审批或安全密钥时如实 `BLOCKED`。
+- **安全及成本**：不向 CI 恢复 DeepSeek API 自动诊断/审查；保留 Codex 和确定性测试。禁止关闭 Ruleset、跳过 Required Checks、读取/输出 Secrets 明文、手工上传静态站点绕过受控部署、强推、未经授权升级 Web 冻结上游。遵守第 6 节 DeepSeek 高峰全员停工，不能把规则登记当成已启动后台守护程序。
+- **追溯**：每次维护写明源 Web SHA、相应 Web CI Run、Pages PR/Commit/Deploy Run、线上 SHA、真实 Android Chrome 验收及 `PASS / FAIL / BLOCKED / NOT RUN`；不碰无关游戏源码/存档，也不无理由创建重复 CI 任务。

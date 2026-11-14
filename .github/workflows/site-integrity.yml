@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   integrity:
-    name: CNAME、入口文件和本地资源检查
+    name: CNAME, entrypoint and local assets
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

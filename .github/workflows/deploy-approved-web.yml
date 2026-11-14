@@ -176,8 +176,19 @@ jobs:
             page = await context.newPage();
             const errors = [];
             const consoleErrors = [];
+            const expectedConsoleErrors = [];
             page.on('pageerror', error => errors.push(String(error)));
-            page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+            page.on('console', message => {
+              if (message.type() !== 'error') return;
+              const text = message.text();
+              // oreki.net's CSP intentionally blocks the legacy analytics loader;
+              // retain it as evidence without treating it as a game failure.
+              if (text.includes('googletagmanager.com/gtag/js') && text.includes('Content Security Policy')) {
+                expectedConsoleErrors.push(text);
+              } else {
+                consoleErrors.push(text);
+              }
+            });
             await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
             const url = 'https://oreki.net/?smoke=' + encodeURIComponent(process.env.EXPECTED_SHA);
             const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -197,9 +208,10 @@ jobs:
             if (!response || response.status() !== 200 || bodyText.trim().length < 10 || errors.length || consoleErrors.length) {
               throw new Error('Live mobile smoke FAIL: HTTP=' + response?.status() +
                 ', bodyChars=' + bodyText.trim().length + ', pageErrors=' + errors.join(' | ') +
-                ', consoleErrors=' + consoleErrors.join(' | '));
+                ', consoleErrors=' + consoleErrors.join(' | ') +
+                ', expectedConsoleErrors=' + expectedConsoleErrors.join(' | '));
             }
-            console.log('PASS：线上 oreki.net 已渲染，部署身份匹配，AM Tick 增长且导航交互成功');
+            console.log('PASS：线上 oreki.net 已渲染，部署身份匹配，AM Tick 增长且导航交互成功；已记录预期 CSP 阻断 ' + expectedConsoleErrors.length + ' 条');
           } catch (error) {
             await page.screenshot({ path: 'pages-live-smoke-failure.png', fullPage: false }).catch(() => {});
             throw error;

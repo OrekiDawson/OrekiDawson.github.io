@@ -140,7 +140,7 @@ jobs:
               echo "PASS：线上 oreki.net 正在提供已批准 Web $SHA"
               exit 0
             fi
-            sleep 8
+            if (( attempt < 8 )); then sleep 8; fi
           done
           echo "::error::FAIL：未能在 oreki.net 验证部署；禁止宣称生产 PASS"
           exit 1
@@ -198,6 +198,8 @@ jobs:
               throw new Error('deployment.json does not match approved Web SHA/CI run');
             }
             await page.waitForSelector('#ui', { state: 'visible', timeout: 60000 });
+            // Confirm the actual game is unobstructed, not merely rendered underneath the overlay.
+            await page.locator('#loading').waitFor({ state: 'hidden', timeout: 60000 });
             await page.waitForFunction(() => document.querySelector('#ui')?.innerText.trim().length > 0, null, { timeout: 60000 });
             await page.waitForFunction(() => globalThis.Currency?.antimatter?.value && typeof globalThis.Currency.antimatter.value.gt === 'function', null, { timeout: 60000 });
             const before = await page.evaluate(() => globalThis.Currency.antimatter.value.toString());

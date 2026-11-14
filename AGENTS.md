@@ -48,7 +48,7 @@
 
 ## 7. CI/CD 自主管理与受控 Pages 部署协作（长期强制，2026-11-14）
 
-- **职责分工**：本仓仍是 `oreki.net` 部署副本，游戏源码只在 Web 仓。DeepSeek Lead 可在已有授权轮次与非高峰时段主动检查 Pages Actions、诊断工作流/资源/CSP/验证失败、修复和优化独立 CI、创建 PR 并在 Required Checks 通过后按 Ruleset 合规合并；**Pages 生产部署由用户指定的 ChatGPT 管理职责与现有批准流程共同约束**，此规则不授予绕开部署审批的权力。
+- **职责分工**：本仓仍是 `oreki.net` 部署副本，游戏源码只在 Web 仓。DeepSeek Lead 可在已有授权轮次与非高峰时段主动检查 Pages Actions、诊断工作流/资源/CSP/验证失败、修复和优化独立 CI、创建 PR 并在 Required Checks 通过后按 Ruleset 合规合并；**Pages/oreki.net 的生产部署与日常管理由 DeepSeek Lead 统一负责**（用户 2026-11-14 最新决定）：含 Actions 状态、故障修复、获批准的正式部署触发、线上验收、合规回滚与发布记录；现有批准流程和 Required Checks 继续约束所有动作，绝不因管理人调整而允许绕过部署审批。
 - **唯一生产入口**：仅允许现有受控 `deploy-approved-web.yml` 基于获批准的 Web `main` SHA、对应成功 Node/移动 Chromium CI Run 和不可变 Artifact 部署；部署后核对线上 `deployment.json` 源 SHA、资源和移动端真实游戏行为。普通 Pages `main` Push 不能绕过批准流程直接覆盖线上站点。
 - **故障自愈**：精确 Run/Job/部署 SHA → 根因分类（环境/权限/令牌状态/脚本/资源/页面）→ 最小 PR → CI → 实际恢复验证；重复平台故障有限重试，不删测试、不吞未知页面错误、不把静态检查或部署命令退出码称为线上验收 PASS。缺少真实权限、人工审批或安全密钥时如实 `BLOCKED`。
 - **安全及成本**：不向 CI 恢复 DeepSeek API 自动诊断/审查；保留 Codex 和确定性测试。禁止关闭 Ruleset、跳过 Required Checks、读取/输出 Secrets 明文、手工上传静态站点绕过受控部署、强推、未经授权升级 Web 冻结上游。遵守第 6 节 DeepSeek 高峰全员停工，不能把规则登记当成已启动后台守护程序。

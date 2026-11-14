@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: 检查自定义域名和已知站点入口
@@ -146,7 +146,7 @@ jobs:
           print("PASS: changed site files have no blocked credentials or CRLF")
           PY
       - name: 缓存锁定版本 actionlint
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/go/pkg/mod

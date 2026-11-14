@@ -76,12 +76,12 @@ jobs:
       id-token: write
     steps:
       - name: 检出 Pages 管理元数据
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: pages-source
           persist-credentials: false
       - name: 检出精确的已批准 Web commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: OrekiDawson/AD-Oreki-Edition-Web
           ref: ${{ needs.gate.outputs.source_sha }}
@@ -115,14 +115,14 @@ jobs:
           node --check _site/src/game.js
           echo "PASS：已从 Web $SHA 准备不可变 Pages Artifact"
       - name: 配置 GitHub Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
       - name: 上传已验证站点为 Pages Artifact
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@v5
         with:
           path: _site
       - name: 通过官方 GitHub Pages API 部署
         id: publish
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
       - name: 验证线上部署指向已批准 Web SHA
         env:
           SHA: ${{ needs.gate.outputs.source_sha }}
@@ -145,11 +145,11 @@ jobs:
           echo "::error::FAIL：未能在 oreki.net 验证部署；禁止宣称生产 PASS"
           exit 1
       - name: 为线上移动端浏览器冒烟测试配置 Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '26'
       - name: 缓存锁定版本 Chromium 和 npm 下载包
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/ms-playwright
@@ -210,7 +210,7 @@ jobs:
           JS
       - name: 上传部署失败时的线上冒烟证据
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pages-live-mobile-failure
           path: |

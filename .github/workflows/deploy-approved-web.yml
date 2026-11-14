@@ -154,36 +154,57 @@ jobs:
           path: |
             ~/.cache/ms-playwright
             ~/.npm
-          key: pages-live-chromium-${{ runner.os }}-${{ runner.arch }}-1.65.0-v1
+          key: pages-live-chromium-${{ runner.os }}-${{ runner.arch }}-node26-${{ hashFiles('web-source/package-lock.json') }}-1.65.0-v1
       - name: Install pinned live browser smoke runner
         working-directory: web-source
         run: |
-          npm install --no-save --no-package-lock @playwright/test@1.65.0
+          npm ci --ignore-scripts
           npx playwright install --with-deps chromium
       - name: Smoke-test the live page in an Android Chrome viewport
         working-directory: web-source
         env:
           EXPECTED_SHA: ${{ needs.gate.outputs.source_sha }}
+          CI_RUN_ID: ${{ needs.gate.outputs.ci_run_id }}
         run: |
           node --input-type=module <<'JS'
           import { chromium, devices } from '@playwright/test';
           const browser = await chromium.launch({ headless: true });
+          let context;
+          let page;
           try {
-            const context = await browser.newContext({ ...devices['Pixel 7'] });
-            const page = await context.newPage();
+            context = await browser.newContext({ ...devices['Pixel 7'] });
+            page = await context.newPage();
             const errors = [];
+            const consoleErrors = [];
             page.on('pageerror', error => errors.push(String(error)));
+            page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+            await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
             const url = 'https://oreki.net/?smoke=' + encodeURIComponent(process.env.EXPECTED_SHA);
             const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-            await page.waitForTimeout(2500);
+            const deployment = await page.request.get('https://oreki.net/deployment.json?smoke=' + encodeURIComponent(process.env.EXPECTED_SHA));
+            const deploymentJson = await deployment.json();
+            if (deploymentJson.web_sha !== process.env.EXPECTED_SHA || Number(deploymentJson.web_ci_run_id) !== Number(process.env.CI_RUN_ID)) {
+              throw new Error('deployment.json does not match approved Web SHA/CI run');
+            }
+            await page.waitForSelector('#ui', { state: 'visible', timeout: 60000 });
+            await page.waitForFunction(() => document.querySelector('#ui')?.innerText.trim().length > 0, null, { timeout: 60000 });
+            await page.waitForFunction(() => globalThis.Currency?.antimatter?.value && typeof globalThis.Currency.antimatter.value.gt === 'function', null, { timeout: 60000 });
+            const before = await page.evaluate(() => globalThis.Currency.antimatter.value.toString());
+            await page.waitForFunction(previous => globalThis.Currency.antimatter.value.gt(new globalThis.Decimal(previous)), before, { timeout: 30000 });
+            await page.locator('#ui button').first().click({ timeout: 10000 });
             await page.screenshot({ path: 'pages-live-smoke.png', fullPage: false });
             const bodyText = await page.locator('body').innerText();
-            if (!response || response.status() !== 200 || bodyText.trim().length < 10 || errors.length) {
+            if (!response || response.status() !== 200 || bodyText.trim().length < 10 || errors.length || consoleErrors.length) {
               throw new Error('Live mobile smoke FAIL: HTTP=' + response?.status() +
-                ', bodyChars=' + bodyText.trim().length + ', pageErrors=' + errors.join(' | '));
+                ', bodyChars=' + bodyText.trim().length + ', pageErrors=' + errors.join(' | ') +
+                ', consoleErrors=' + consoleErrors.join(' | '));
             }
-            console.log('PASS: live oreki.net rendered in Pixel 7 Chromium without page errors');
+            console.log('PASS: live oreki.net rendered, deployment identity matched, AM tick advanced, and navigation clicked');
+          } catch (error) {
+            await page.screenshot({ path: 'pages-live-smoke-failure.png', fullPage: false }).catch(() => {});
+            throw error;
           } finally {
+            await context.tracing.stop({ path: 'pages-live-smoke-trace.zip' }).catch(() => {});
             await browser.close();
           }
           JS
@@ -192,6 +213,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pages-live-mobile-failure
-          path: web-source/pages-live-smoke.png
+          path: |
+            web-source/pages-live-smoke.png
+            web-source/pages-live-smoke-failure.png
+            web-source/pages-live-smoke-trace.zip
           if-no-files-found: ignore
           retention-days: 7

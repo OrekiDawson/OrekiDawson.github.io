@@ -1,4 +1,4 @@
-name: Pages static file integrity
+name: Pages 静态资源完整性检查
 
 'on':
   push:
@@ -16,14 +16,14 @@ concurrency:
 
 jobs:
   integrity:
-    name: CNAME, entrypoint and local assets
+    name: CNAME、入口文件和本地资源检查
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Require custom domain and known site entrypoints
+      - name: 检查自定义域名和已知站点入口
         run: |
           set -euo pipefail
           test -f .nojekyll
@@ -35,7 +35,7 @@ jobs:
           test -d src
           test -f CNAME
           grep -Fxq 'oreki.net' CNAME
-      - name: Check local HTML links exist in the deployment tree
+      - name: 检查 HTML 本地链接存在于部署目录
         run: |
           python3 - <<'PY'
           from html.parser import HTMLParser
@@ -80,7 +80,7 @@ jobs:
               sys.exit(1)
           print(f"PASS: oreki.net static entrypoint references {checked} existing local assets")
           PY
-      - name: Check deployed JavaScript entrypoint syntax
+      - name: 检查部署 JavaScript 入口语法
         run: |
           set -euo pipefail
           node --check src/main.js
@@ -89,7 +89,7 @@ jobs:
           node --check src/merge-globals.js
           node --check src/shims.js
           node --check src/supported-browsers.js
-      - name: Reject newly added credentials and Windows line endings
+      - name: 拒绝新增凭据和 Windows 换行
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
@@ -145,15 +145,15 @@ jobs:
               sys.exit(1)
           print("PASS: changed site files have no blocked credentials or CRLF")
           PY
-      - name: Cache pinned actionlint
+      - name: 缓存锁定版本 actionlint
         uses: actions/cache@v4
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
           key: pages-actionlint-${{ runner.os }}-${{ runner.arch }}-v1.7.12-v1
-      - name: Validate both Pages workflows and their shell expressions
+      - name: 检查两个 Pages 工作流及其 Shell 表达式
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color
-      - name: State validation limits
+      - name: 说明验证范围限制
         run: |
           echo "::notice::This is a static repository integrity check only. Live oreki.net and mobile Chromium gameplay still require separate verification."

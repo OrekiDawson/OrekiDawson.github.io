@@ -4,7 +4,7 @@
 
 ## 1. 仓库边界
 
-1. 游戏功能、教程、界面和测试修改只写入 `web/AD-Oreki-Edition/` 源码仓库。
+1. 游戏功能、教程、界面和测试修改只写入 Web 源码仓库（工作区 `Web/`，GitHub `OrekiDawson/AD-Oreki-Edition-Web`）。
 2. 本仓库只接收经过检查的同步结果，不在这里直接实现或调试游戏功能。
 3. 本仓库的文件必须能够作为静态站点直接部署；不要加入个人路径、临时脚本、测试存档、内部日志或凭据。
 4. Android 源码、Android APK 和 Web 源码不属于本仓库的交付内容。
@@ -49,7 +49,7 @@ node serve.mjs 8080
 
 ## 6. 规则、许可证与安全
 
-- Web 规则入口：[Web AGENTS.md](../../AD-Oreki-Edition/AGENTS.md)
+- Web 规则入口：[Web AGENTS.md](https://github.com/OrekiDawson/AD-Oreki-Edition-Web/blob/main/AGENTS.md)
 - 当前部署规则：[AGENTS.md](AGENTS.md)
 - 上游来源：[NOTICE.md](NOTICE.md)
 - 许可证：[LICENSE](LICENSE) · [MOD-LICENSE](MOD-LICENSE)

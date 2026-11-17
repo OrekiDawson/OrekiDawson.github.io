@@ -4,7 +4,7 @@
 
 ## 1. 边界
 
-- 只保存可直接部署的静态站点文件；游戏功能、教程和界面修改写入 `web/AD-Oreki-Edition/`。
+- 只保存可直接部署的静态站点文件；游戏功能、教程和界面修改写入 Web 源码仓库（工作区 `Web/`，GitHub `OrekiDawson/AD-Oreki-Edition-Web`）。
 - 保护现有站点和部署配置：`CNAME`、`.nojekyll`、`index.html`、`src/`、`public/` 和模块路径。
 - 不破坏 oreki.net；不在本仓库实现第二套游戏逻辑。
 - 避免无关页面、样式和构建系统重构。

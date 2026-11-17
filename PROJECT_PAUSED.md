@@ -19,20 +19,22 @@
 - 后期真实通关与 180 分钟真实墙钟目标尚未完成最终验收；性能门禁未伪造 PASS。
 - 部署仓库不能替代源码验证；恢复发布前必须先同步 Web 源码并重新验收。
 
-## 重要本地资产（保留在原位置）
+## 重要本地资产
+
+> 2026-11-17 路径核对：工作区已迁移至 `AD-Oreki-Edition/`（旧目录 `AD-Oreki-Unified/` 不再存在）。下表已更新为当前有效路径；历史封存记录（暂停日期、封存 HEAD、封存提交）保持不变。
 
 | 资产 | 路径 | 说明 |
 | --- | --- | --- |
-| 部署副本 | `web/_deploy/site/` | 本仓库工作树 |
-| 部署脚本 | `web/_deploy/deploy_pages.py` | 现有 Python 部署入口，本次不运行、不迁移 |
-| 部署文件清单 | `web/_deploy/filelist.txt` | 部署文件清单与历史备份 |
-| 部署校验证据 | `web/_deploy/_web_deploy_check/` | 历史检查输出，保留 |
+| 部署副本 | 本仓库 `main` 工作树；本地检出为工作区 `site/` | 本仓库自身即 oreki.net 静态部署副本 |
+| 唯一生产部署入口 | `.github/workflows/deploy-approved-web.yml` | 以获批准 Web `main` SHA + 对应成功 CI Run 触发，在 `github-pages` 环境保护策略约束下部署 |
+| 本地旧部署工具（历史） | 工作区 `web/_deploy/` | 旧 Python 本地同步流程；其 `site/` 输出目录已不存在（当前部署副本为工作区 `site/`），不再作为生产入口 |
+| 部署校验证据（历史） | 工作区 `web/_deploy/_web_deploy_check/` | 历史检查输出，保留 |
 | 线上域名 | `CNAME` → `oreki.net` | 恢复发布前核对 DNS 与 Pages 设置 |
 
 ## 未来恢复方式
 
 1. `git checkout main && git pull --ff-only`
 2. 先读 Web 源码仓库的 `README.md`、`AGENTS.md`、`docs/FACTS.md`；本仓库不作为源码入口。
-3. 从 Web 源码重新同步部署副本，按 `web/_deploy` 现有流程发布并验证 `https://oreki.net` 可访问。
+3. 需要发布时，按 `.github/workflows/deploy-approved-web.yml` 输入已批准 Web `main` SHA 与对应 CI Run ID，部署后核对 `https://oreki.net/deployment.json`；不要使用已失效的本地 `web/_deploy` 流程，也不直接推送本仓库 `main` 覆盖线上。
 4. 恢复开发按新 `AGENTS.md` 执行；旧规则只在 `archive/rules-pre-reset-2026-11-11/` 追溯，不自动恢复效力。
 5. 本封存提交不代表线上已更新，也不构成稳定版声明。

@@ -26,8 +26,8 @@
 | 资产 | 路径 | 说明 |
 | --- | --- | --- |
 | 部署副本 | 本仓库 `main` 工作树；本地检出为工作区 `site/` | 本仓库自身即 oreki.net 静态部署副本 |
-| 唯一生产部署入口 | `.github/workflows/deploy-approved-web.yml` | 以获批准 Web `main` SHA + 对应成功 CI Run 触发，经 `github-pages` 环境审批后部署 |
-| 本地旧部署工具（历史） | 工作区 `web/_deploy/` | 旧 Python 本地同步流程；其 `site/` 输出目录已随目录迁移移除，不再作为生产入口 |
+| 唯一生产部署入口 | `.github/workflows/deploy-approved-web.yml` | 以获批准 Web `main` SHA + 对应成功 CI Run 触发，在 `github-pages` 环境保护策略约束下部署 |
+| 本地旧部署工具（历史） | 工作区 `web/_deploy/` | 旧 Python 本地同步流程；其 `site/` 输出目录已不存在（当前部署副本为工作区 `site/`），不再作为生产入口 |
 | 部署校验证据（历史） | 工作区 `web/_deploy/_web_deploy_check/` | 历史检查输出，保留 |
 | 线上域名 | `CNAME` → `oreki.net` | 恢复发布前核对 DNS 与 Pages 设置 |
 

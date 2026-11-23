@@ -1,5 +1,12 @@
 # Web 线上静态部署副本 · Agent 工作规则
 
+## Android P0 正式包名切换的 Pages 协作（2026-11-23）
+
+- Android P0 决定：最终正式 APK 的 `applicationId = "net.oreki.antimatterdimensions"`，Debug 为 `net.oreki.antimatterdimensions.debug`，基于自有域名 `oreki.net`。旧 `com.oreki.antimatterdimensions` 与新包**不能覆盖升级**，不能自动继承旧应用私有存档；须以真实 Android 构建/存档导出导入证据为准（Android #52/#61/#17、PR #276；Workspace #20）。
+- 本仓只是已验证 Web 源码的静态部署副本：**仅在确实存在 Android APK 下载、应用包名、安装/迁移指南、深链或发布链接引用时**，在获得正常 Web 源仓和受保护发布授权后修复，不允许独立修改 Android APK、自动部署未验证包或改变 Web 正式 URL/存档身份。保持现有 Pages/CI/回滚/HTTPS 与原有用户授权门禁。
+- 本规则 PR 真实合并后立即交接本机安全同步，读回证实前 `LOCAL_SYNC_BLOCKED`；不把远端规则合并或 Android 身份目标误报为正式包已上线。
+
+
 ## 跨仓协作：Android P0 工程目录治理（2026-11-23）
 
 - Android [#61](https://github.com/OrekiDawson/AD-Oreki-Edition-Android/issues/61) 根目录标准化升级为 **P0 架构任务**，与 [#52](https://github.com/OrekiDawson/AD-Oreki-Edition-Android/issues/52) `build_mod.py` 彻底退役的「迁移即清理」规则协同。仅当本站部署流程、文档链接或真实共享文件受影响时，按 Workspace 跨仓规则配合修复并保留证据。

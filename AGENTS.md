@@ -7,7 +7,11 @@
 ### 1.1 统一规则来源与继承
 
 - **单一权威来源**：[Workspace 最新 AGENTS.md](https://github.com/OrekiDawson/AD-Oreki-Edition-Workspace/blob/main/AGENTS.md) 是 ChatGPT/Agent 分工、任务编号与 `/goal`、费用/审查、游戏真实性与五阶段 180 分钟目标、Subagent 调度、GitHub/CI/CD、中文规范及交付的**全项目长期规则**。本仓继承其中适用条款；本仓 `AGENTS.md` 仅补充本平台技术和运行约束，**不得以内容未在本文件逐字重复为由忽略跨仓规则**。
-- **Android 五渠道发布协作（长期强制）**：遵循 [Workspace AGENTS.md](https://github.com/OrekiDawson/AD-Oreki-Edition-Workspace/blob/main/AGENTS.md)，Stable Release 与 Pre-release 均使用 GitHub Releases、OneDrive、Google Drive、小米云盘、本地 SSH/SFTP 五渠道，复用同一签名 APK/SHA-256 及签名要求的配套 idsig/SHA-256；Windows 三家云盘使用官方客户端，不以 rclone 为交付依赖。逐渠道核实实际同步、下载、链接/路径及哈希，部分成功不得宣称五渠道完成；预发布独立路径，不覆盖稳定 latest。Android 为发行责任仓，其他仓仅维护适用引用和证据，不自动取得发布权限。旧四渠道规则以此为准。
+- **每三分钟主动汇报（长期强制）**：执行中的主 Agent/Lead 必须按真实墙钟每 3 分钟至少向用户可见的会话或授权渠道反馈一次当前任务、可核实进展、当前动作、阻断及下一步；Subagent 同频向 Lead 汇报，由 Lead 汇总。长构建、测试及等待期间仍应反馈，无新增成果时如实说明。重要阻断、安全风险和任务结束立即反馈；反馈后继续执行，不视为停止或结束 Goal。不得为汇报重复轮询、付费调用或中断运行中的进程；工具无法支持时如实记录限制及超时。暂停或任务结束后停止空心跳。完整口径见 [Workspace AGENTS.md §1.1](https://github.com/OrekiDawson/AD-Oreki-Edition-Workspace/blob/main/AGENTS.md)。
+- **Android 五渠道发布协作（长期强制）**：遵循 [Workspace AGENTS.md](https://github.com/OrekiDawson/AD-Oreki-Edition-Workspace/blob/main/AGENTS.md)，Stable Release 与 Pre-release 均使用 GitHub Releases、OneDrive、Google Drive、小米云盘、本地 SSH/SFTP 五渠道，复用同一签名 APK/SHA-256 及签名要求的配套 idsig/SHA-256；Windows 三家云盘使用官方客户端，不以 rclone 为交付依赖。逐渠道核实 GitHub 上传、各本地路径/哈希及客户端状态，部分成功不得宣称五渠道完成；预发布独立路径，不覆盖稳定 latest。Android 为发行责任仓，其他仓仅维护适用引用和证据，不自动取得发布权限。旧四渠道规则以此为准。
+- **Android 滚动发布协作（长期强制）**：依 Workspace 最新规则，GitHub Releases 保留各版本 Tag/资产作为历史归档；OneDrive、Google Drive、小米云盘、本地 SSH/SFTP 使用固定路径/文件名，按类型滚动替换而非追加，各仅保留最新 Stable 和最新 Pre-release APK 及其必要配套 idsig。两类不得互相覆盖。验证新包、旧版可恢复性、本地交付路径、客户端状态、APK 与 idsig 配对及 SHA-256 后安全回收被替代的项目冗余副本和旧目录；失败保留/恢复上个可用版本并记 BLOCKED，不删除唯一成果、有效回滚点、历史证据、密钥或存档。禁止按 release-id 永久累积云盘/SSH 版本，不改变现有发布权限与门禁。
+- **发布验收以本地交付为准（2026-11-25 用户授权）**：遵循 Workspace 最新五渠道验收口径。GitHub Releases 核实真实上传及资产信息；OneDrive、Google Drive、小米云盘仅核对官方客户端实际同步路径、文件大小、SHA-256、必要 idsig 及登录/可用状态，无已知同步失败即 `PASS（本地交付）`。不强制云端回读、远端下载、二次哈希、云端对象 ID、上传完成日志或内部接口；已知 401/登录失效/同步失败仍 `BLOCKED`，不虚称远端已核验。SSH/SFTP 核对约定本机分发目录及文件哈希、SSH 服务状态，不要求远程回拉或 SFTP 子系统实测；远程传输能力单列。此条覆盖旧远端回读要求，不改变五渠道同一 APK、滚动替换、签名与发行门禁。
+- **六仓开放 PR 总量硬上限 5（长期强制）**：遵循 [Workspace AGENTS.md §4.1](https://github.com/OrekiDawson/AD-Oreki-Edition-Workspace/blob/main/AGENTS.md)。Workspace、Android、Web、Wiki、Pages、frame-observer 合计所有 OPEN PR（含 Draft、Ready、WAITING/BLOCKED、机器人及其他 Owner）最多 5 个；Lead 统一计数和分配预留名额，实际开放数加预留达到 5 即禁止创建/重开，超限 `PR_BACKLOG_BLOCKED`，先修复、合规合并或确认成果已保存后关闭被替代/经 Owner 确认延期的 PR，不为凑数量丢弃独有成果或绕过门禁。计数未知时禁止新增，可继续安全本地开发、现有 PR 修复和验证。低于 5 才分配新额度，优先 P0 业务，汇报总数/预留及下一收口动作；原 Kody 付费并发、预算、Owner、CI、安全门禁不变。
 - **业务优先（长期强制）**：遵循 [Workspace AGENTS.md §1.1](https://github.com/OrekiDawson/AD-Oreki-Edition-Workspace/blob/main/AGENTS.md) 的 P0 游戏业务优先规则。全量反编译、全 APK 源码化、Smali 退役及非阻断 AGP/R8/旧构建链迁移为 P1；普通目录和工具链治理为 P2。仅直接阻断 P0 业务、构建、真实验收或安全交付的最小工程闭包临时升 P0。保留 Kotlin-only、源码化长期终局和全部安全、签名、存档、发布门禁，不以源码覆盖率冒充游戏进度。本条覆盖旧轮次相反优先级和一次性迁移时限，不授权接管其他仓库或本机任务。
 - **先读取再执行**：启动、恢复、跨仓交接和关键合并/部署前，按照 Workspace 生效规则核验最新 `origin/main:AGENTS.md`（云端用 GitHub API 可替代只读刷新）、本仓规则、事实、任务书、实际 PR/CI 与运行证据；遵守已有 60 分钟常规刷新和关键动作前的短间隔刷新。读取失败或未证实最新版本时记录 `STALE/BLOCKED`，不能声称已同步。本仓更细的合法技术约束继续有效；**用户最新授权与安全/预算硬限制优先，其他冲突以 Workspace 跨仓规则为准**，发现不可兼容之处只作最小修复并报告，不静默放宽门禁。
 - **运行方式**：当前已启动轮次仅续做，不重新发 `/goal` 或改编号；Agent 输出、人工注释/文档和有意义的 Commit 使用简体中文、LF；按风险做最小必要真实验证，结果如实为 `PASS / FAIL / BLOCKED / NOT RUN`；保护未提交文件、唯一构建/测试证据及 Git worktree，避免重复工具安装和无限临时工作树。不得把文档/CI/规则 PASS 冒充真实游戏、上线或正式发布 PASS。
@@ -17,8 +21,8 @@
 
 ### 1.2 权限、预算与运行状态
 
-- **授权范围优先**：不从历史暂停状态推断当前全面停工或全面复工。只有用户明确授权范围内、经 Web 源仓验证的正常部署可按现行 CI/Pages/回滚门禁执行；独立功能开发、新 Goal、持续 Agent、收费审查、自动发布与定时更新仍需各自现行授权。产生真实人民币费用时必须先确认预算、期限、Provider 与余额，缺失即不付费。用户单独授权文档/仓库动作不自动开放其他项目工作。
-- **付费硬门禁**：累计支出达周期预算 **80%** 时报告并压缩非关键调用；达 **100%** 或下一批调用可能超预算立即停止新增收费任务。DeepSeek 实际可用余额 **低于 ¥10** 时全员暂停；余额未知、凭据撤销或无预算时默认不产生付费调用。不得自行充值、重建密钥、切换账号/Provider 绕开限制。
+- **授权范围优先**：不从历史暂停状态推断当前全面停工或全面复工。只有用户明确授权范围内、经 Web 源仓验证的正常部署可按现行 CI/Pages/回滚门禁执行；独立功能开发、新 Goal、持续 Agent、收费审查、自动发布与定时更新仍需各自现行授权。产生真实人民币费用时必须先确认预算、期限、Provider 实际可用性，缺失即不付费。用户单独授权文档/仓库动作不自动开放其他项目工作。
+- **付费门禁（最新授权）**：遵循 Workspace 权威规则：取消 DeepSeek 固定余额和余额未知的停工/付费前置门禁，余额仅供参考；实际 Provider 拒绝请求时仅阻断对应付费路径，不暂停无关已授权任务。周期预算 80% 预警、100% 或预计超额停止新增收费任务，保留真实授权、有效凭据、安全、Kody 额度及适用峰谷限制；不得自行充值、重建密钥或切换账号/Provider 绕限。
 - **费用归因**：区分 DeepSeek Harness **账号登录态**、API Key 与 Kodus BYOK；依据真实账单记录金额、调用与有效修复，不把某个 Key 的全部费用武断归给 Kody。规则文件不是云端扣费上限，云端 Provider/订阅/自动审查需在平台侧独立停用。
 - **价格时间窗**：复工后先重新核验官方现行峰谷规则；若仍为工作日北京时间 09:00–12:00、14:00–18:00 高峰，则按既有计划全员停止，峰前十分钟安全收尾。不得为了“连续工作”违反用户暂停或预算。未完成 Goal 保持真实 paused/blocked，不能伪记 complete。
 

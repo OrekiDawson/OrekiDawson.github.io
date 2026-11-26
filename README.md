@@ -1,63 +1,40 @@
-# 反物质维度 · Oreki Edition（线上部署副本）
+# Oreki Edition · 在线游戏站
 
-本仓库是 <https://oreki.net> 使用的 Web 静态部署仓库。它只保存可直接部署的站点文件，不是游戏功能开发入口，也不维护第二套游戏逻辑。
+**无限就在一个网址之外。**
 
-> 本仓库只保存 Web 游戏的线上部署副本。开发与验证应在 [Web 源码仓库](https://github.com/OrekiDawson/AD-Oreki-Edition-Web) 完成，不能直接修改本仓游戏代码作为功能交付。
+[进入游戏：oreki.net](https://oreki.net/) · [中文 Wiki](https://wiki.oreki.net/) · [下载 Android 版](https://github.com/OrekiDawson/AD-Oreki-Edition-Android/releases)
 
-**[中文目录说明与命名约定](docs/目录与中文命名约定.md)** · [历史暂停记录](archive/项目暂停记录.md)（仅供追溯）
+这里是《反物质维度》Oreki Edition 的 Web 游戏发布站。打开浏览器即可开始你的反物质旅程，不需要从这个仓库下载文件或自行编译。
 
-当前代码、部署状态、费用授权及审查情况以对应 GitHub 工作流、有效任务和用户最新指令为准；README 不固定某一天的“项目休眠/恢复”状态。未经真实线上验收，不得把 Pages 推送视为发布 PASS。
+## 为什么还有一个网站仓库？
 
-## 1. 仓库边界
+游戏的开发与网站的交付是两件事：
 
-1. 游戏功能、教程、界面和测试修改只写入 Web 源码仓库（工作区 `Web/`，GitHub `OrekiDawson/AD-Oreki-Edition-Web`）。
-2. 本仓库只接收经过检查的同步结果，不在这里直接实现或调试游戏功能。
-3. 本仓库的文件必须能够作为静态站点直接部署；不要加入个人路径、临时脚本、测试存档、内部日志或凭据。
-4. Android 源码、Android APK 和 Web 源码不属于本仓库的交付内容。
+- [Web 源码仓库](https://github.com/OrekiDawson/AD-Oreki-Edition-Web) 负责玩法、教程、界面和测试。
+- 本仓库保存供 GitHub Pages 发布的静态游戏文件，是经过检查的 Web 源码同步结果，不维护第二套游戏逻辑。
 
-## 2. 本地预览
+如果你想改变游戏，去源码仓库；如果你只是想玩，点击上方的网站链接即可。
 
-需要 Node.js 时可运行：
+## 本地预览
+
+需要 Node.js。在仓库根目录运行：
 
 ```bash
 node serve.mjs 8080
 ```
 
-然后访问 `http://127.0.0.1:8080/`。本地预览只能确认静态文件能够加载，不能替代线上检查或真实移动端 GUI 验收。
+浏览器访问 <http://127.0.0.1:8080/>。预览不代表线上发布或游戏行为已验收。
 
-## 3. 同步与部署
+## 关于存档与反馈
 
-1. 在 Web 源码仓库完成修改和定向测试。
-2. 将经过检查的入口、模块、样式、图片、字体和其他静态资源同步到本仓库。
-3. 对比源码仓库与本仓库的文件清单，确认没有缺失或多余的部署文件。
-4. 检查 `index.html`、`src/`、`public/` 和模块依赖路径。
-5. 推送本仓库并检查 <https://oreki.net> 的入口、资源加载和关键页面。
-6. 记录部署提交、检查时间、线上结果和未覆盖范围。
+浏览器站点数据可能随设备、浏览器或清理操作而变化。请在迁移或清除数据前备份游戏存档。
 
-本地页面可打开不等于线上部署成功；同步不完整、线上资源错误或关键功能未检查时，不得报告为部署完成。
+游戏机制、界面问题及功能建议请到 [Web Issues](https://github.com/OrekiDawson/AD-Oreki-Edition-Web/issues) 反馈；站点部署问题可在 [本仓 Issues](https://github.com/OrekiDawson/OrekiDawson.github.io/issues) 提交。
 
-## 4. 线上检查
+维护者请参阅 [部署规则](AGENTS.md) 与 [Web 开发规则](https://github.com/OrekiDawson/AD-Oreki-Edition-Web/blob/main/AGENTS.md)，从已验证的源码同步静态文件并进行线上检查，不在部署副本直接修补游戏功能。
 
-部署后至少检查：
+## 来源与许可
 
-- 首页和主要脚本可以加载；
-- 样式、图片、字体和其他静态资源没有异常 404；
-- 桌面浏览器和 Android Chrome 能打开主要界面；
-- 存档导入/导出入口可见；
-- 阶段页签、自动购买器和关键 GUI 状态与 Web 源码仓库验证结果一致；
-- 控制台没有阻塞启动的模块或运行时错误。
+感谢 [Antimatter Dimensions](https://github.com/IvarK/AntimatterDimensionsSourceCode) 的作者与贡献者。详细归属见 [NOTICE.md](NOTICE.md)，软件许可见 [LICENSE](LICENSE) 和 [MOD-LICENSE](MOD-LICENSE)。
 
-结果使用 `PASS`、`FAIL`、`BLOCKED` 或 `NOT RUN` 记录，并绑定部署提交和线上地址。
-
-## 5. 回滚
-
-回滚必须选择已经核对的部署提交或源码同步结果。执行前保存当前线上状态，回滚后重新检查入口、资源和关键页面。不要直接在本仓库手工拼接功能文件，也不要用未经检查的候选内容覆盖线上站点。
-
-## 6. 规则、许可证与安全
-
-- Web 规则入口：[Web AGENTS.md](https://github.com/OrekiDawson/AD-Oreki-Edition-Web/blob/main/AGENTS.md)
-- 当前部署规则：[AGENTS.md](AGENTS.md)
-- 上游来源：[NOTICE.md](NOTICE.md)
-- 许可证：[LICENSE](LICENSE) · [MOD-LICENSE](MOD-LICENSE)
-
-不要在仓库、提交历史或部署文件中保存 OAuth、密码、Cookie、SSH 私钥或其他私人凭据。发行说明只维护在 GitHub Release；本仓库只交付静态站点文件。
+游戏在浏览器里，故事在下一次重置里。

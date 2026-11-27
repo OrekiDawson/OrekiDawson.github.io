@@ -1,0 +1,34 @@
+# Android跨仓协作细则
+
+> 承接原根 AGENTS.md 对应章节的有效规则。代码路径默认相对于仓库根目录；共性规则以 Workspace 最新权威版本为准。返回[规则入口](../../AGENTS.md)。
+
+## 3. Android 跨仓协作
+
+### 3.1 P1 全量 Smali/DEX 清零
+
+- **权威目标（P1）**：Android 按业务需求增量恢复生产 Smali/DEX 为经 AGP 标准源码编译与运行验证的过渡 Java/Kotlin，最终清零生产 Smali 补丁、手工 DEX 注入、`build_mod.py` 依赖及 APK 二次打包。JADX/REA 只是恢复分析工具，反编译输出不等于编译/语义 PASS；新增、修复和实质修改的 Android 业务必须 Kotlin。仅直接阻断 P0 的最小闭包临时升 P0；不再要求 R126 单一窗口一次性恢复。CI/Kody/发布门禁不变。
+- **本仓职责（Web Pages 静态部署副本）**：仅跟踪/修复实际受 Android 迁移影响的共享接口、跨端存档兼容、发布/下载链接、官方构建指令或文档引用；Android 源码/工具链的唯一 Owner 仍在 Android 仓。没有受影响的引用就记录“无需改业务”，不以 Android 工程迁移擅自调整 Web 游戏、Wiki 正文、Pages 部署、签名或本地环境。
+- **验收**：要求 Android 权威 Issue 的 `PRODUCTION_SMALI_FILES=0`、`PRODUCTION_SMALI_DEPENDENCIES=0`、`MANUAL_DEX_INJECTION_PATHS=0`、`BUILDMOD_PRODUCTION_DEPENDENCIES=0`、`LEGACY_APK_REPACK_PATHS=0` 与 AGP 全游戏、Tick、存档、关键运行 PASS 真实证据；缺失时保持 OPEN/BLOCKED，不能在本仓宣称迁移成功。用户数据、安全、真实玩家 P0 优先。权威入口：[Android #52](https://github.com/OrekiDawson/AD-Oreki-Edition-Android/issues/52)、[#61](https://github.com/OrekiDawson/AD-Oreki-Edition-Android/issues/61)、[#25](https://github.com/OrekiDawson/AD-Oreki-Edition-Android/issues/25)、[Workspace #47](https://github.com/OrekiDawson/AD-Oreki-Edition-Workspace/issues/47)、[#20](https://github.com/OrekiDawson/AD-Oreki-Edition-Workspace/issues/20)。
+
+### 3.2 P1 工程目录治理
+
+- Android [#61](https://github.com/OrekiDawson/AD-Oreki-Edition-Android/issues/61) 根目录标准化按 **P1 工程迁移（普通目录整理 P2）** 执行，与 [#52](https://github.com/OrekiDawson/AD-Oreki-Edition-Android/issues/52) `build_mod.py` 彻底退役的「迁移即清理」规则协同。仅当本站部署流程、文档链接或真实共享文件受影响时，按 Workspace 跨仓规则配合修复并保留证据。
+- 本仓是 Web 静态部署副本，不因此获得修改 Android 本地工具链、独立游戏功能开发或额外自动部署权限；既有 Web 源 SHA、CI/Ruleset、回滚、线上验收不变。规则合并后按安全流程同步本机，并区分远端合并与本机验证状态。
+
+
+> **历史状态：2026-11-17 曾暂停独立开发。** 此事实保留供追溯，不构成覆盖后来逐项授权的永久禁止令。当前可执行范围以用户最新明确授权、Web 源仓验收、有效 PR/部署门禁与实际平台状态为准；R124 已授权的 Web 合格版本交付可在独立核验后按受保护流程同步至本部署仓，但不等于恢复本仓独立开发、自动收费或放宽发布要求。
+>
+> 本文优先于旧轮次说明、旧版 AGENTS 快照和交接文件中的冲突措辞。详细事实按需查阅源码与专题文档；[优化前规则原文](../../docs/agent-policy/LEGACY_2026-11-17.md) 仅供历史追溯，**不会自动继承为当前指令**。
+
+### 3.3 P1 64 位 ABI 与测试设备
+
+- **Android 正式支持**仅 `arm64-v8a`、`x86_64`；停止 `armeabi-v7a`、`x86` 32 位兼容。实施归 Android [#285](https://github.com/OrekiDawson/AD-Oreki-Edition-Android/issues/285)，协同 #52 生产 Smali 全量清零/#61 根级 AGP；生产 `.so`、AGP ABI 过滤、包内 JNI、启动/Tick/存档、发布必须真实验证。原版历史 ABI/DEX/研究/存档不因移除 32 位 JNI 而抹除。未获得 ARM64 原生库/实机证据时如实保留 BLOCKED 或 NOT RUN，不得伪造完成。
+- **日常设备策略**：优先使用 x86_64 Linux 电脑的唯一 API37 AVD 作为日常开发与大多数定向回归机；用户 Android ARM64 真机仅在可用、授权时偶尔做抽样安装、JNI、存档、冷启动与性能验证。**不要求每个普通 PR 跑手机**；本次 ABI 全面退役需单独提供 ARM64 真机证据或明确 NOT RUN。
+- **本仓协作（Pages 静态部署副本）**：仅修复确有影响的共享发布元数据、下载/安装指南、ABI 支持说明、CI/交叉引用及跨端存档说明，不因此触碰 Android 构建脚本、改变 Web 业务、Wiki 独立写作或 Pages 部署门禁。继续当前已授权轮次，不重复 `/goal`。权威任务：[Android #285](https://github.com/OrekiDawson/AD-Oreki-Edition-Android/issues/285)、[Workspace #47](https://github.com/OrekiDawson/AD-Oreki-Edition-Workspace/issues/47)、[#20](https://github.com/OrekiDawson/AD-Oreki-Edition-Workspace/issues/20)。
+
+### 3.4 P0 包名变更的 Pages 协作
+
+- Android P0 决定：最终正式 APK 的 `applicationId = "net.oreki.antimatterdimensions"`，Debug 为 `net.oreki.antimatterdimensions.debug`，基于自有域名 `oreki.net`。旧 `com.oreki.antimatterdimensions` 与新包**不能覆盖升级**，不能自动继承旧应用私有存档；须以真实 Android 构建/存档导出导入证据为准（Android #52/#61/#17、PR #276；Workspace #20）。
+- 本仓只是已验证 Web 源码的静态部署副本：**仅在确实存在 Android APK 下载、应用包名、安装/迁移指南、深链或发布链接引用时**，在获得正常 Web 源仓和受保护发布授权后修复，不允许独立修改 Android APK、自动部署未验证包或改变 Web 正式 URL/存档身份。保持现有 Pages/CI/回滚/HTTPS 与原有用户授权门禁。
+- 本规则 PR 真实合并后立即交接本机安全同步，读回证实前 `LOCAL_SYNC_BLOCKED`；不把远端规则合并或 Android 身份目标误报为正式包已上线。
+

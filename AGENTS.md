@@ -3,12 +3,17 @@
 ## 1. 总则与授权
 
 [授权与跨仓继承细则](docs/Agent规则/01-总则与授权.md)
+### 1.1 统一规则来源与继承
 共性规则以 [Workspace AGENTS.md](https://github.com/OrekiDawson/AD-Oreki-Edition-Workspace/blob/main/AGENTS.md) 为权威；本仓专题细则同为强制约束。开始任务先核对当前授权、远端规则、HEAD、Owner 和任务；操作前阅读涉及的细则，不重复加载无关专题。最新用户授权、平台保护与安全门禁优先。
 
 - 六仓 OPEN PR 合计 ≤5（含 Draft/预留），先收口已有 PR，再开展新增任务；ChatGPT 直接授权 PR 的例外依 Workspace §4.1，不豁免其他门禁。游戏业务优先，不抢其他 Owner。
 - Lead 每三分钟真实汇报，Subagent 完成后及时接续安全独立任务。等待 CI/Kody 不等于全局停工；活跃会话按 Workspace 刷新规则和远端状态。
+
+### 1.2 权限、预算与运行状态
 - 用户暂停、安全、权限、资源及预算硬门禁优先。全天执行，无峰谷或固定余额停工；周期预算 80% 预警、100% 或下一批超额停止新增收费。不得擅自充值、换账号或 Provider 绕过。
 - Coreutils 优先（全局长期强制）：能用标准 Shell、Coreutils、find/grep/sed/awk/jq 可靠完成的任务不使用 Node.js；确需 JS 运行时或生态 API 等例外。PATH 中直接调用命令名，Windows 使用 pwsh，不用 powershell.exe 或冗长绝对可执行路径，除非 PATH 解析或版本冲突。
+
+### 1.3 任务编号与 Goal
 - R 编号由 ChatGPT 分配；不添子编号、不改历史编号；活跃 Goal 不重复 /goal 或重置计时。
 
 ## 2. Pages 部署边界
